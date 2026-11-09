@@ -54,6 +54,7 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   write <value> to <file>      append <value> to <file>
   replace 'old' with 'new' in <file or variable>   the result lists each replacement
   find 'text' in <file, files or text>   the result is the lines that contain it; print shows path:number: text
+  undo   undo 3   undo changes to <file>   print the undo list   (file changes of earlier scripts in this session)
 
 Git (hardened; the result is git's output as text):
   git status    git diff [<files>]    git log [<count>]    git show <commit>    git branches    git branch
@@ -235,7 +236,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, maxSteps: MAX_STEPS, onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -289,7 +290,7 @@ export function main(args) {
   }
 
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), log };
+  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], log };
 
   // notifications, such as progress, go out on stdout like responses
   session.send = (message) => {

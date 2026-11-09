@@ -409,6 +409,11 @@ export function parse(source, options = {}) {
     if (isWord("the")) {
       i++;
       const next = current();
+      // the undo list: the scripts that undo can take back
+      if (next !== undefined && next.type === "word" && next.value === "undo" && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "list") {
+        i += 2;
+        return node("undoList", next, {});
+      }
       if (next !== undefined && next.type === "word" && COMMANDS[next.value] !== undefined) {
         i++;
         return node("variable", next, { name: next.value });
@@ -782,6 +787,30 @@ export function parse(source, options = {}) {
     return { type: "help", word, line: token.line, column: token.column };
   }
 
+  // undo, undo <count>, undo changes to <file>
+  function parseUndo(token) {
+    if (isWord("changes")) {
+      i++;
+      if (!isWord("to")) {
+        error("Expected 'to'");
+        return null;
+      }
+      i++;
+      const file = parseExpression();
+      if (file === null) {
+        return null;
+      }
+      return { type: "undo", count: null, file, line: token.line, column: token.column };
+    }
+    let count = null;
+    if (hasValueOnLine(token)) {
+      count = parseExpression();
+      if (count === null) {
+        return null;
+      }
+    }
+    return { type: "undo", count, file: null, line: token.line, column: token.column };
+  }
   // git <operation> ...: a hardened git, see src/md/features/git.md
   //   git status    git diff [<path>]    git log [<count>]    git show <commit>
   //   git branches  git branch
@@ -1069,6 +1098,7 @@ export function parse(source, options = {}) {
     replace: parseReplace,
     find: parseFind,
     git: parseGit,
+    undo: parseUndo,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,

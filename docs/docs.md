@@ -293,6 +293,19 @@ remove lines 20 to 22 of ./src/app.js
 
 You and your agent can work on the same files. If you save a file after the agent read it, the agent's next write fails, and it has to read the file again. Your change stays.
 
+### Undo
+
+Your agent made a mess? Take it back:
+
+```talk
+undo                          # the last script that changed files
+undo 3                        # the last three
+undo changes to ./src/app.js  # just one file
+print the undo list
+```
+
+Undo works across scripts in the same session. If a file changed after the script, say you edited it yourself, undo won't touch anything. Undo covers file changes only: not programs that `run` started, and not git commits.
+
 ## Errors
 
 An error stops the script. Unless you catch it:
@@ -401,7 +414,7 @@ after run
 end
 ```
 
-A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `run`, `git`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
 
 Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
 

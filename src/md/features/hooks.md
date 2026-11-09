@@ -7,7 +7,7 @@ Users write hooks in AGENTS.talk (or a file it imports), for policy and security
 Approved:
 
 - `before <step> ... end` and `after <step> ... end`.
-- Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `run`, `git`, a tool name, and `change` for any file change.
+- Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, a tool name, and `change` for any file change.
 - In a hook, a local variable with the step's name holds the step: `the write's path`, `the change's kind`.
 - `reject <message>` in a `before` hook stops the step. The script gets an error with the message. `on error` can catch it.
 - `after` hooks see `the result`.

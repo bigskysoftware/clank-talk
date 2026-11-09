@@ -142,3 +142,12 @@ test('git switch and git commit', () => {
   assert.deepEqual(errors("git switch 'x'"), ["Expected 'to' @1:12"]);
   assert.deepEqual(errors("git commit ./a.js"), ["Expected 'with' and a message @1:12"]);
 });
+
+test('undo forms', () => {
+  assert.deepEqual(commands("undo\nundo 3\nundo changes to ./a.js\nprint the undo list"), [
+    { type: 'undo', count: null, file: null },
+    { type: 'undo', count: { type: 'number', value: 3 }, file: null },
+    { type: 'undo', count: null, file: { type: 'path', value: './a.js' } },
+    { type: 'print', value: { type: 'undoList' } },
+  ]);
+});

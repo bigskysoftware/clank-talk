@@ -18,8 +18,11 @@ const AGENTS_TALK = "AGENTS.talk";
 // error messages show at most this much of a value
 const DESCRIBE_LENGTH = 80;
 
+// how many scripts the undo list keeps
+const UNDO_LIMIT = 20;
+
 // the steps a hook can watch, apart from tool names
-const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "run", "git"];
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git"];
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -51,6 +54,15 @@ class FileRef {
   // in lists printed as JSON, a file shows its path
   toJSON() {
     return this.path;
+  }
+}
+
+// one item of "the undo list": a script that undo can take back
+class UndoStep {
+  constructor(number, time, files) {
+    this.number = number;
+    this.time = time;
+    this.files = files;
   }
 }
 
@@ -99,6 +111,7 @@ function lineLabel(line) {
  * @param {string} [options.root]                     the project root; files outside it are refused (default: process.cwd())
  * @param {string} [options.cwd]                      the directory for ./ and ../ paths (default: root)
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
+ * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  */
 export function start(source, options = {}) {
   const controller = new AbortController();
@@ -184,11 +197,14 @@ async function execute(source, options, execution) {
     result: null,
     // the .talk file of the tool or hook now running; null for the script
     file: null,
+    // the scripts that undo can take back, oldest first; a host keeps it for a session
+    undo: options.undo || [],
   };
 
   try {
     await runCommands(script.commands, state, tools, maxSteps);
   } catch (err) {
+    recordUndo(state);
     if (err instanceof Cancelled) {
       return finish(execution, "cancelled", [errorFor(err)]);
     }
@@ -198,6 +214,7 @@ async function execute(source, options, execution) {
     throw err;
   }
 
+  recordUndo(state);
   return finish(execution, "done", []);
 }
 
@@ -573,6 +590,10 @@ async function runCommand(command, state, tools, maxSteps) {
     return null;
   }
 
+  if (command.type === "undo") {
+    state.result = await runUndo(command, state);
+    return null;
+  }
   if (command.type === "git") {
     await runGit(command, state);
     return null;
@@ -815,6 +836,9 @@ if (type === "read") {
       object[field.name] = await evaluate(field.value, state);
     }
     return object;
+  }
+  if (type === "undoList") {
+    return undoList(state);
   }
   if (type === "property") {
     const object = await evaluate(node.object, state);
@@ -1184,6 +1208,161 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
       }
     });
   });
+}
+
+// ----- undo -----
+
+// at the end of a script, its file changes go on the undo list, even if it failed part way
+// one item for each file: the text before the script, and after it
+function recordUndo(state) {
+  const byPath = new Map();
+  for (const change of state.execution.changes) {
+    // undo does not record itself, so there is no redo
+    if (change.undo) {
+      continue;
+    }
+    const item = byPath.get(change.path);
+    if (item === undefined) {
+      byPath.set(change.path, { path: change.path, before: change.before, after: change.after });
+    } else {
+      item.after = change.after;
+    }
+  }
+  if (byPath.size === 0) {
+    return;
+  }
+  state.undo.push({ time: new Date(), files: [...byPath.values()] });
+  while (state.undo.length > UNDO_LIMIT) {
+    state.undo.shift();
+  }
+}
+
+// undo, undo <count>, undo changes to <file>; the result is the paths it put back
+async function runUndo(command, state) {
+  // the items to take back, newest first: { path, before, after }
+  let items = [];
+  let entries = [];
+  if (command.file !== null) {
+    const file = await evaluate(command.file, state);
+    if (!(file instanceof FileRef)) {
+      throw new ScriptError("Expected a file, found " + describe(file), command.file);
+    }
+    for (let index = state.undo.length - 1; index >= 0 && items.length === 0; index--) {
+      for (const item of state.undo[index].files) {
+        if (item.path === file.path) {
+          items.push(item);
+        }
+      }
+    }
+    if (items.length === 0) {
+      throw new ScriptError("Undo has no changes to " + file.path, command);
+    }
+  } else {
+    let count = 1;
+    if (command.count !== null) {
+      count = toNumber(await evaluate(command.count, state), command.count);
+      if (!Number.isInteger(count) || count < 1) {
+        throw new ScriptError("Undo needs a whole number above 0, found " + count, command.count);
+      }
+    }
+    if (state.undo.length === 0) {
+      throw new ScriptError("Nothing to undo", command);
+    }
+    if (count > state.undo.length) {
+      throw new ScriptError("Only " + state.undo.length + " scripts can be undone", command);
+    }
+    entries = state.undo.slice(state.undo.length - count).reverse();
+    for (const entry of entries) {
+      items.push(...entry.files);
+    }
+  }
+
+  // check everything first: each file must be as the script left it,
+  // or as a newer item puts it back; if one is not, nothing changes
+  const final = new Map();
+  const changed = [];
+  for (const item of items) {
+    let now;
+    if (final.has(item.path)) {
+      now = final.get(item.path);
+    } else {
+      now = await currentText(item.path, state);
+    }
+    if (now !== item.after && !changed.includes(item.path)) {
+      changed.push(item.path);
+    }
+    final.set(item.path, item.before);
+  }
+  if (changed.length > 0) {
+    throw new ScriptError("Cannot undo: these files changed after the script: " + changed.join(", ") + ". Nothing was changed", command);
+  }
+
+  const restored = [];
+  for (const [path, text] of final) {
+    await restoreFile(path, text, state, command);
+    restored.push(path);
+  }
+
+  // the items are done: take them off the list
+  if (command.file !== null) {
+    for (const entry of state.undo) {
+      entry.files = entry.files.filter((item) => !items.includes(item));
+    }
+  } else {
+    state.undo.splice(state.undo.length - entries.length, entries.length);
+  }
+  for (let index = state.undo.length - 1; index >= 0; index--) {
+    if (state.undo[index].files.length === 0) {
+      state.undo.splice(index, 1);
+    }
+  }
+  return restored;
+}
+
+// the text of a project file now, or null if it does not exist
+async function currentText(path, state) {
+  try {
+    return await fs.readFile(nodePath.resolve(state.root, path), "utf8");
+  } catch (err) {
+    return null;
+  }
+}
+
+// put a file back to its old text; null removes a file that the script made
+// the same checks as a write, and the "undo" and "change" hooks
+async function restoreFile(path, text, state, node) {
+  const file = new FileRef(nodePath.resolve(state.root, path), state.root);
+  checkInsideRoot(file.absolute, state, node, path);
+  if (await isProtected(file, state, node)) {
+    throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
+  }
+  if ((await isHidden(file, state)) !== null) {
+    throw new ScriptError("A script cannot change hidden files or folders (a name that starts with .): " + file.path, node);
+  }
+  const step = changeStep("undo", file, { text });
+  await changeHooks("before", step, state, node);
+  const before = await currentText(path, state);
+  if (text === null) {
+    await fs.rm(file.absolute, { force: true });
+    state.seen.delete(file.absolute);
+  } else {
+    await makeParentFolders(file, state, node);
+    await fs.writeFile(file.absolute, text, "utf8");
+    state.seen.set(await fs.realpath(file.absolute), text);
+  }
+  state.execution.changes.push({ path: file.path, before, after: text, undo: true });
+  await changeHooks("after", step, state, node);
+}
+
+// the undo list, newest first, for "the undo list"
+function undoList(state) {
+  const list = [];
+  for (let index = state.undo.length - 1; index >= 0; index--) {
+    const entry = state.undo[index];
+    const files = entry.files.map((item) => item.path);
+    list.push(new UndoStep(list.length + 1, entry.time.toTimeString().slice(0, 5), files));
+  }
+  return list;
 }
 
 // ----- hooks -----
@@ -1935,6 +2114,10 @@ function splitLines(text) {
 function isListOfLines(value) {
   return Array.isArray(value) && value.length > 0 && value.every((item) => item instanceof Line);
 }
+function undoStepText(step) {
+  const count = step.files.length === 1 ? "1 file" : step.files.length + " files";
+  return step.number + ". " + step.time + "  " + count + ": " + step.files.join(", ");
+}
 
 function toText(value) {
   if (value === null || value === undefined) {
@@ -1953,6 +2136,13 @@ function toText(value) {
   // a list of lines is its text, one line each, with no numbers
   if (isListOfLines(value)) {
     return value.map((line) => line.text).join("\n");
+  }
+  // the undo list: one line each, such as "1. 10:42  2 files: src/a.js, new.txt"
+  if (value instanceof UndoStep) {
+    return undoStepText(value);
+  }
+  if (Array.isArray(value) && value.length > 0 && value.every((item) => item instanceof UndoStep)) {
+    return value.map(undoStepText).join("\n");
   }
   if (typeof value === "object") {
     return JSON.stringify(value);

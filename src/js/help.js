@@ -162,6 +162,12 @@ export const HELP = [
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
+    name: "undo", kind: "command",
+    syntax: "undo | undo <count> | undo changes to <file> | the undo list",
+    description: "Put back the files that earlier scripts changed. 'undo' takes back the last script that changed files, 'undo 3' the last 3, newest first. If a file changed after that script, undo changes nothing. It does not undo run programs, tools, or git commits. The result is the files it put back.",
+    examples: ["undo", "undo changes to ./src/app.js", "print the undo list"],
+  },
+  {
     name: "git", kind: "command",
     syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch>",
     description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only.",
