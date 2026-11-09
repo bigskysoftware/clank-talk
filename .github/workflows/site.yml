@@ -19,7 +19,8 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run build-site
+      # publish only the coming soon page for now, switch back to build-site to publish the full site
+      - run: npm run build-coming-soon
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

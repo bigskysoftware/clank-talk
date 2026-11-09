@@ -120,17 +120,17 @@ write the result to ./data.json
 
 Security policy should be code you can read.
 
-Hooks are plain JavaScript functions that run before and after every step. Allow it, deny it, or ask the user.
+Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step. Allow it, reject it, or ask the user.
 
 <div class="window">
-<div class="window-title">hooks.js</div>
+<div class="window-title">AGENTS.talk</div>
 
-```js
-runtime.before("write", (step) => {
-  if (step.path.endsWith(".env")) {
-    return step.deny("no writes to .env files");
-  }
-});
+```talk
+before write
+  if the write's path ends with '.env'
+    reject 'Cannot update env files!'
+  end
+end
 ```
 
 </div>

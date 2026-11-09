@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build-site": "node docs/build.js",
-    "serve-site": "node docs/serve.js"
+    "serve-site": "node docs/serve.js",
+    "build-coming-soon": "node docs/build.js && cp _site/coming-soon.html _site/index.html"
   },
   "devDependencies": {
     "marked": "^18.1.3"

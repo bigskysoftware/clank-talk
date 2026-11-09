@@ -6,7 +6,7 @@ const KEYWORDS = [
   "set", "put", "into", "to", "with", "as", "from",
   "read", "write", "replace", "fetch", "run", "files", "matching",
   "contains", "is", "not", "and", "or", "the", "result", "it",
-  "less", "than", "json", "undo", "last", "steps", "use", "plugin",
+  "less", "than", "json", "before", "after", "ends", "reject", "undo", "last", "steps", "use", "plugin",
 ];
 
 function escape(text) {
