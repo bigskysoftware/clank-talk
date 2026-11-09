@@ -273,7 +273,7 @@ export function tokenize(source) {
     }
 
     // path: ./foo and ../foo are relative to the current directory, @/foo to the project root
-    // a path ends at whitespace, ")" or ","
+    // a path ends at whitespace, ")", "," or a possessive 's
     // ./"my file.txt" puts the rest of the path in double quotes, so it can hold those characters
     if (source.startsWith("./", i) || source.startsWith("../", i) || source.startsWith("@/", i)) {
       let value = "";
@@ -296,7 +296,7 @@ export function tokenize(source) {
         }
         advance();
       } else {
-        while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && source[i] !== ",") {
+        while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && source[i] !== "," && !(source[i] === "'" && isPossessive(source, i))) {
           value += source[i];
           advance();
         }

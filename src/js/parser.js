@@ -366,6 +366,18 @@ export function parse(source, options = {}) {
       i++;
     }
 
+    // read as an expression: set readme to read @/README.md
+    if (isWord("read")) {
+      const readToken = current();
+      i++;
+      // only a value with access, so "read ./a.txt + 'x'" reads ./a.txt, then adds 'x'
+      const file = parseAccess();
+      if (file === null) {
+        return null;
+      }
+      return node("read", readToken, { file });
+    }
+
     const token = current();
     if (token === undefined || isCommandStart()) {
       error("Expected a value");
@@ -638,6 +650,12 @@ export function parse(source, options = {}) {
     return { type: token.value, line: token.line, column: token.column };
   }
 
+  // read <expression>: puts the text of a file in the result
+  function parseRead(token) {
+    const file = parseAccess();
+    return { type: "read", file, line: token.line, column: token.column };
+  }
+
   // set <target> to <expression>
   // the target is a variable, a property (x's y, x.y) or an index (x[0])
   function parseSet(token) {
@@ -687,6 +705,7 @@ export function parse(source, options = {}) {
   const COMMANDS = {
     print: parsePrint,
     if: parseIf,
+    read: parseRead,
     set: parseSet,
     increment: parseIncrement,
     decrement: parseIncrement,

@@ -109,6 +109,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: `@/` is relative to the project root.
 - Approved: `../` is legal syntax. The sandbox can refuse a path that goes outside the project root.
 - Approved: a path ends at whitespace, `)` or `,`.
+- Approved: a path also ends at a possessive `'s`, so `./notes.txt's lines` works. Note: `[` and `'` are still part of a path, so `./a.txt['x']` is one path.
 - Approved: `./"..."` (and `../"..."`, `@/"..."`) puts the path in double quotes, so it can hold spaces, `)` and `,`.
 - Approved: the path ends at the closing quote. Escapes do not work in a quoted path.
 

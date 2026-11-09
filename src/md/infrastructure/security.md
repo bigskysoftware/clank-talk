@@ -18,6 +18,14 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - `set` makes a plain own field with `Object.defineProperty`, so `set x's __proto__ to ...` cannot change a prototype.
 - Each command is one step, and each loop pass is one step. The step budget stops scripts that do not end, even an empty `repeat while true end`.
 
+## Files
+
+Feature: [../features/runtime.md](../features/runtime.md).
+
+- Every path is checked against the project root, before symlinks (`path.resolve`) and after them (`fs.realpath`). A path or symlink that goes outside the root is an error.
+- Glob results are checked one by one.
+- File objects cannot be changed with `set`, and index access cannot see their inside fields.
+
 ## `run`
 
 Feature: [../features/agents-talk.md](../features/agents-talk.md).

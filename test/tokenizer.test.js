@@ -63,6 +63,10 @@ test("a path ends at whitespace, ) or ,", () => {
   ]);
 });
 
+test("a path ends at a possessive", () => {
+  assert.deepEqual(simple("./a.txt's lines"), ["path:./a.txt", "possessive:'s", "word:lines"]);
+});
+
 test("quoted paths can hold spaces", () => {
   assert.deepEqual(simple('read ./"my notes/todo list.txt" now'), [
     "word:read", "path:./my notes/todo list.txt", "word:now",

@@ -33,6 +33,21 @@ await execution.done  // { status, output, errors, steps }
 - `print` adds a line to `output`.
 - Local variables last for one run. `$` globals live in `options.globals`. A host keeps them for a session when it passes the same object to each run.
 
+## Files
+
+Approved. Code: the "files" section of `src/js/runtime.js`.
+
+- A path literal gives a file object. Nothing is read until a property is used.
+- A path with `*` or `?` is a glob. It gives a list of files (not folders), sorted by path.
+- The host gives `root`. `@/` is relative to `root`. `./` and `../` are relative to `cwd` (default: `root`).
+- A file has `name`, `path` (relative to the root, with `/`), `text`, `lines`, `size` (bytes) and `modified` (ISO date).
+- A line has `number` (from 1) and `text`. As text, a line is its content. A final line break does not make an extra line. A `\r` at the end of a line is removed.
+- `contains`, `does not contain`, `starts with`, `ends with`, `is in`, `+`, `is empty` and `${}` use the text of a file or a line.
+- `print` shows a file as its path. A list of files prints as a list of paths.
+- `read <file>` puts the text in the result. `read <file>` is also an expression. Its argument is only a value with access, so `read ./a.txt + '!'` reads `./a.txt` and then adds `'!'`.
+- A missing file is an error for `read`. `exists` is false for it.
+- All files are UTF-8.
+
 ## Value rules (approved)
 
 - A loop index starts at 0, as in hyperscript.
