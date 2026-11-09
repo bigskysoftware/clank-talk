@@ -6,6 +6,20 @@ The runtime has a general host API. A pi extension is the first host.
 - pi extension: TODO
 - Other hosts: TODO
 
+## MCP host
+
+Code: `src/js/mcp.js`, started by `bin/clank-talk-mcp.js [--root <dir>]`.
+
+Approved:
+
+- The protocol is hand-written: JSON-RPC 2.0 over stdio, one JSON message per line. No dependency. It answers `initialize`, `ping`, `tools/list` and `tools/call`. Notifications get no answer.
+- `initialize` answers with the protocol version that the client asks for.
+- One tool, `clank_talk`, with input `{ script }`. It gives back text: the output lines, then the errors (`file line:column message`), then the changed files. A script that does not finish with status `done` sets `isError`.
+- The root is the folder where the server starts, or `--root`.
+- One `globals` object for the life of the server, so `$` variables stay between calls.
+- The tool description teaches the language: a short syntax summary, then the tools from AGENTS.talk with their parameters. It is read at `tools/list`, so a change to AGENTS.talk shows when the client lists tools again.
+- Logs go to stderr. stdout is only for protocol messages.
+
 ## Claude Code
 
 Claude Code can limit the model to clank-talk tools only.

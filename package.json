@@ -13,5 +13,8 @@
   "devDependencies": {
     "marked": "^18.1.3"
   },
-  "main": "src/js/clank-talk.js"
+  "main": "src/js/clank-talk.js",
+  "bin": {
+    "clank-talk-mcp": "bin/clank-talk-mcp.js"
+  }
 }

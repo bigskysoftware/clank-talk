@@ -40,4 +40,4 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [infrastructure/tooling.md](infrastructure/tooling.md): language, tests, layout
 - [infrastructure/parser.md](infrastructure/parser.md): parser output, errors, tree shape
 - [infrastructure/security.md](infrastructure/security.md): all security decisions, deferred items
-- [infrastructure/host.md](infrastructure/host.md): host API, pi extension, Claude Code tool limits
+- [infrastructure/host.md](infrastructure/host.md): MCP host, host API, pi extension, Claude Code tool limits

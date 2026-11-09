@@ -168,6 +168,20 @@ function errorFor(err) {
   return result;
 }
 
+/**
+ * The tools in AGENTS.talk, for a host to show to the agent.
+ * @param {string} root  the project root
+ * @returns {Promise<{ tools: { name: string, params: string[] }[], errors: Object[] }>}
+ */
+export async function listTools(root) {
+  const agents = await loadAgentsTalk(nodePath.resolve(root), {});
+  const tools = [];
+  for (const name of Object.keys(agents.definitions)) {
+    tools.push({ name, params: agents.definitions[name].params });
+  }
+  return { tools, errors: agents.errors };
+}
+
 // read and parse @/AGENTS.talk, if it exists
 // gives { definitions: name to tool node, errors }
 async function loadAgentsTalk(root, hostTools) {

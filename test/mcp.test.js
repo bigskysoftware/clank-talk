@@ -1,0 +1,101 @@
+import { test, beforeEach, afterEach } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { handleMessage } from "../src/js/mcp.js";
+
+let root;
+let session;
+
+beforeEach(async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-mcp-"));
+  session = { root, globals: Object.create(null) };
+});
+
+afterEach(async () => {
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+function call(script, id = 1) {
+  return handleMessage({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "clank_talk", arguments: { script } } }, session);
+}
+
+test("initialize answers with the client's protocol version", async () => {
+  const response = await handleMessage({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }, session);
+  assert.equal(response.result.protocolVersion, "2025-06-18");
+  assert.deepEqual(response.result.capabilities, { tools: {} });
+  assert.equal(response.result.serverInfo.name, "clank-talk");
+});
+
+test("notifications get no answer", async () => {
+  assert.equal(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, session), null);
+});
+
+test("tools/list has one tool, with the AGENTS.talk tools in its description", async () => {
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "tool run_test with name\nend\ntool lint\nend");
+  const response = await handleMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, session);
+  const [tool] = response.result.tools;
+  assert.equal(tool.name, "clank_talk");
+  assert.deepEqual(tool.inputSchema.required, ["script"]);
+  assert.match(tool.description, /run_test with name/);
+  assert.match(tool.description, /\n {2}lint/);
+});
+
+test("tools/call runs the script", async () => {
+  const response = await call("print 1 + 1");
+  assert.deepEqual(response.result, { content: [{ type: "text", text: "2" }], isError: false });
+});
+
+test("errors are listed, and set isError", async () => {
+  const response = await call("print 1\nprint 1 / 0");
+  assert.equal(response.result.isError, true);
+  assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:9 Division by zero");
+});
+
+test("changed files are listed", async () => {
+  const response = await call("write 'x' to ./a.txt");
+  assert.equal(response.result.content[0].text, "--- changed files ---\na.txt");
+});
+
+test("no output", async () => {
+  const response = await call("set x to 1");
+  assert.equal(response.result.content[0].text, "(no output)");
+});
+
+test("globals stay between calls", async () => {
+  await call("set $n to 41");
+  const response = await call("print $n + 1");
+  assert.equal(response.result.content[0].text, "42");
+});
+
+test("unknown methods and tools are errors", async () => {
+  const method = await handleMessage({ jsonrpc: "2.0", id: 3, method: "nope" }, session);
+  assert.equal(method.error.code, -32601);
+  const tool = await handleMessage({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "bash", arguments: {} } }, session);
+  assert.equal(tool.error.code, -32602);
+});
+
+test("the server speaks JSON-RPC over stdio", async () => {
+  const child = spawn(process.execPath, ["bin/clank-talk-mcp.js", "--root", root]);
+  const lines = [];
+  let buffer = "";
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    while (buffer.includes("\n")) {
+      lines.push(JSON.parse(buffer.slice(0, buffer.indexOf("\n"))));
+      buffer = buffer.slice(buffer.indexOf("\n") + 1);
+    }
+  });
+  const send = (message) => child.stdin.write(JSON.stringify(message) + "\n");
+  send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
+  send({ jsonrpc: "2.0", method: "notifications/initialized" });
+  send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "clank_talk", arguments: { script: "print 'hello'" } } });
+  while (lines.length < 2) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  child.kill();
+  assert.equal(lines[0].id, 1);
+  assert.equal(lines[1].result.content[0].text, "hello");
+});
