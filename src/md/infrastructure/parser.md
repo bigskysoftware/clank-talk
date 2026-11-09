@@ -24,15 +24,20 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "variable", name }
 { type: "property", object, name }      x's name, x.name
 { type: "index", object, index }        x[0]
+{ type: "unary", operator, value }      not x, no x, -x
+{ type: "binary", operator, left, right }
+{ type: "check", operator, value }      x exists, x is empty
+{ type: "conversion", value, to }       x as json
 { type: "list", items: [...] }
 { type: "object", fields: [{ name, value }] }
 ```
 
 `the` and parentheses leave no node.
 
+Operator names are always the word form. `<` gives `is less than`, `==` gives `is`. This keeps the tree, and later the audit log, easy to read.
+
 ## Not yet
 
-- Operators (next branch).
 - Tool call arguments.
 - `else`.
 

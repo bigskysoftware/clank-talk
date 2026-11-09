@@ -114,6 +114,12 @@ test("operators", () => {
   ]);
 });
 
+test("two character operators", () => {
+  assert.deepEqual(simple("a == b != c <= d >= e < f"), [
+    "word:a", "op:==", "word:b", "op:!=", "word:c", "op:<=", "word:d", "op:>=", "word:e", "op:<", "word:f",
+  ]);
+});
+
 test("unexpected character is an error token", () => {
   const tokens = tokenize("say ~");
   assert.deepEqual(tokens[1], { type: "error", value: "Unexpected character '~'", line: 1, column: 5 });

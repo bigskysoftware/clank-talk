@@ -72,7 +72,7 @@ Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each tok
 | number | `2`, `3.5`, `1_000`, `-3` | `_` groups digits and is dropped. |
 | path | `./a.js`, `../x`, `@/src/a.js`, `./"my file.txt"` | See paths below. |
 | possessive | `'s` | Only when it touches a word and no word character follows. |
-| op | `(`, `+`, `.` | One character. |
+| op | `(`, `+`, `.`, `<=` | One character, except `==`, `!=`, `<=`, `>=`. |
 | error | | A problem in the source. The value is the message. |
 
 ### Syntax status

@@ -98,18 +98,221 @@ export function parse(source, options = {}) {
   // ----- expressions -----
   //
   // A simple recursive descent parser. Each level calls the level below it.
+  // From lowest to highest priority:
   //
-  //   expression = access
+  //   expression = logic
+  //   logic      = comparison ( ("and" | "or") comparison )*
+  //   comparison = math ( compare math | check )?
+  //   math       = conversion ( ("+" | "-" | "*" | "/" | "mod") conversion )*
+  //   conversion = unary ( "as" word )*
+  //   unary      = ("not" | "no" | "-") unary | access
   //   access     = primary ( "'s" word | "." word | "[" expression "]" )*
   //   primary    = "the"? ( literal | list | object | "(" expression ")" | it | result | variable )
   //
-  // Operators come in a later branch.
+  // Mixing different math operators, or "and" with "or", needs parentheses.
+
+  const CONVERSIONS = ["json", "number", "text"];
+
+  // symbols give the same operator name as the words
+  const SYMBOLS = {
+    "==": "is",
+    "!=": "is not",
+    "<": "is less than",
+    ">": "is greater than",
+    "<=": "is less than or equal to",
+    ">=": "is greater than or equal to",
+  };
 
   function node(type, token, fields) {
     return { type, ...fields, line: token.line, column: token.column };
   }
 
   function parseExpression() {
+    return parseLogic();
+  }
+
+  function parseLogic() {
+    let left = parseComparison();
+    let operator = null;
+    while (left !== null && (isWord("and") || isWord("or"))) {
+      const token = current();
+      if (operator !== null && operator !== token.value) {
+        error("Mixing 'and' and 'or' needs parentheses");
+        return null;
+      }
+      operator = token.value;
+      i++;
+      const right = parseComparison();
+      if (right === null) {
+        return null;
+      }
+      left = node("binary", token, { operator, left, right });
+    }
+    return left;
+  }
+
+  // the words after "is": "is", "is not", "is less than", "is in", ...
+  // gives the operator name, or null if there is an error
+  function parseIsOperator() {
+    let operator = "is";
+    if (isWord("not")) {
+      i++;
+      operator = "is not";
+    }
+    if (operator === "is" && (isWord("less") || isWord("greater"))) {
+      operator = "is " + current().value;
+      i++;
+      if (!isWord("than")) {
+        error("Expected 'than'");
+        return null;
+      }
+      i++;
+      operator += " than";
+      if (isWord("or")) {
+        i++;
+        if (!isWord("equal")) {
+          error("Expected 'equal'");
+          return null;
+        }
+        i++;
+        if (!isWord("to")) {
+          error("Expected 'to'");
+          return null;
+        }
+        i++;
+        operator += " or equal to";
+      }
+      return operator;
+    }
+    if (isWord("empty")) {
+      i++;
+      return operator + " empty";
+    }
+    if (isWord("in")) {
+      i++;
+      return operator + " in";
+    }
+    return operator;
+  }
+
+  function parseComparison() {
+    const left = parseMath();
+    if (left === null) {
+      return null;
+    }
+    const token = current();
+    if (token === undefined) {
+      return left;
+    }
+
+    let operator = null;
+
+    if (token.type === "op" && SYMBOLS[token.value] !== undefined) {
+      i++;
+      operator = SYMBOLS[token.value];
+    } else if (isWord("is")) {
+      i++;
+      operator = parseIsOperator();
+      if (operator === null) {
+        return null;
+      }
+    } else if (isWord("contains")) {
+      i++;
+      operator = "contains";
+    } else if (isWord("exists")) {
+      i++;
+      operator = "exists";
+    } else if (isWord("starts") || isWord("ends")) {
+      operator = token.value + " with";
+      i++;
+      if (!isWord("with")) {
+        error("Expected 'with'");
+        return null;
+      }
+      i++;
+    } else if (isWord("does")) {
+      i++;
+      if (!isWord("not")) {
+        error("Expected 'not'");
+        return null;
+      }
+      i++;
+      if (isWord("contain")) {
+        i++;
+        operator = "does not contain";
+      } else if (isWord("exist")) {
+        i++;
+        operator = "does not exist";
+      } else {
+        error("Expected 'contain' or 'exist'");
+        return null;
+      }
+    } else {
+      return left;
+    }
+
+    // checks have no right side
+    if (operator === "exists" || operator === "does not exist" || operator === "is empty" || operator === "is not empty") {
+      return node("check", token, { operator, value: left });
+    }
+
+    const right = parseMath();
+    if (right === null) {
+      return null;
+    }
+    return node("binary", token, { operator, left, right });
+  }
+
+  function isMathOperator() {
+    return isOp("+") || isOp("-") || isOp("*") || isOp("/") || isWord("mod");
+  }
+
+  function parseMath() {
+    let left = parseConversion();
+    let operator = null;
+    while (left !== null && isMathOperator()) {
+      const token = current();
+      if (operator !== null && operator !== token.value) {
+        error("Mixing '" + operator + "' and '" + token.value + "' needs parentheses");
+        return null;
+      }
+      operator = token.value;
+      i++;
+      const right = parseConversion();
+      if (right === null) {
+        return null;
+      }
+      left = node("binary", token, { operator, left, right });
+    }
+    return left;
+  }
+
+  function parseConversion() {
+    let value = parseUnary();
+    while (value !== null && isWord("as")) {
+      const token = current();
+      i++;
+      const to = current();
+      if (to === undefined || to.type !== "word" || !CONVERSIONS.includes(to.value)) {
+        error("Expected one of: " + CONVERSIONS.join(", "));
+        return null;
+      }
+      i++;
+      value = node("conversion", token, { value, to: to.value });
+    }
+    return value;
+  }
+
+  function parseUnary() {
+    const token = current();
+    if (isWord("not") || isWord("no") || isOp("-")) {
+      i++;
+      const value = parseUnary();
+      if (value === null) {
+        return null;
+      }
+      return node("unary", token, { operator: token.value, value });
+    }
     return parseAccess();
   }
 

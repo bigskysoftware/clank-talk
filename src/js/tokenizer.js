@@ -202,7 +202,14 @@ export function tokenize(source) {
       continue;
     }
 
-    // operator: a single character
+    // operator: == != <= >= are two characters, all others are one
+    const two = source.slice(i, i + 2);
+    if (two === "==" || two === "!=" || two === "<=" || two === ">=") {
+      advance();
+      advance();
+      push("op", two, startLine, startColumn);
+      continue;
+    }
     if (OP_CHARS.includes(c)) {
       advance();
       push("op", c, startLine, startColumn);
