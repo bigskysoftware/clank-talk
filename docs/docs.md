@@ -309,6 +309,22 @@ end
 
 `on error` can go anywhere in a script, and covers all of it. `continue` goes on with the command after the one that failed. `stop`, the default, ends the script with the error.
 
+## Git
+
+ClankTalk has git built in, with the dangerous parts taken out:
+
+```talk
+git status
+print it
+
+git diff ./src/app.js
+git log 5
+git show 'HEAD'
+git branch
+```
+
+Git can run programs from its config: hooks, pagers, filters, and more. So ClankTalk turns all of those off, and starts git with a clean environment. If the repo's own config still asks git to run a program, git won't run at all, and your agent tells you what to remove.
+
 ## Tools
 
 Sometimes your agent really does need to run something, like your test suite. Fine!
@@ -378,7 +394,7 @@ after run
 end
 ```
 
-A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `run`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `run`, `git`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
 
 Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
 

@@ -53,6 +53,7 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
   - `git switch to new branch <branch>`: make a branch and switch to it
   - no `git add`: `git commit` takes the files, so the agent cannot commit files it did not name
 - Approved: each command puts its output in the result, as text, like a tool's `output`. Later: values, such as a list of changed files.
+- Approved (built): `git status` is `status --short --branch`. `git log` shows 15 commits with `--oneline`. A git call that fails is a script error with git's message. `git diff` with an empty list of files is an error, because no files would mean the diff of everything.
 - Approved: `git` is one command word. The words after it pick the operation, so `git` needs no change to the follows set except `with` in `git commit`.
 
 ## Later

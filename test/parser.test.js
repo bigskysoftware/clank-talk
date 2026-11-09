@@ -115,3 +115,20 @@ test("commands keep their line and column", () => {
   assert.equal(script.commands[0].line, 2);
   assert.equal(script.commands[0].column, 3);
 });
+
+test('git commands', () => {
+  assert.deepEqual(commands("git status\ngit diff\ngit diff ./a.js\ngit log 20\ngit show 'abc'\ngit branches\ngit branch"), [
+    { type: 'git', operation: 'status', value: null },
+    { type: 'git', operation: 'diff', value: null },
+    { type: 'git', operation: 'diff', value: { type: 'path', value: './a.js' } },
+    { type: 'git', operation: 'log', value: { type: 'number', value: 20 } },
+    { type: 'git', operation: 'show', value: { type: 'string', value: 'abc' } },
+    { type: 'git', operation: 'branches', value: null },
+    { type: 'git', operation: 'branch', value: null },
+  ]);
+});
+
+test('git errors', () => {
+  assert.deepEqual(errors('git push'), ['Expected a git operation: status, diff, log, show, branches, branch @1:5']);
+  assert.deepEqual(errors('git show'), ['Expected a value @1:5']);
+});

@@ -7,6 +7,7 @@
 
 import { parse } from "./parser.js";
 import { helpIndex, helpFor } from "./help.js";
+import { unsafeConfig, guardArgs, gitEnv, isSafeCommitName } from "./git.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
 import { spawn } from "node:child_process";
@@ -18,7 +19,7 @@ const AGENTS_TALK = "AGENTS.talk";
 const DESCRIBE_LENGTH = 80;
 
 // the steps a hook can watch, apart from tool names
-const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "run"];
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "run", "git"];
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -572,6 +573,10 @@ async function runCommand(command, state, tools, maxSteps) {
     return null;
   }
 
+  if (command.type === "git") {
+    await runGit(command, state);
+    return null;
+  }
   if (command.type === "find") {
     const text = toText(await asText(await evaluate(command.text, state), state, command));
     if (text === "") {
@@ -983,13 +988,104 @@ async function runProgram(command, state) {
     limit = shorter(limit, await durationMs(command.within, state));
   }
 
+  const result = await spawnProgram(program, args, state.cwd, env, limit, state, command);
+
+  // after hooks see the result
+  state.result = result;
+  await runHooks("after", ["run"], step, state, command);
+  return result;
+}
+
+// git <operation>: a hardened git; see src/md/features/git.md and src/js/git.js
+// the result is git's output as text; a failed git call is a script error
+async function runGit(command, state) {
+  const args = await gitArgs(command, state);
+  const step = Object.create(null);
+  step.operation = command.operation;
+  step.args = args;
+  await runHooks("before", ["git"], step, state, command);
+
+  const env = gitEnv(process.env);
+  // the repo config can make git run programs; if it does, git does not run
+  const config = await spawnProgram("git", [...guardArgs(), "config", "list", "--show-scope"], state.root, env, state.timeLimit, state, command);
+  const refused = unsafeConfig(config.output);
+  if (refused.length > 0) {
+    throw new ScriptError(
+      "Git is turned off here, because the repo config can run programs: " + refused.join(", ") + "\n" +
+      "A human must remove these settings from .git/config.",
+      command,
+    );
+  }
+
+  const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
+  if (result.code !== 0) {
+    throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
+  }
+  state.result = result.output;
+  await runHooks("after", ["git"], step, state, command);
+  return result.output;
+}
+
+// the fixed git arguments for each operation, with the checked values from the script
+async function gitArgs(command, state) {
+  const op = command.operation;
+  if (op === "status") {
+    return ["status", "--short", "--branch"];
+  }
+  if (op === "branch") {
+    return ["branch", "--show-current"];
+  }
+  if (op === "branches") {
+    return ["branch", "--list"];
+  }
+  if (op === "log") {
+    let count = 15;
+    if (command.value !== null) {
+      count = toNumber(await evaluate(command.value, state), command.value);
+      if (!Number.isInteger(count) || count < 1) {
+        throw new ScriptError("git log needs a whole number above 0, found " + count, command.value);
+      }
+    }
+    return ["log", "--oneline", "--no-show-signature", "-n", String(count)];
+  }
+  if (op === "show") {
+    const name = toText(await evaluate(command.value, state));
+    if (!isSafeCommitName(name)) {
+      throw new ScriptError("Not a safe commit name: " + describe(name) + ". Use a commit id, a branch name, or HEAD~1", command.value);
+    }
+    return ["show", "--no-ext-diff", "--no-textconv", "--no-show-signature", name, "--"];
+  }
+  if (op === "diff") {
+    const args = ["diff", "--no-ext-diff", "--no-textconv", "--"];
+    if (command.value !== null) {
+      const value = await evaluate(command.value, state);
+      const files = Array.isArray(value) ? value : [value];
+      // an empty list would give the diff of everything, which is a surprise
+      if (files.length === 0) {
+        throw new ScriptError("git diff found no files to show", command.value);
+      }
+      for (const file of files) {
+        if (!(file instanceof FileRef)) {
+          throw new ScriptError("git diff needs a file or a list of files, found " + describe(file), command.value);
+        }
+        args.push(file.path);
+      }
+    }
+    return args;
+  }
+  throw new ScriptError("Unknown git operation: " + op, command);
+}
+
+// start a program with no shell, and wait for it; used by run and git
+// gives { code, output }: the exit code, and stdout and stderr together, in the order they came
+function spawnProgram(program, args, cwd, env, limit, state, node) {
   const signal = state.execution.signal;
-  const result = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let output = "";
     let timedOut = false;
     let timer = null;
 
-    const child = spawn(program, args, { cwd: state.cwd, env, signal, shell: false });
+    const child = spawn(program, args, { cwd, env, signal, shell: false });
 
     if (limit !== null) {
       timer = setTimeout(() => {
@@ -1008,30 +1104,25 @@ async function runProgram(command, state) {
     child.on("error", (err) => {
       clearTimeout(timer);
       if (signal.aborted) {
-        reject(new Cancelled("Cancelled", command));
+        reject(new Cancelled("Cancelled", node));
       } else if (err.code === "ENOENT") {
-        reject(new ScriptError("Cannot run '" + program + "': program not found", command));
+        reject(new ScriptError("Cannot run '" + program + "': program not found", node));
       } else {
-        reject(new ScriptError("Cannot run '" + program + "': " + err.message, command));
+        reject(new ScriptError("Cannot run '" + program + "': " + err.message, node));
       }
     });
 
     child.on("close", (code) => {
       clearTimeout(timer);
       if (signal.aborted) {
-        reject(new Cancelled("Cancelled", command));
+        reject(new Cancelled("Cancelled", node));
       } else if (timedOut) {
-        reject(new ScriptError("'" + program + "' did not finish within " + limit + "ms", command));
+        reject(new ScriptError("'" + program + "' did not finish within " + limit + "ms", node));
       } else {
         resolve({ code: code === null ? -1 : code, output });
       }
     });
   });
-
-  // after hooks see the result
-  state.result = result;
-  await runHooks("after", ["run"], step, state, command);
-  return result;
 }
 
 // ----- hooks -----

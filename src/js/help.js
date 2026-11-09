@@ -162,6 +162,12 @@ export const HELP = [
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
+    name: "git", kind: "command",
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch",
+    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each.",
+    examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git log 5\nprint it"],
+  },
+  {
     name: "allow", kind: "command", where: "AGENTS.talk",
     syntax: "allow env <NAME>, ... | allow changes to <path>, ...",
     description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files.",

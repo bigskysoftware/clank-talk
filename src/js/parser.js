@@ -9,6 +9,8 @@
 //   <tool name>          a call to a tool from AGENTS.talk, with no arguments yet
 
 import { tokenize } from "./tokenizer.js";
+// the words after "git"; see src/md/features/git.md
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch"];
 
 /**
  * @typedef {Object} ParseError
@@ -780,6 +782,38 @@ export function parse(source, options = {}) {
     return { type: "help", word, line: token.line, column: token.column };
   }
 
+  // git <operation> ...: a hardened git, see src/md/features/git.md
+  //   git status    git diff [<path>]    git log [<count>]    git show <commit>
+  //   git branches  git branch
+  function parseGit(token) {
+    const op = current();
+    if (op === undefined || op.type !== "word" || !GIT_OPERATIONS.includes(op.value)) {
+      error("Expected a git operation: " + GIT_OPERATIONS.join(", "));
+      return null;
+    }
+    i++;
+    const command = { type: "git", operation: op.value, value: null, line: token.line, column: token.column };
+    if (op.value === "show") {
+      command.value = parseExpression();
+      if (command.value === null) {
+        return null;
+      }
+    }
+    // diff and log take an optional value, on the same line
+    if ((op.value === "diff" || op.value === "log") && hasValueOnLine(token)) {
+      command.value = parseExpression();
+      if (command.value === null) {
+        return null;
+      }
+    }
+    return command;
+  }
+
+  // true if a value follows on the same line, and not a new command
+  function hasValueOnLine(token) {
+    const next = current();
+    return next !== undefined && next.line === token.line && !isCommandStart();
+  }
   // reject <message>, only in a "before" hook: the step does not happen
   function parseReject(token) {
     if (inHook !== "before") {
@@ -994,6 +1028,7 @@ export function parse(source, options = {}) {
     append: parseWrite,
     replace: parseReplace,
     find: parseFind,
+    git: parseGit,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,
