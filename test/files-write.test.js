@@ -310,3 +310,9 @@ test('allow changes to: rules', async () => {
     await fs.rm(path.join(root, 'AGENTS.talk'));
   }
 });
+
+test('the hidden file error tells the human the line to add', async () => {
+  assert.deepEqual(await errors(`write 'x' to ./.github/workflows/ci.yml`), ['A script cannot change hidden files or folders (a name that starts with .): .github/workflows/ci.yml\nTo allow this, a human can add this line to AGENTS.talk:\n  allow changes to @/.github/']);
+  assert.match((await errors(`write 'x' to ./src/.cache/a`))[0], /\n  allow changes to @\/src\/.cache\/$/);
+  assert.match((await errors(`write 'x' to ./.gitignore`))[0], /\n  allow changes to @\/.gitignore$/);
+});

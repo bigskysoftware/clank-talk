@@ -38,6 +38,7 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 - Approved: scripts can still read them. Reads of secrets such as `.env` are a separate decision. See [../features/secrets.md](../features/secrets.md).
 - Approved: the check uses the path as written, and the real path after symlinks. For a new file, it uses the real path of the nearest folder that exists, plus the rest of the path. Thus a symlink cannot lead a write into a hidden folder.
 - Approved: `allow changes to @/.github/, @/.gitignore` in AGENTS.talk lets scripts change those paths. A folder allows all of its files. Only AGENTS.talk can have it, and each path must be inside the root.
+- Approved: the error for a refused hidden path names the smallest line that allows it, for example `allow changes to @/.github/` for `.github/workflows/ci.yml`. The agent passes the line on to the human. Nothing is allowed by default.
 - Approved: AGENTS.talk can allow `.git/` too. The human decides. Note: a script that can change `.git/hooks` or `.git/config` can make git run any code.
 - Limit: a program that `run` starts can still change hidden files. Only an OS sandbox closes this.
 ## .talk files and the talk folder

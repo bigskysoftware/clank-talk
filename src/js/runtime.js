@@ -1508,8 +1508,14 @@ async function writeText(file, text, append, state, node) {
   if (await isProtected(file, state, node)) {
     throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
   }
-  if (await isHidden(file, state)) {
-    throw new ScriptError("A script cannot change hidden files or folders (a name that starts with .): " + file.path, node);
+  const hidden = await isHidden(file, state);
+  if (hidden !== null) {
+    throw new ScriptError(
+      "A script cannot change hidden files or folders (a name that starts with .): " + file.path + "\n" +
+      "To allow this, a human can add this line to AGENTS.talk:\n" +
+      "  " + allowLineFor(hidden),
+      node,
+    );
   }
 
   let real = await realPath(file, state, node);
@@ -1587,9 +1593,10 @@ function isHiddenPath(relative) {
 // "allow changes to" in AGENTS.talk can allow some of them
 // the check uses the path as written, and the real path after symlinks;
 // for a new file, the real path of its nearest folder that exists, plus the rest
+// gives the refused path, relative to the root, or null if the change is allowed
 async function isHidden(file, state) {
   if (isHiddenPath(file.path) && !isAllowedChange(file.path, state)) {
-    return true;
+    return file.path;
   }
   let existing = file.absolute;
   while (true) {
@@ -1603,7 +1610,25 @@ async function isHidden(file, state) {
   const real = nodePath.join(await fs.realpath(existing), nodePath.relative(existing, file.absolute));
   const realRoot = await fs.realpath(state.root);
   const relative = nodePath.relative(realRoot, real).split(nodePath.sep).join("/");
-  return isHiddenPath(relative) && !isAllowedChange(relative, state);
+  if (isHiddenPath(relative) && !isAllowedChange(relative, state)) {
+    return relative;
+  }
+  return null;
+}
+
+// the smallest "allow changes to" line for a hidden path: the path up to its first hidden part
+// .github/workflows/ci.yml gives @/.github/, and .gitignore gives @/.gitignore
+function allowLineFor(relative) {
+  const parts = relative.split("/");
+  const kept = [];
+  for (let index = 0; index < parts.length; index++) {
+    kept.push(parts[index]);
+    if (parts[index].startsWith(".") && parts[index] !== "." && parts[index] !== "..") {
+      const isFolder = index < parts.length - 1;
+      return "allow changes to @/" + kept.join("/") + (isFolder ? "/" : "");
+    }
+  }
+  return "allow changes to @/" + relative;
 }
 
 // true if "allow changes to" lists the path, or a folder that holds it
