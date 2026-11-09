@@ -16,6 +16,7 @@ end
 <img src="img/clanktalk-robot.png" alt="A friendly robot">
 </div>
 <p class="note">Syntax is a sketch. It will change.</p>
+<p class="subtitle"><a href="docs.html">Read the docs</a></p>
 <p class="subtitle">ClankTalk provides a controlled scripting environment to replace the wild west of arbitrary system manipulation. It provides infrastructure for security hooks, auditing, taint tracking while providing agents the tools necessary to accomplish work.</p>
 </div>
 

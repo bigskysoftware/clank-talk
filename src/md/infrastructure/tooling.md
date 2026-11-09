@@ -12,4 +12,5 @@
 - `src/md/`: intent and decisions (https://srcmd.org).
 - `src/js/`: runtime code. `src/js/clank-talk.js` is the entry point. `src/js/help.js` is the help table.
 - `bin/clank-talk-mcp.js`: starts the MCP host.
+- `docs/docs.md`: the user docs, one page, in the tone of hyperscript.org. `test/docs.test.js` parses every `talk` example in it. An example that starts with `# AGENTS.talk` parses as AGENTS.talk.
 - `test/*.test.js`: tests. Run with `npm test`.

@@ -11,6 +11,7 @@ const KEYWORDS = [
   "the", "it", "result", "true", "false", "null", "not", "no", "and", "or", "mod",
   "is", "less", "greater", "than", "equal", "contains", "does", "contain", "starts", "ends",
   "exists", "exist", "empty", "as", "json", "pretty",
+  "help", "put", "remove", "stop", "of", "allow", "env", "within",
   // site examples that are not built yet
   "last", "steps",
 ];
