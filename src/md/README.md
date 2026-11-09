@@ -33,4 +33,4 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/taint.md](features/taint.md): value provenance and sink checks
 - [features/undo.md](features/undo.md): per-step undo stack
 - [features/hooks.md](features/hooks.md): user policy and security hooks
-- [infrastructure/host.md](infrastructure/host.md): host API, pi extension
+- [infrastructure/host.md](infrastructure/host.md): host API, pi extension, Claude Code tool limits

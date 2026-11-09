@@ -3,10 +3,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import { marked } from "marked";
+import { highlight } from "./highlight.js";
 
 const SRC = "docs";
 const OUT = "_site";
-const SKIP = ["build.js", "template.html"];
+const SKIP = ["build.js", "highlight.js", "serve.js", "template.html"];
+
+// ```ct blocks get highlighted, other blocks use the default renderer
+marked.use({
+  renderer: {
+    code(token) {
+      if (token.lang !== "ct") {
+        return false;
+      }
+      return '<pre><code class="language-ct">' + highlight(token.text) + "</code></pre>\n";
+    },
+  },
+});
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT);

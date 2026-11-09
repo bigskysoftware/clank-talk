@@ -1,26 +1,25 @@
 <div class="hero">
-<div class="hero-title">clank<span class="hero-accent">-</span>talk</div>
-<h1>A scripting language for AI agents</h1>
-<p class="subtitle">TODO: one line pitch. Agents get a small, readable language in place of bash.</p>
-<p class="subtitle">The runtime is the sandbox. Every step is audited, taint-tracked and undoable.</p>
+<div class="hero-text">
+<div class="hero-title">Clank<span class="hero-accent">Talk</span></div>
+<h1>A sandboxed scripting environment for AI Agents</h1>
+<p class="subtitle">ClankTalk provides a controlled scripting environment to replace the wild west of arbitrary system manipulation. It provides infrastructure for security hooks, auditing, taint tracking while providing agents the tools necessary to accomplish work.</p>
 </div>
-
+<div class="hero-side">
 <div class="window hero-code">
 <div class="window-title">refactor.ct</div>
 
-```
-for file in files matching "src/**/*.js"
-  read file into text
-  if text contains "var "
-    replace "var " with "let " in text
-    write text to file
+```ct
+for file in ./src/**/*.js
+  if the file's text contains 'var '
+    replace it with 'let '
   end
 end
 ```
 
 </div>
-
 <p class="note">Syntax is a sketch. It will change.</p>
+</div>
+</div>
 
 <div class="features">
 
@@ -54,7 +53,7 @@ TODO: values remember where they came from. Hooks decide what tainted values can
 <div class="window">
 <div class="window-title">taint.ct</div>
 
-```
+```ct
 fetch https://example.com/data as json
 -- the result is tainted: it came from the network
 write the result to "data.json"
@@ -74,7 +73,7 @@ TODO: users expose specific tools. The agent cannot change them.
 <div class="window">
 <div class="window-title">AGENTS.ct</div>
 
-```
+```ct
 def run_tests()
   run "mvn test"
 end
