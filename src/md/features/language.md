@@ -14,6 +14,29 @@ New parser. Syntax ideas come from hyperscript.
 - Inline JS blocks. These are an escape from the sandbox.
 - TODO
 
+## Structure
+
+- Approved: commands follow each other with no separator, as in hyperscript. `then` can also separate commands, for example `set x to 1 then say x`.
+- Approved: every block ends with `end`. `end` is always required. Do not copy the flexible `end` rules of hyperscript.
+- Approved: a statement that starts with an unknown word is a call to a tool in AGENTS.talk. If AGENTS.talk has no tool with that name, it is an error.
+
+## Commands and expressions
+
+Approved from [examples.md](examples.md). Each rule has an example there.
+
+- `print` is the output to the agent.
+- `read` and `fetch` put their value in `it` and `the result`. `read` is also an expression: `set readme to read @/README.md`.
+- `ask` asks the human, waits for the answer, and can time out. The answer goes in `the result`.
+- `replace a with b in <file>` changes the file itself.
+- `as json` parses text to an object, and formats an object to text.
+- `increment x by n`.
+- Possessive and dot access are the same: `line's number` and `line.number`.
+- A file gives `name`, `path`, `text`, `lines`, `size`, `modified`. A line gives `number`, and is its content as text.
+- Variables without a prefix are local to the script or feature. `$` variables are global and stay for the session.
+- `on error ... end` handles errors. It can go anywhere in a script or feature, and covers all of that script or feature. It can use `stop`, or `continue` to go on with the line after the one that failed. The default is `stop`.
+- A tool call gives back `code` and `output`. Arguments can be by position (`run_test 'UserTest'`) or by name (`run_test with name: 'UserTest', mode: 'fast'`), with commas between them.
+- Hooks: `before` and `after` for `read`, `write`, `fetch`, `run` and tool calls. Extensions can add more. An `after` hook sees `the result`.
+
 ## Tokens
 
 Code: `src/tokenizer.js`. The tokenizer makes a flat list of tokens. Each token has a type, a value, a line and a column.
@@ -53,7 +76,8 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 
 ### Not yet
 
-- Template strings.
+- Approved: template strings, with `${...}` only. `$name` in a template is not interpolation, because `$` marks a global.
+- Approved: URLs. A URL starts with `<word>://` and otherwise follows the path rules.
 - Approved for later: `/.../` is a regex. Pending: how to tell a regex from division.
 - Wanted: absolute paths (`/etc/hosts`). They also start with `/`, so they wait for the same regex and division decision.
 - URLs as their own token type.

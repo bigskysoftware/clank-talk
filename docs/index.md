@@ -7,7 +7,7 @@
 ```talk
 for file in ./src/**/*.js
   if the file's text contains 'var '
-    replace it with 'let '
+    replace 'var ' with 'let ' in the file
   end
 end
 ```

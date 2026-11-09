@@ -25,6 +25,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 ## File Index
 
 - [features/language.md](features/language.md): syntax, what to keep from hyperscript
+- [features/examples.md](features/examples.md): real agent tasks in proposed syntax, for review
 - [features/sandbox.md](features/sandbox.md): isolation model, in-process runtime
 - [features/core-tools.md](features/core-tools.md): built-in fs and fetch
 - [features/plugins.md](features/plugins.md): explicit imports for syntax and tools
