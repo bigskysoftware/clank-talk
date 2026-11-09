@@ -55,6 +55,7 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   replace 'old' with 'new' in <file or variable>   the result lists each replacement
   find 'text' in <file, files or text>   the result is the lines that contain it; print shows path:number: text
   undo   undo 3   undo changes to <file>   print the undo list   (file changes of earlier scripts in this session)
+  ask 'question' [with 'yes' or 'no'] [within 5 minutes]   the human answers, not you; null means no answer
 
 Git (hardened; the result is git's output as text):
   git status    git diff [<files>]    git log [<count>]    git show <commit>    git branches    git branch
@@ -165,6 +166,12 @@ function pointAt(source, line, column) {
  * @param {{ root: string, globals: Object }} session
  */
 export async function handleMessage(message, session) {
+  // an answer to a request from this server, such as elicitation/create
+  if (message.method === undefined && message.id !== undefined && message.id !== null) {
+    answerRequest(message, session);
+    return null;
+  }
+
   // a notification has no id, and gets no answer
   if (message.id === undefined || message.id === null) {
     return null;
@@ -174,6 +181,8 @@ export async function handleMessage(message, session) {
   const params = message.params || {};
 
   if (message.method === "initialize") {
+    // a client that supports elicitation can show a question to the human: see "ask"
+    session.canAsk = Boolean(params.capabilities && params.capabilities.elicitation);
     return reply(id, {
       // answer with the version the client asks for
       protocolVersion: params.protocolVersion || "2025-06-18",
@@ -236,7 +245,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -252,6 +261,60 @@ export async function handleMessage(message, session) {
   }
 
   return replyError(id, -32601, "Method not found: " + message.method);
+}
+
+// send a request to the client, and wait for its answer: the whole message, or null if cancelled
+// the answer comes back through handleMessage, as a message with the same id and no method
+let nextRequestId = 1;
+function requestClient(session, method, params, signal) {
+  if (!session.pending) {
+    session.pending = new Map();
+  }
+  const id = "clank-talk-" + nextRequestId;
+  nextRequestId++;
+  return new Promise((resolve) => {
+    session.pending.set(id, resolve);
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        session.pending.delete(id);
+        resolve(null);
+      });
+    }
+    session.send({ jsonrpc: "2.0", id, method, params });
+  });
+}
+
+function answerRequest(message, session) {
+  if (!session.pending || !session.pending.has(message.id)) {
+    return;
+  }
+  const resolve = session.pending.get(message.id);
+  session.pending.delete(message.id);
+  resolve(message);
+}
+
+// "ask" in a script: an MCP elicitation, so the human answers in the client, never the agent
+// the answer is text, or null if the human declines or cancels
+function askFor(session) {
+  if (!session.canAsk || !session.send) {
+    return null;
+  }
+  return async ({ question, choices, signal }) => {
+    const answer = { type: "string", title: "Answer" };
+    if (choices.length > 0) {
+      answer.enum = choices;
+    }
+    const requestedSchema = { type: "object", properties: { answer }, required: ["answer"] };
+    const response = await requestClient(session, "elicitation/create", { message: question, requestedSchema }, signal);
+    if (response === null || !response.result || response.result.action !== "accept") {
+      return null;
+    }
+    const content = response.result.content || {};
+    if (typeof content.answer !== "string") {
+      return null;
+    }
+    return content.answer;
+  };
 }
 
 // a log that humans can read: each script as written, then what happened

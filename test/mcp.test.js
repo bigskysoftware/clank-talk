@@ -149,3 +149,33 @@ test('an error in AGENTS.talk shows its line, with an arrow', async () => {
   const response = await call('bad');
   assert.equal(response.result.content[0].text, '1\n\n--- failed ---\nAGENTS.talk 3:11 Expected a number, found null\n  3 |   print 2 * x\n    |           ^');
 });
+
+test('ask goes to the human as an MCP elicitation', async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: { elicitation: {} } } }, session);
+  const asked = [];
+  session.send = (message) => {
+    if (message.method === 'elicitation/create') {
+      asked.push(message.params);
+      setImmediate(() => handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'accept', content: { answer: 'yes' } } }, session));
+    }
+  };
+  const response = await call("ask 'Push?' with 'yes' or 'no'\nprint it");
+  assert.equal(response.result.content[0].text, 'yes');
+  assert.deepEqual(asked, [{ message: 'Push?', requestedSchema: { type: 'object', properties: { answer: { type: 'string', title: 'Answer', enum: ['yes', 'no'] } }, required: ['answer'] } }]);
+});
+
+test('ask: decline is null, and a client with no elicitation is never asked', async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { elicitation: {} } } }, session);
+  session.send = (message) => {
+    if (message.method === 'elicitation/create') {
+      setImmediate(() => handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'decline' } }, session));
+    }
+  };
+  assert.equal((await call("ask 'Name?'\nprint it")).result.content[0].text, 'null');
+
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } }, session);
+  const sent = [];
+  session.send = (message) => sent.push(message);
+  assert.equal((await call("ask 'Name?'\nprint it")).result.content[0].text, 'null');
+  assert.deepEqual(sent, []);
+});

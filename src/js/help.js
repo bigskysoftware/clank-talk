@@ -162,6 +162,12 @@ export const HELP = [
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
+    name: "ask", kind: "command",
+    syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
+    description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text they type, or the choice they pick. With no way to ask, no answer in time, or a 'no thanks', the result is null, so treat null as no.",
+    examples: ["ask 'Which branch should I use?'\nprint it", "ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes\nif the result is 'yes'\n  print 'ok'\nend"],
+  },
+  {
     name: "undo", kind: "command",
     syntax: "undo | undo <count> | undo changes to <file> | the undo list",
     description: "Put back the files that earlier scripts changed. 'undo' takes back the last script that changed files, 'undo 3' the last 3, newest first. If a file changed after that script, undo changes nothing. It does not undo run programs, tools, or git commits. The result is the files it put back.",

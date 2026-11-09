@@ -787,6 +787,43 @@ export function parse(source, options = {}) {
     return { type: "help", word, line: token.line, column: token.column };
   }
 
+  // ask <question> [with <choice> or <choice> ...] [within <duration>]
+  // only the human answers; see src/md/features/ask.md
+  function parseAsk(token) {
+    const question = parseBefore(["with", "within"], parseExpression);
+    if (question === null) {
+      return null;
+    }
+    const choices = [];
+    if (isWord("with")) {
+      i++;
+      while (true) {
+        const choice = parseBefore(["or", "within"], parseExpression);
+        if (choice === null) {
+          return null;
+        }
+        choices.push(choice);
+        if (!isWord("or")) {
+          break;
+        }
+        i++;
+      }
+      if (choices.length < 2) {
+        error("Expected 'or' and a second choice");
+        return null;
+      }
+    }
+    let within = null;
+    if (isWord("within")) {
+      i++;
+      within = parseDuration();
+      if (within === null) {
+        return null;
+      }
+    }
+    return { type: "ask", question, choices, within, line: token.line, column: token.column };
+  }
+
   // undo, undo <count>, undo changes to <file>
   function parseUndo(token) {
     if (isWord("changes")) {
@@ -1099,6 +1136,7 @@ export function parse(source, options = {}) {
     find: parseFind,
     git: parseGit,
     undo: parseUndo,
+    ask: parseAsk,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,

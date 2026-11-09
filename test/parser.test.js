@@ -151,3 +151,11 @@ test('undo forms', () => {
     { type: 'print', value: { type: 'undoList' } },
   ]);
 });
+
+test('ask', () => {
+  const [plain, choice] = commands("ask 'Name?'\nask 'Push?' with 'yes' or 'no' within 5 minutes");
+  assert.deepEqual(plain, { type: 'ask', question: { type: 'string', value: 'Name?' }, choices: [], within: null });
+  assert.deepEqual(choice.choices, [{ type: 'string', value: 'yes' }, { type: 'string', value: 'no' }]);
+  assert.equal(choice.within.ms, 60000);
+  assert.deepEqual(errors("ask 'x' with 'a'"), ["Expected 'or' and a second choice @1:14"]);
+});

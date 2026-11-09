@@ -112,6 +112,7 @@ function lineLabel(line) {
  * @param {string} [options.cwd]                      the directory for ./ and ../ paths (default: root)
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
+ * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
  */
 export function start(source, options = {}) {
   const controller = new AbortController();
@@ -199,6 +200,8 @@ async function execute(source, options, execution) {
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
     undo: options.undo || [],
+    // the host's way to ask the human: async ({ question, choices, signal }) => text or null
+    ask: options.ask || null,
   };
 
   try {
@@ -590,6 +593,10 @@ async function runCommand(command, state, tools, maxSteps) {
     return null;
   }
 
+  if (command.type === "ask") {
+    state.result = await askHuman(command, state);
+    return null;
+  }
   if (command.type === "undo") {
     state.result = await runUndo(command, state);
     return null;
@@ -1208,6 +1215,52 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
       }
     });
   });
+}
+
+// ----- ask -----
+
+// ask the human; only the host can reach them, through options.ask
+// with no host, no answer in time, or an answer that is not a choice, the result is null
+async function askHuman(command, state) {
+  const question = toText(await asText(await evaluate(command.question, state), state, command.question));
+  const choices = [];
+  for (const choice of command.choices) {
+    choices.push(toText(await asText(await evaluate(choice, state), state, choice)));
+  }
+  if (state.ask === null) {
+    return null;
+  }
+  let limit = state.timeLimit;
+  if (command.within !== null) {
+    limit = shorter(limit, await durationMs(command.within, state));
+  }
+
+  let timer = null;
+  let answer = null;
+  try {
+    const asking = state.ask({ question, choices, signal: state.execution.signal });
+    if (limit === null) {
+      answer = await asking;
+    } else {
+      const timeout = new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), limit);
+      });
+      answer = await Promise.race([asking, timeout]);
+    }
+  } catch (err) {
+    // a host that fails to ask gives no answer
+    answer = null;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (typeof answer !== "string") {
+    return null;
+  }
+  if (choices.length > 0 && !choices.includes(answer)) {
+    return null;
+  }
+  return answer;
 }
 
 // ----- undo -----

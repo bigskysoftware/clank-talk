@@ -417,6 +417,21 @@ end
 A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
 
 Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
+A hook can ask you before a step happens. Only you answer, never the agent:
+
+```talk
+# AGENTS.talk
+before git
+  if the git's operation is 'commit'
+    ask 'Commit ' + the git's files + '?' with 'yes' or 'no'
+    if the result is not 'yes'
+      reject 'The human said no'
+    end
+  end
+end
+```
+
+If nobody can answer, `ask` gives `null`, and the hook above says no. Safe by default.
 
 ## The Fine Print
 

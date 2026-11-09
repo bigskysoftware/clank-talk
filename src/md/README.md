@@ -38,6 +38,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/undo.md](features/undo.md): per-step undo stack
 - [features/hooks.md](features/hooks.md): user policy and security hooks
 - [features/git.md](features/git.md): a hardened, built-in git
+- [features/ask.md](features/ask.md): ask the human, for approvals
 - [infrastructure/tooling.md](infrastructure/tooling.md): language, tests, layout
 - [infrastructure/parser.md](infrastructure/parser.md): parser output, errors, tree shape
 - [infrastructure/security.md](infrastructure/security.md): all security decisions, deferred items
