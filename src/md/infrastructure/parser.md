@@ -29,6 +29,7 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "repeat", kind, value, index, body: [...] }   kind: "times", "while" or "until"
 { type: "onError", body: [...] }        top level of a script or tool only
 { type: "stop" }
+{ type: "help", word }                  word is null, or the words after help on the same line
 { type: "break" }
 { type: "continue" }
 { type: "increment" | "decrement", target, amount }   amount is 1 when there is no "by"

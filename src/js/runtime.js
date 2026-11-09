@@ -6,6 +6,7 @@
 // A runtime error stops the script. "on error" comes later.
 
 import { parse } from "./parser.js";
+import { helpIndex, helpFor } from "./help.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
 import { spawn } from "node:child_process";
@@ -186,9 +187,34 @@ export async function listTools(root) {
   const agents = await loadAgentsTalk(nodePath.resolve(root), {});
   const tools = [];
   for (const name of Object.keys(agents.definitions)) {
-    tools.push({ name, params: agents.definitions[name].params });
+    tools.push({ name, params: agents.definitions[name].params, description: agents.definitions[name].description });
   }
   return { tools, errors: agents.errors };
+}
+
+// the "#" comment lines just above a line, as text, with the "#" removed
+function commentAbove(source, lineNumber) {
+  const lines = source.split("\n");
+  const comment = [];
+  let index = lineNumber - 2;
+  while (index >= 0 && lines[index].trim().startsWith("#")) {
+    comment.unshift(lines[index].trim().replace(/^#\s?/, ""));
+    index--;
+  }
+  return comment.join("\n");
+}
+
+// the tools for help: AGENTS.talk tools with their comments, then host tools
+function toolList(state, hostTools) {
+  const list = [];
+  for (const name of Object.keys(state.definitions)) {
+    const definition = state.definitions[name];
+    list.push({ name, params: definition.params, description: definition.description || "" });
+  }
+  for (const name of Object.keys(hostTools)) {
+    list.push({ name, params: [], description: "A tool from the host." });
+  }
+  return list;
 }
 
 // read and parse @/AGENTS.talk, if it exists
@@ -229,6 +255,7 @@ async function loadAgentsTalk(root, hostTools) {
     } else if (Object.hasOwn(hostTools, definition.name)) {
       result.errors.push({ message: "Tool '" + definition.name + "' is also a host tool", ...where });
     } else {
+      definition.description = commentAbove(source, definition.line);
       result.definitions[definition.name] = definition;
     }
   }
@@ -475,6 +502,22 @@ if (isListOfLines(value)) {
 
   if (command.type === "run") {
     state.result = await runProgram(command, state);
+    return null;
+  }
+
+  if (command.type === "help") {
+    const list = toolList(state, tools);
+    let text;
+    if (command.word === null) {
+      text = helpIndex(list);
+    } else {
+      text = helpFor(command.word, list);
+      if (text === null) {
+        throw new ScriptError("No help for '" + command.word + "'. Use help to list everything", command);
+      }
+    }
+    state.execution.output.push(text);
+    state.result = text;
     return null;
   }
 

@@ -46,7 +46,9 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   read <file>          set x to read <file>
   write <value> to <file>      append <value> to <file>
   replace 'old' with 'new' in <file or variable>   the result lists each replacement
-  You cannot change .talk files or @/talk/.`;
+  You cannot change .talk files or @/talk/.
+
+help lists everything. help <word> shows one command, expression or tool, with examples: help replace`;
 
 // build the tool description: the syntax, then the tools from AGENTS.talk
 async function describeTool(root) {
@@ -59,6 +61,9 @@ async function describeTool(root) {
         text += "\n  " + tool.name + " with " + tool.params.join(", ");
       } else {
         text += "\n  " + tool.name;
+      }
+      if (tool.description) {
+        text += "    " + tool.description.split("\n")[0];
       }
     }
     text += "\n  Add 'within 5 minutes' to a call to set a time limit. A tool gives back the result, often { code, output }.";

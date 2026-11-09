@@ -738,6 +738,20 @@ if (isWord("lines")) {
     return { type: token.value, line: token.line, column: token.column };
   }
 
+  // help [<word> ...]: the words must be on the same line as help
+  function parseHelp(token) {
+    const words = [];
+    while (current() !== undefined && current().type === "word" && current().line === token.line && (current().value !== "then" || words.length === 0)) {
+      words.push(current().value);
+      i++;
+    }
+    let word = null;
+    if (words.length > 0) {
+      word = words.join(" ");
+    }
+    return { type: "help", word, line: token.line, column: token.column };
+  }
+
   // stop, only in "on error" (and not in a loop there): end with the error
   function parseStop(token) {
     if (!inHandler || loopDepth !== 0) {
@@ -931,6 +945,7 @@ if (isWord("lines")) {
     break: parseLoopControl,
     continue: parseLoopControl,
     stop: parseStop,
+    help: parseHelp,
     on: parseOn,
   };
 

@@ -10,6 +10,6 @@
 ## Layout
 
 - `src/md/`: intent and decisions (https://srcmd.org).
-- `src/js/`: runtime code. `src/js/clank-talk.js` is the entry point.
+- `src/js/`: runtime code. `src/js/clank-talk.js` is the entry point. `src/js/help.js` is the help table.
 - `bin/clank-talk-mcp.js`: starts the MCP host.
 - `test/*.test.js`: tests. Run with `npm test`.
