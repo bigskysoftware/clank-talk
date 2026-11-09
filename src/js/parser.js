@@ -10,7 +10,7 @@
 
 import { tokenize } from "./tokenizer.js";
 // the words after "git"; see src/md/features/git.md
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit"];
 
 /**
  * @typedef {Object} ParseError
@@ -785,6 +785,7 @@ export function parse(source, options = {}) {
   // git <operation> ...: a hardened git, see src/md/features/git.md
   //   git status    git diff [<path>]    git log [<count>]    git show <commit>
   //   git branches  git branch
+  //   git switch to [new branch] <branch>    git commit <files> with <message>
   function parseGit(token) {
     const op = current();
     if (op === undefined || op.type !== "word" || !GIT_OPERATIONS.includes(op.value)) {
@@ -796,6 +797,44 @@ export function parse(source, options = {}) {
     if (op.value === "show") {
       command.value = parseExpression();
       if (command.value === null) {
+        return null;
+      }
+    }
+    // git switch to <branch>, git switch to new branch <branch>
+    if (op.value === "switch") {
+      if (!isWord("to")) {
+        error("Expected 'to'");
+        return null;
+      }
+      i++;
+      command.create = false;
+      if (isWord("new")) {
+        i++;
+        if (!isWord("branch")) {
+          error("Expected 'branch'");
+          return null;
+        }
+        i++;
+        command.create = true;
+      }
+      command.value = parseExpression();
+      if (command.value === null) {
+        return null;
+      }
+    }
+    // git commit <files> with <message>
+    if (op.value === "commit") {
+      command.value = parseBefore(["with"], parseExpression);
+      if (command.value === null) {
+        return null;
+      }
+      if (!isWord("with")) {
+        error("Expected 'with' and a message");
+        return null;
+      }
+      i++;
+      command.message = parseExpression();
+      if (command.message === null) {
         return null;
       }
     }

@@ -129,6 +129,16 @@ test('git commands', () => {
 });
 
 test('git errors', () => {
-  assert.deepEqual(errors('git push'), ['Expected a git operation: status, diff, log, show, branches, branch @1:5']);
+  assert.deepEqual(errors('git push'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit @1:5']);
   assert.deepEqual(errors('git show'), ['Expected a value @1:5']);
+});
+
+test('git switch and git commit', () => {
+  assert.deepEqual(commands("git switch to 'x'\ngit switch to new branch 'y'\ngit commit ./a.js with 'msg'"), [
+    { type: 'git', operation: 'switch', value: { type: 'string', value: 'x' }, create: false },
+    { type: 'git', operation: 'switch', value: { type: 'string', value: 'y' }, create: true },
+    { type: 'git', operation: 'commit', value: { type: 'path', value: './a.js' }, message: { type: 'string', value: 'msg' } },
+  ]);
+  assert.deepEqual(errors("git switch 'x'"), ["Expected 'to' @1:12"]);
+  assert.deepEqual(errors("git commit ./a.js"), ["Expected 'with' and a message @1:12"]);
 });

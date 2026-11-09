@@ -54,6 +54,8 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
   - no `git add`: `git commit` takes the files, so the agent cannot commit files it did not name
 - Approved: each command puts its output in the result, as text, like a tool's `output`. Later: values, such as a list of changed files.
 - Approved (built): `git status` is `status --short --branch`. `git log` shows 15 commits with `--oneline`. A git call that fails is a script error with git's message. `git diff` with an empty list of files is an error, because no files would mean the diff of everything.
+- Approved (built): `git switch to <branch>` is `switch <branch>`, and `git switch to new branch <branch>` is `switch --create <branch>`.
+- Approved (built): `git commit <files> with <message>` runs `add -- <files>`, then `commit --no-verify --no-gpg-sign --message=<message> -- <files>`. Thus the commit has only the named files, even if other files are staged. A hidden file, such as `.env`, cannot be committed unless AGENTS.talk allows changes to it.
 - Approved: `git` is one command word. The words after it pick the operation, so `git` needs no change to the follows set except `with` in `git commit`.
 
 ## Later

@@ -321,7 +321,12 @@ git diff ./src/app.js
 git log 5
 git show 'HEAD'
 git branch
+
+git switch to new branch 'fix-parser'
+git commit [./src/app.js, ./test/app.test.js] with 'Fix the parser'
 ```
+
+`git commit` adds and commits only the files you name, so your agent can't sweep in something you didn't expect. There's no push yet: that's still your job.
 
 Git can run programs from its config: hooks, pagers, filters, and more. So ClankTalk turns all of those off, and starts git with a clean environment. If the repo's own config still asks git to run a program, git won't run at all, and your agent tells you what to remove.
 

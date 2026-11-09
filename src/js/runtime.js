@@ -7,7 +7,7 @@
 
 import { parse } from "./parser.js";
 import { helpIndex, helpFor } from "./help.js";
-import { unsafeConfig, guardArgs, gitEnv, isSafeCommitName } from "./git.js";
+import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
 import { spawn } from "node:child_process";
@@ -999,9 +999,9 @@ async function runProgram(command, state) {
 // git <operation>: a hardened git; see src/md/features/git.md and src/js/git.js
 // the result is git's output as text; a failed git call is a script error
 async function runGit(command, state) {
-  const args = await gitArgs(command, state);
   const step = Object.create(null);
   step.operation = command.operation;
+  const args = await gitArgs(command, state, step);
   step.args = args;
   await runHooks("before", ["git"], step, state, command);
 
@@ -1017,6 +1017,15 @@ async function runGit(command, state) {
     );
   }
 
+  // commit adds the named files first, so new files can be committed too;
+  // the commit then has only those files, even if other files are staged
+  if (command.operation === "commit") {
+    const add = await spawnProgram("git", [...guardArgs(), "add", "--", ...step.files], state.root, env, state.timeLimit, state, command);
+    if (add.code !== 0) {
+      throw new ScriptError("git add failed: " + add.output.trim(), command);
+    }
+  }
+
   const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
   if (result.code !== 0) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
@@ -1027,7 +1036,8 @@ async function runGit(command, state) {
 }
 
 // the fixed git arguments for each operation, with the checked values from the script
-async function gitArgs(command, state) {
+// values for hooks go on the step: files and message for commit, branch for switch
+async function gitArgs(command, state, step) {
   const op = command.operation;
   if (op === "status") {
     return ["status", "--short", "--branch"];
@@ -1037,6 +1047,48 @@ async function gitArgs(command, state) {
   }
   if (op === "branches") {
     return ["branch", "--list"];
+  }
+  if (op === "switch") {
+    const name = toText(await evaluate(command.value, state));
+    if (!isSafeBranchName(name)) {
+      throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
+    }
+    step.branch = name;
+    if (command.create) {
+      return ["switch", "--create", name];
+    }
+    return ["switch", name];
+  }
+  if (op === "commit") {
+    const value = await evaluate(command.value, state);
+    const files = Array.isArray(value) ? value : [value];
+    if (files.length === 0) {
+      throw new ScriptError("git commit found no files to commit", command.value);
+    }
+    const paths = [];
+    for (const file of files) {
+      if (!(file instanceof FileRef)) {
+        throw new ScriptError("git commit needs a file or a list of files, found " + describe(file), command.value);
+      }
+      // a hidden file, such as .env, often holds secrets
+      const hidden = await isHidden(file, state);
+      if (hidden !== null) {
+        throw new ScriptError(
+          "A script cannot commit hidden files or folders (a name that starts with .): " + file.path + "\n" +
+          "To allow this, a human can add this line to AGENTS.talk:\n" +
+          "  " + allowLineFor(hidden),
+          command.value,
+        );
+      }
+      paths.push(file.path);
+    }
+    const message = toText(await evaluate(command.message, state));
+    if (message.trim() === "") {
+      throw new ScriptError("A commit needs a message", command.message);
+    }
+    step.files = paths;
+    step.message = message;
+    return ["commit", "--no-verify", "--no-gpg-sign", "--message=" + message, "--", ...paths];
   }
   if (op === "log") {
     let count = 15;

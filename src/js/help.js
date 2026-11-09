@@ -163,9 +163,9 @@ export const HELP = [
   },
   {
     name: "git", kind: "command",
-    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch",
-    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each.",
-    examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git log 5\nprint it"],
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message>",
+    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name.",
+    examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",

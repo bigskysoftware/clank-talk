@@ -89,3 +89,34 @@ test("hooks can watch git", async () => {
     await fs.rm(path.join(root, "AGENTS.talk"));
   }
 });
+
+test("git switch to a new branch, then back", async () => {
+  await output("git switch to new branch 'feature-x'");
+  assert.equal(git(["branch", "--show-current"]), "feature-x\n");
+  await output("git switch to 'main'");
+  assert.equal(git(["branch", "--show-current"]), "main\n");
+  assert.deepEqual(await errors("git switch to '--detach'"), ["Not a safe branch name: '--detach'. Use letters, digits, -, _, / and ."]);
+});
+
+test("git commit commits only the named files, new ones too", async () => {
+  await fs.writeFile(path.join(root, "new.txt"), "new\n");
+  await fs.writeFile(path.join(root, "b.txt"), "two\nchanged\n");
+  await output("git commit [./a.txt, ./new.txt] with 'Second commit'");
+  assert.equal(git(["log", "-1", "--format=%s"]), "Second commit\n");
+  assert.equal(git(["show", "--name-only", "--format=", "HEAD"]), "a.txt\nnew.txt\n");
+  // b.txt is still changed, and not committed
+  assert.equal(git(["status", "--short"]), " M b.txt\n");
+  git(["checkout", "--", "b.txt"]);
+  await fs.writeFile(path.join(root, "a.txt"), "one\nmore\n");
+});
+
+test("git commit checks its values", async () => {
+  await fs.writeFile(path.join(root, ".env"), "SECRET=1\n");
+  try {
+    assert.match((await errors("git commit ./.env with 'oops'"))[0], /^A script cannot commit hidden files or folders/);
+    assert.deepEqual(await errors("git commit ./a.txt with ''"), ["A commit needs a message"]);
+    assert.deepEqual(await errors("git commit [] with 'x'"), ["git commit found no files to commit"]);
+  } finally {
+    await fs.rm(path.join(root, ".env"));
+  }
+});
