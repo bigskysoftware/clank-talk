@@ -23,30 +23,86 @@ end
 
 ## Easy To Read
 
-TODO: humans can read what the agent did. Based on [hyperscript](https://hyperscript.org).
+Agents write a lot of bash. Somebody has to read it. That somebody is you.
+
+ClankTalk is an xTalk language, inspired by HyperTalk and [hyperscript](https://hyperscript.org).
+It reads like English, so you can tell what your agent did at a glance.
+
+<div class="compare">
+<div class="window">
+<div class="window-title">bump.sh</div>
+
+```bash
+for f in ./config/*.json; do
+  v=$(jq -r '.version' "$f")
+  if [ "$v" -lt 2 ]; then
+    jq '.version = 2' "$f" > "$f.tmp" \
+      && mv "$f.tmp" "$f"
+  fi
+done
+```
+
+</div>
+<div class="window">
+<div class="window-title">bump.talk</div>
+
+```talk
+for file in ./config/*.json
+  set config to the file's text as json
+  if config's version is less than 2
+    set config's version to 2
+    write config as json to the file
+  end
+end
+```
+
+</div>
+</div>
 
 ## The Runtime Is The Sandbox
 
-TODO: no bash, no general exec. Built-in file system and fetch, scoped to a root.
+Giving an agent a shell is giving it the keys to your machine. ClankTalk gives it a language instead.
+
+The runtime is pure JavaScript. No bash, no exec, no escape hatches. If ClankTalk can't do it, your agent can't do it.
+
+- File access stays inside the project root
+- Fetch only talks to hosts you allow
+- Runaway loops hit a step budget and stop
+
+<div class="window">
+<div class="window-title">escape.talk</div>
+
+```talk
+write 'hello' to ../../etc/hosts
+-- error: ../../etc/hosts is outside the project root
+```
+
+</div>
 
 ## Full Audit
 
-TODO: every action is recorded. A second agent can summarize it.
+Ever wonder what your agent is actually doing? Wonder no more.
+
+Every step is recorded: what ran, what it touched and where the data came from.
+Read the log yourself, or hand it to another agent to summarize.
 
 <div class="window">
 <div class="window-title">audit</div>
 
 ```
-step 1  read   src/app.js
-step 2  write  src/app.js      undo: 1
-step 3  fetch  example.com     taint: network
+#1  read   ./config/app.json
+#2  write  ./config/app.json     undo: saved
+#3  fetch  https://example.com   taint: network
+#4  run    run_tests             from: AGENTS.talk
 ```
 
 </div>
 
 ## Taint Tracking
 
-TODO: values remember where they came from. Hooks decide what tainted values can reach.
+Values remember where they came from. Anything from the network is tainted, and taint sticks.
+
+When tainted data heads somewhere sensitive, your hooks get a say.
 
 <div class="window">
 <div class="window-title">taint.talk</div>
@@ -54,26 +110,58 @@ TODO: values remember where they came from. Hooks decide what tainted values can
 ```talk
 fetch https://example.com/data as json
 -- the result is tainted: it came from the network
-write the result to "data.json"
+write the result to ./data.json
 -- a hook asks the user first
+```
+
+</div>
+
+## Security Hooks
+
+Security policy should be code you can read.
+
+Hooks are plain JavaScript functions that run before and after every step. Allow it, deny it, or ask the user.
+
+<div class="window">
+<div class="window-title">hooks.js</div>
+
+```js
+runtime.before("write", (step) => {
+  if (step.path.endsWith(".env")) {
+    return step.deny("no writes to .env files");
+  }
+});
 ```
 
 </div>
 
 ## Undo
 
-TODO: per-step undo stack, as far as is practical.
+Agent made a mess? Undo it.
+
+ClankTalk saves file changes before it makes them, so you can roll agent work back one step at a time.
+
+<div class="window">
+<div class="window-title">undo.talk</div>
+
+```talk
+undo the last 2 steps
+```
+
+</div>
 
 ## Your Tools, In AGENTS.talk
 
-TODO: users expose specific tools. The agent cannot change them.
+Sometimes your agent really does need to run something, like your test suite. Fine!
+
+Define a tool in `AGENTS.talk`. The agent can call it. The agent can't change it. Everything else stays off limits.
 
 <div class="window">
 <div class="window-title">AGENTS.talk</div>
 
 ```talk
-def run_tests()
-  run "mvn test"
+tool run_tests
+  run 'mvn test'
 end
 ```
 
@@ -81,6 +169,30 @@ end
 
 ## Everything Is A Plugin
 
-TODO: syntax and tools come from plugins that the user imports.
+In ClankTalk, tools are syntax and syntax is a plugin. New commands are just vanilla JavaScript.
+
+You pick the plugins. Your agent doesn't.
+
+<div class="window">
+<div class="window-title">AGENTS.talk</div>
+
+```talk
+use plugin ./plugins/git.js
+```
+
+</div>
+
+## Works With Your Agent
+
+ClankTalk has a general host API, so it can plug into any agent. First up: an extension for [pi](https://github.com/badlogic/pi-mono).
+
+More hosts to come.
+
+<div class="construction">
+
+ClankTalk is under construction. The syntax on this page is a sketch, and it <em>will</em> change.
+Thanks for your patience!
+
+</div>
 
 </div>
