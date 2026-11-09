@@ -9,6 +9,14 @@ Decisions that we put off. Each one needs a human decision later.
 - Argument values from the agent are not checked. Later: refuse values that start with `-`, or typed parameters. See `run` below.
 - OS sandbox for `run` (later, as a plugin). See `run` below.
 
+## Values
+
+Feature: [../features/runtime.md](../features/runtime.md).
+
+- Property access sees only own data properties. `constructor`, `__proto__`, `prototype` and functions give `null`.
+- Object literals have no prototype, so a field named `__proto__` is only a field.
+- Each command is one step. The step budget stops scripts that do not end.
+
 ## `run`
 
 Feature: [../features/agents-talk.md](../features/agents-talk.md).

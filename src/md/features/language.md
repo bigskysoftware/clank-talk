@@ -59,6 +59,9 @@ Approved (from hyperscript):
 - Logic: `and`, `or`.
 - Conversion: `as json`, `as number`, `as text`.
 - Order, highest first: access, unary, `as`, math, comparison, logic.
+- `is not less than` and `is not greater than` do not exist. Use `is greater than or equal to` and `is less than or equal to`.
+- Only one comparison in a row. `a < b < c` is an error.
+- Only `json`, `number` and `text` can follow `as`. Any other word is an error.
 - As in hyperscript, mixing different math operators, or `and` with `or`, without parentheses is an error. `1 + 2 * 3` is an error. Write `1 + (2 * 3)`. This makes the order clear to the reader.
 
 ## Tokens
@@ -81,7 +84,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 
 - Approved: `#` starts a comment, anywhere on a line, to the end of the line.
 - Approved: the tokenizer does not make newline tokens. The parser uses `end` and command words to find structure. Tokens keep the line number if the parser needs it later.
-- Approved: `'` after a word character is a possessive only before a non-word character. Thus `file's` is a possessive, and `say 'sun'` is a string.
+- Approved: `'` after a word character is a possessive only before a non-word character. Thus `file's` is a possessive, and `say 'sun'` is a string. `'s` does not work after `)`, `]` or `}`. Use `.` there: `(x as json).a`.
 - Approved: both `'` and `"` make strings.
 - Approved: string escapes `\n`, `\t`, and `\x` for any other `x`.
 - Approved: numbers have no commas. `_` groups digits: `1_000`.
