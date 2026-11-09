@@ -132,6 +132,12 @@ export const HELP = [
     examples: ["tool test\n  run 'npm test' within 10 minutes\nend"],
   },
   {
+    name: "import", kind: "command", where: "AGENTS.talk",
+    syntax: "import <path to a .talk file>",
+    description: "Only in AGENTS.talk and the files it imports. Load the tools from another .talk file. ./ starts from the importing file, @/ from the project root.",
+    examples: ["import ./talk/git.talk", "import @/talk/maven.talk"],
+  },
+  {
     name: "allow env", kind: "command", where: "AGENTS.talk",
     syntax: "allow env <NAME>, ...",
     description: "Only at the top of AGENTS.talk. The environment variables that 'run' passes on.",

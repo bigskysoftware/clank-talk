@@ -24,3 +24,4 @@ Approved:
 
 - A test that every command word has a help entry. The command table is inside the parser now.
 - Generate the MCP tool description from the same table.
+- TODO: split the docs in two. Docs for humans (docs/, in the hyperscript tone) and docs for agents (help, the MCP description: short, exact, every rule). Now docs/docs.md tries to do both.

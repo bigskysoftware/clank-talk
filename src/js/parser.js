@@ -1200,10 +1200,25 @@ if (isWord("lines")) {
         if (definition !== null) {
           definitions.push(definition);
         } else {
-          while (!atEnd() && !isWord("tool") && !isWord("allow")) {
+          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import")) {
             i++;
           }
         }
+        continue;
+      }
+      if (isWord("import")) {
+        const token = current();
+        i++;
+        const path = current();
+        if (path === undefined || path.type !== "path") {
+          error("Expected a path after 'import', such as ./talk/git.talk");
+          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import")) {
+            i++;
+          }
+          continue;
+        }
+        i++;
+        definitions.push({ type: "import", path: path.value, line: token.line, column: token.column });
         continue;
       }
       if (isWord("tool")) {
@@ -1219,7 +1234,7 @@ if (isWord("lines")) {
       }
       error("Only definitions are allowed here, such as 'tool'");
       i++;
-      while (!atEnd() && !isWord("tool") && !isWord("allow")) {
+      while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import")) {
         i++;
       }
     }

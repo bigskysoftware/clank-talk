@@ -192,3 +192,71 @@ test('on error in a tool covers the tool, and the caller can handle a tool that 
   await agentsTalk(`tool bad\n  print 1 / 0\n  on error\n    print 'tool saw it'\n  end\nend`);
   assert.deepEqual(await output(`bad\nprint 'after'\non error\n  print 'caller saw it'\n  continue\nend`), ['tool saw it', 'caller saw it', 'after']);
 });
+
+test('import loads tools from another .talk file', async () => {
+  await fs.mkdir(path.join(root, 'talk'));
+  await fs.writeFile(path.join(root, 'talk', 'greet.talk'), "# Says hi.\ntool greet with name\n  set the result to 'hi ' + name\nend");
+  await agentsTalk('import ./talk/greet.talk');
+  assert.deepEqual(await output("greet 'bob'\nprint it"), ['hi bob']);
+});
+
+test('import paths start from the importing file', async () => {
+  await fs.mkdir(path.join(root, 'talk'));
+  await fs.writeFile(path.join(root, 'talk', 'all.talk'), 'import ./greet.talk');
+  await fs.writeFile(path.join(root, 'talk', 'greet.talk'), "tool greet\n  set the result to 'hi'\nend");
+  await agentsTalk('import ./talk/all.talk');
+  assert.deepEqual(await output('greet\nprint it'), ['hi']);
+});
+
+test('tools from different files can call each other', async () => {
+  await fs.writeFile(path.join(root, 'inner.talk'), "tool inner\n  set the result to 'in'\nend");
+  await agentsTalk('import ./inner.talk\ntool outer\n  inner\nend');
+  assert.deepEqual(await output('outer\nprint it'), ['in']);
+});
+
+test('errors in an imported tool point at its file', async () => {
+  await fs.writeFile(path.join(root, 'bad.talk'), 'tool bad\n  print 1 / 0\nend');
+  await agentsTalk('import ./bad.talk');
+  const [e] = await errors('bad');
+  assert.deepEqual(e, { message: 'Division by zero', line: 2, column: 11, file: 'bad.talk' });
+});
+
+test('a file imported two times loads once', async () => {
+  await fs.writeFile(path.join(root, 'a.talk'), 'tool x\nend');
+  await fs.writeFile(path.join(root, 'b.talk'), 'import ./a.talk');
+  await agentsTalk('import ./a.talk\nimport ./b.talk');
+  assert.deepEqual(await output('x\nprint 1'), ['1']);
+});
+
+test('import errors', async () => {
+  const cases = [
+    ['import ./x.js', 'Cannot import ./x.js: only .talk files can be imported'],
+    ['import ./nope.talk', 'Cannot import ./nope.talk: file not found'],
+    ['import ../x.talk', 'Cannot import ../x.talk: it is outside the project root'],
+    ['import x', "Expected a path after 'import', such as ./talk/git.talk"],
+  ];
+  for (const [source, message] of cases) {
+    await agentsTalk(source);
+    const [e] = await errors('print 1');
+    assert.equal(e.message, message, source);
+  }
+});
+
+test('an import loop is an error', async () => {
+  await fs.writeFile(path.join(root, 'a.talk'), 'import @/AGENTS.talk');
+  await agentsTalk('import ./a.talk');
+  const [e] = await errors('print 1');
+  assert.deepEqual(e, { message: 'Import loop: AGENTS.talk -> a.talk -> AGENTS.talk', line: 1, column: 1, file: 'a.talk' });
+});
+
+test('allow env is only allowed in AGENTS.talk', async () => {
+  await fs.writeFile(path.join(root, 'a.talk'), 'allow env SECRET');
+  await agentsTalk('import ./a.talk');
+  const [e] = await errors('print 1');
+  assert.deepEqual(e, { message: "'allow env' is only allowed in AGENTS.talk", line: 1, column: 1, file: 'a.talk' });
+});
+
+test('scripts cannot import', async () => {
+  const [e] = await errors('import ./a.talk');
+  assert.equal(e.message, "Unknown command 'import'");
+});

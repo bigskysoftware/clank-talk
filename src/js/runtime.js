@@ -217,49 +217,121 @@ function toolList(state, hostTools) {
   return list;
 }
 
-// read and parse @/AGENTS.talk, if it exists
-// gives { definitions: name to tool node, errors }
+// read and parse @/AGENTS.talk and the files it imports
+// gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  let source;
+  const result = { definitions: Object.create(null), allowedEnv: [], errors: [] };
   try {
-    source = await fs.readFile(nodePath.join(root, AGENTS_TALK), "utf8");
+    await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
-    if (err.code === "ENOENT") {
-      return { definitions: Object.create(null), allowedEnv: [], errors: [] };
-    }
-    throw err;
+    return result;
   }
 
-  // parse two times: the first pass finds the tool names,
-  // so in the second pass one tool can call another
-  const firstPass = parse(source, { definitions: true });
+  // first pass: read every file and find the tool names,
+  // so in the second pass a tool can call a tool from any file
+  const files = [];
+  await loadTalkFile(nodePath.join(root, AGENTS_TALK), root, [], files, result.errors);
   const names = Object.keys(hostTools);
-  for (const definition of firstPass.script.definitions) {
-    if (definition.type === "tool") {
-      names.push(definition.name);
+  for (const file of files) {
+    for (const definition of file.firstPass.script.definitions) {
+      if (definition.type === "tool") {
+        names.push(definition.name);
+      }
     }
   }
-  const { script, errors } = parse(source, { definitions: true, tools: names });
-  const result = { definitions: Object.create(null), allowedEnv: [], errors: [] };
-  for (const e of errors) {
-    result.errors.push({ ...e, file: AGENTS_TALK });
-  }
-  for (const definition of script.definitions) {
-    if (definition.type === "allowEnv") {
-      result.allowedEnv.push(...definition.names);
-      continue;
+
+  // second pass: parse with the tool names, and collect the definitions
+  for (const file of files) {
+    const { script, errors } = parse(file.source, { definitions: true, tools: names });
+    for (const e of errors) {
+      result.errors.push({ ...e, file: file.name });
     }
-    const where = { line: definition.line, column: definition.column, file: AGENTS_TALK };
-    if (Object.hasOwn(result.definitions, definition.name)) {
-      result.errors.push({ message: "Tool '" + definition.name + "' is defined twice", ...where });
-    } else if (Object.hasOwn(hostTools, definition.name)) {
-      result.errors.push({ message: "Tool '" + definition.name + "' is also a host tool", ...where });
-    } else {
-      definition.description = commentAbove(source, definition.line);
-      result.definitions[definition.name] = definition;
+    for (const definition of script.definitions) {
+      const where = { line: definition.line, column: definition.column, file: file.name };
+      if (definition.type === "import") {
+        continue;
+      }
+      if (definition.type === "allowEnv") {
+        if (file.name === AGENTS_TALK) {
+          result.allowedEnv.push(...definition.names);
+        } else {
+          result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (Object.hasOwn(result.definitions, definition.name)) {
+        result.errors.push({ message: "Tool '" + definition.name + "' is defined twice", ...where });
+      } else if (Object.hasOwn(hostTools, definition.name)) {
+        result.errors.push({ message: "Tool '" + definition.name + "' is also a host tool", ...where });
+      } else {
+        definition.description = commentAbove(file.source, definition.line);
+        definition.file = file.name;
+        result.definitions[definition.name] = definition;
+      }
     }
   }
   return result;
+}
+
+// a path relative to the project root, with / on every platform
+function relativeName(root, absolute) {
+  return nodePath.relative(root, absolute).split(nodePath.sep).join("/");
+}
+
+// read one .talk file, then the files it imports
+// chain is the list of files that import this one, to find import loops
+async function loadTalkFile(absolute, root, chain, files, errors) {
+  const name = relativeName(root, absolute);
+  const source = await fs.readFile(absolute, "utf8");
+  const firstPass = parse(source, { definitions: true });
+  files.push({ name, source, firstPass });
+
+  for (const definition of firstPass.script.definitions) {
+    if (definition.type !== "import") {
+      continue;
+    }
+    const where = { line: definition.line, column: definition.column, file: name };
+    const shown = definition.path;
+
+    // ./ and ../ start from the importing file, @/ from the project root
+    let base = nodePath.dirname(absolute);
+    let rest = definition.path;
+    if (rest.startsWith("@/")) {
+      base = root;
+      rest = rest.slice(2);
+    }
+    const target = nodePath.resolve(base, rest);
+
+    if (!isInside(target, root)) {
+      errors.push({ message: "Cannot import " + shown + ": it is outside the project root", ...where });
+      continue;
+    }
+    if (!target.endsWith(".talk")) {
+      errors.push({ message: "Cannot import " + shown + ": only .talk files can be imported", ...where });
+      continue;
+    }
+    if (target === absolute || chain.includes(target)) {
+      const loop = chain.concat([absolute, target]).map((file) => relativeName(root, file));
+      errors.push({ message: "Import loop: " + loop.join(" -> "), ...where });
+      continue;
+    }
+    // a file imported two times is loaded once
+    if (files.some((file) => file.name === relativeName(root, target))) {
+      continue;
+    }
+    let real;
+    try {
+      real = await fs.realpath(target);
+    } catch (err) {
+      errors.push({ message: "Cannot import " + shown + ": file not found", ...where });
+      continue;
+    }
+    if (!isInside(real, await fs.realpath(root))) {
+      errors.push({ message: "Cannot import " + shown + ": it is outside the project root", ...where });
+      continue;
+    }
+    await loadTalkFile(target, root, chain.concat([absolute]), files, errors);
+  }
 }
 
 function finish(execution, status, errors) {
@@ -739,7 +811,7 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   } catch (err) {
     // an error inside the tool points into AGENTS.talk
     if (err instanceof ScriptError && !err.file) {
-      err.file = AGENTS_TALK;
+      err.file = definition.file || AGENTS_TALK;
     }
     throw err;
   } finally {

@@ -37,6 +37,7 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 - A script cannot write, append to or replace in any `.talk` file, or anything in `@/talk/`, or make them. Thus an agent cannot change its own tools.
 - Scripts can read them.
 - The check uses the path as written and the path after symlinks, in any letter case. For AGENTS.talk it also compares the file on disk (device and inode), so a hard link to it is refused too.
+- `import` loads only `.talk` files from inside the project, checked before and after symlinks. Scripts cannot import. `.js` imports are not allowed: they would run with the user's full rights.
 - Limit: a hard link with another name to another `.talk` file is not caught. Only the user or a `run` program can make one.
 - Limit: a program that `run` starts can still change these files. Only an OS sandbox closes this.
 

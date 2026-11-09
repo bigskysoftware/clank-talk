@@ -308,6 +308,13 @@ tool run_test with file
 end
 ```
 
+Got a set of tools you like? Put them in their own `.talk` file, and import it:
+
+```talk
+# AGENTS.talk
+import ./talk/git.talk
+```
+
 The comment above a tool is its help. Your agent calls tools by name:
 
 ```talk

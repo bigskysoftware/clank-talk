@@ -49,9 +49,12 @@ Approved:
 
 ## Import
 
-- Approved: `import <path>` loads tools and more commands. Local paths only, for now.
+- Approved: `import <path>` loads tools from another `.talk` file. Local paths inside the project only, for now.
+- Approved: `import` works in AGENTS.talk and in the files it imports. Scripts cannot import.
+- Approved: `./` and `../` start from the importing file. `@/` starts from the project root.
+- Approved: `allow env` is only allowed in AGENTS.talk, so the list of environment variables stays in one file.
+- An import loop is an error. A file imported two times loads once. Errors in an imported file name that file. Tools from all files can call each other.
 - Approved: `.talk` files only. `.js` plugins would run with the user's full rights, an injection risk.
-- Open: only in `AGENTS.talk`?
 - Approved: the `@/talk/` folder is protected from script writes.
 - Open: `.js` plugins in `@/talk/`.
 
