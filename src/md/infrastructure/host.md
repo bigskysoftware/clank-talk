@@ -20,7 +20,7 @@ Approved:
 - One `seen` Map for the life of the server, so the stale-write check works across calls.
 - The tool description teaches the language: a short syntax summary, then the tools from AGENTS.talk with their parameters. It is read at `tools/list`, so a change to AGENTS.talk shows when the client lists tools again.
 - Logs go to stderr. stdout is only for protocol messages.
-- Proposed: progress. When a `tools/call` has `_meta.progressToken`, the server sends `notifications/progress` from `onStep`, at most every 200 ms: `progress` is the step count, `total` is the step budget (10,000), and `message` is the line and command type. The runtime cannot know how many steps a script needs, so the bar shows steps used out of the budget. Not tested yet: if Claude Code shows it.
+- Proposed: progress. When a `tools/call` has `_meta.progressToken`, a timer sends `notifications/progress` every 500 ms while the script runs, also while a tool runs. There is no `total`, because the step budget says nothing about how long a script takes. `progress` counts the notifications, because each one must have a larger value. `message` is the current line, command, step and time: `line 3: run (step 3, 0.4s)`. In a tool, the line is in AGENTS.talk. Claude Code showed a percentage with the first version, which used `total`. Not tested yet: how it shows progress with no `total`.
 - `--log <file>` appends a readable log of each run: a header with the time, status and steps, the script as written, then the same text the agent gets. The host writes it, so the sandbox does not apply. Humans watch it with `tail -f`. This is the start of the audit feature.
 
 ## Dogfood

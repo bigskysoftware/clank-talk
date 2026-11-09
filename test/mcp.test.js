@@ -112,15 +112,18 @@ test('no log unless the host asks for one', async () => {
   await assert.rejects(fs.stat(path.join(root, 'logs')));
 });
 
-test('progress notifications when the client asks for them', async () => {
+test('progress notifications go out on a timer, also while a tool runs', async () => {
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), "allow env PATH\ntool slow\n  run 'node' with '-e', 'setTimeout(() => {}, 300)'\nend");
   const sent = [];
   session.send = (message) => sent.push(message);
-  await handleMessage({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'clank_talk', arguments: { script: 'print 1\nprint 2' }, _meta: { progressToken: 'abc' } } }, session);
-  assert.deepEqual(sent[0], {
-    jsonrpc: '2.0',
-    method: 'notifications/progress',
-    params: { progressToken: 'abc', progress: 1, total: 10000, message: 'line 1: print' },
-  });
+  session.progressEveryMs = 20;
+  await handleMessage({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'clank_talk', arguments: { script: 'print 1\nslow' }, _meta: { progressToken: 'abc' } } }, session);
+  assert.ok(sent.length >= 2, 'sent ' + sent.length);
+  assert.equal(sent[0].method, 'notifications/progress');
+  assert.equal(sent[0].params.progressToken, 'abc');
+  assert.equal(sent[0].params.total, undefined);
+  assert.equal(sent[1].params.progress, sent[0].params.progress + 1);
+  assert.match(sent[sent.length - 1].params.message, /^line 3: run \(step 3, \d+\.\ds\)$/);
 });
 
 test('no progress without a token', async () => {

@@ -14,11 +14,11 @@ import { run, listTools, VERSION } from "./clank-talk.js";
 
 const TOOL_NAME = "clank_talk";
 
-// the step budget for each call, also the "total" of the progress bar
+// the step budget for each call
 const MAX_STEPS = 10_000;
 
-// send progress at most this often, so a busy loop does not flood the client
-const PROGRESS_EVERY_MS = 200;
+// send progress this often while a script runs
+const PROGRESS_EVERY_MS = 500;
 
 const SYNTAX = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
 
@@ -158,25 +158,38 @@ export async function handleMessage(message, session) {
     if (typeof script !== "string") {
       return replyError(id, -32602, "The argument 'script' must be text");
     }
-    // the client asks for progress with a token; then each step can send a notification
+    // the client asks for progress with a token
+    // a timer sends where the script is, also while a slow tool runs
+    // no total: the step budget says nothing about how long a script takes
     let onStep = null;
+    let timer = null;
     const token = params._meta && params._meta.progressToken;
     if (token !== undefined && session.send) {
-      let lastSent = 0;
+      const started = Date.now();
+      let current = null;
+      let count = 0;
       onStep = (step) => {
-        const now = Date.now();
-        if (now - lastSent < PROGRESS_EVERY_MS) {
+        current = step;
+      };
+      timer = setInterval(() => {
+        if (current === null) {
           return;
         }
-        lastSent = now;
-        session.send({
-          jsonrpc: "2.0",
-          method: "notifications/progress",
-          params: { progressToken: token, progress: step.steps, total: MAX_STEPS, message: "line " + step.line + ": " + step.type },
-        });
-      };
+        // progress must grow with each notification, so it counts them
+        count++;
+        const seconds = ((Date.now() - started) / 1000).toFixed(1);
+        const message = "line " + current.line + ": " + current.type + " (step " + current.steps + ", " + seconds + "s)";
+        session.send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: count, message } });
+      }, session.progressEveryMs || PROGRESS_EVERY_MS);
     }
-    const result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, maxSteps: MAX_STEPS, onStep });
+    let result;
+    try {
+      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, maxSteps: MAX_STEPS, onStep });
+    } finally {
+      if (timer !== null) {
+        clearInterval(timer);
+      }
+    }
     if (session.log) {
       await writeLog(session.log, script, result);
     }
