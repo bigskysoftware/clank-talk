@@ -22,7 +22,7 @@ const DESCRIBE_LENGTH = 80;
 const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
-const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git", "fetch"];
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -190,6 +190,8 @@ async function execute(source, options, execution) {
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
     fetchHosts: options.fetchHosts || new Set(),
+    // background processes by name; a host keeps the Map for a session, and stops them at the end
+    processes: options.processes || new Map(),
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -619,6 +621,14 @@ async function runCommand(command, state, tools, maxSteps) {
     await runFetch(command, state);
     return null;
   }
+  if (command.type === "start") {
+    state.result = await startProcess(command, state);
+    return null;
+  }
+  if (command.type === "stopProcess") {
+    state.result = await stopProcess(command, state);
+    return null;
+  }
   if (command.type === "ask") {
     state.result = await askHuman(command, state);
     return null;
@@ -873,6 +883,16 @@ if (type === "read") {
   if (type === "undoList") {
     return undoList(state);
   }
+  if (type === "process") {
+    const record = state.processes.get(toText(await evaluate(node.name, state)));
+    if (record === undefined) {
+      return null;
+    }
+    return new ProcessInfo(record);
+  }
+  if (type === "processes") {
+    return processList(state);
+  }
   if (type === "property") {
     const object = await evaluate(node.object, state);
     if (object instanceof FileRef) {
@@ -1008,38 +1028,13 @@ async function durationMs(node, state) {
 // start a program with no shell, and wait for it
 // gives { code, output }: the exit code, and stdout and stderr together, in the order they came
 async function runProgram(command, state) {
-  const value = await evaluate(command.program, state);
-  let program;
-  let args = [];
-  if (command.args === null) {
-    // run 'mvn test': split on spaces
-    const parts = toText(value).split(/\s+/).filter((part) => part !== "");
-    program = parts[0];
-    args = parts.slice(1);
-  } else {
-    // run 'mvn' with 'test', name: each argument as it is
-    program = toText(value);
-    for (const arg of command.args) {
-      args.push(toText(await asText(await evaluate(arg, state), state, arg)));
-    }
-  }
-  if (!program) {
-    throw new ScriptError("Nothing to run", command);
-  }
-
+  const { program, args } = await programAndArgs(command, state);
   const step = Object.create(null);
   step.program = program;
   step.args = args;
   await runHooks("before", ["run"], step, state, command);
 
-  // only the environment variables that AGENTS.talk allows
-  const env = {};
-  for (const name of state.allowedEnv) {
-    if (process.env[name] !== undefined) {
-      env[name] = process.env[name];
-    }
-  }
-
+  const env = allowedEnvFor(state);
   let limit = state.timeLimit;
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
@@ -1051,6 +1046,39 @@ async function runProgram(command, state) {
   state.result = result;
   await runHooks("after", ["run"], step, state, command);
   return result;
+}
+// the program and arguments of run or start
+//   run 'mvn test': one text, split on spaces
+//   run 'mvn' with 'test', name: each argument as it is
+async function programAndArgs(command, state) {
+  const value = await evaluate(command.program, state);
+  let program;
+  let args = [];
+  if (command.args === null) {
+    const parts = toText(value).split(/\s+/).filter((part) => part !== "");
+    program = parts[0];
+    args = parts.slice(1);
+  } else {
+    program = toText(value);
+    for (const arg of command.args) {
+      args.push(toText(await asText(await evaluate(arg, state), state, arg)));
+    }
+  }
+  if (!program) {
+    throw new ScriptError("Nothing to run", command);
+  }
+  return { program, args };
+}
+
+// only the environment variables that AGENTS.talk allows
+function allowedEnvFor(state) {
+  const env = {};
+  for (const name of state.allowedEnv) {
+    if (process.env[name] !== undefined) {
+      env[name] = process.env[name];
+    }
+  }
+  return env;
 }
 
 // git <operation>: a hardened git; see src/md/features/git.md and src/js/git.js
@@ -1270,6 +1298,155 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
       }
     });
   });
+}
+
+// ----- background processes -----
+// see src/md/features/background.md
+
+const MAX_PROCESSES = 5;
+const PROCESS_OUTPUT_BYTES = 64 * 1024;
+
+// one item of "the processes", or the value of "process <name>": a snapshot, not the live process
+class ProcessInfo {
+  constructor(record) {
+    this.name = record.name;
+    this.status = record.status;
+    this.code = record.code;
+    this.output = record.output;
+  }
+}
+
+function processLine(info) {
+  if (info.status === "exited") {
+    return info.name + ": exited (code " + info.code + ")";
+  }
+  return info.name + ": " + info.status;
+}
+
+// start <program> as <name>, only in a tool
+async function startProcess(command, state) {
+  const { program, args } = await programAndArgs(command, state);
+  const name = toText(await evaluate(command.name, state));
+  if (!/^[A-Za-z0-9_.-]+$/.test(name)) {
+    throw new ScriptError("A process name needs letters, digits, -, _ or ., found " + describe(name), command.name);
+  }
+  const existing = state.processes.get(name);
+  if (existing !== undefined && existing.status === "running") {
+    throw new ScriptError("Process '" + name + "' is already running. Stop it first", command);
+  }
+  let running = 0;
+  for (const record of state.processes.values()) {
+    if (record.status === "running") {
+      running++;
+    }
+  }
+  if (running >= MAX_PROCESSES) {
+    throw new ScriptError("At most " + MAX_PROCESSES + " processes can run at a time. Stop one first", command);
+  }
+
+  const step = Object.create(null);
+  step.program = program;
+  step.args = args;
+  step.name = name;
+  await runHooks("before", ["start"], step, state, command);
+
+  // its own process group (not on Windows), so stop can end its children too
+  const child = spawn(program, args, { cwd: state.cwd, env: allowedEnvFor(state), shell: false, detached: process.platform !== "win32" });
+  const record = { name, child, status: "running", code: null, output: "" };
+  const add = (chunk) => {
+    record.output += chunk;
+    if (record.output.length > PROCESS_OUTPUT_BYTES) {
+      record.output = record.output.slice(record.output.length - PROCESS_OUTPUT_BYTES);
+    }
+  };
+  child.stdout.on("data", add);
+  child.stderr.on("data", add);
+  child.on("error", (err) => {
+    add("Cannot start '" + program + "': " + (err.code === "ENOENT" ? "program not found" : err.message) + "\n");
+    record.status = "exited";
+    record.code = -1;
+  });
+  child.on("close", (code) => {
+    if (record.status === "running") {
+      record.status = "exited";
+      record.code = code === null ? -1 : code;
+    }
+  });
+
+  // newest last, so the list can show newest first
+  state.processes.delete(name);
+  state.processes.set(name, record);
+  return new ProcessInfo(record);
+}
+
+// stop process <name>: any script can stop a process that ClankTalk started
+async function stopProcess(command, state) {
+  const name = toText(await evaluate(command.name, state));
+  const record = state.processes.get(name);
+  if (record === undefined) {
+    throw new ScriptError("No process named " + describe(name), command);
+  }
+  if (record.status === "running") {
+    const step = Object.create(null);
+    step.name = name;
+    await runHooks("before", ["stop"], step, state, command);
+    record.status = "stopped";
+    await endProcess(record);
+  }
+  return new ProcessInfo(record);
+}
+
+// end the process group, and wait up to 2 seconds before a hard kill
+async function endProcess(record) {
+  const closed = new Promise((resolve) => {
+    if (record.child.exitCode !== null || record.child.signalCode !== null) {
+      resolve();
+    } else {
+      record.child.once("close", resolve);
+    }
+  });
+  signalProcess(record, "SIGTERM");
+  let timer = null;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => resolve("late"), 2000);
+  });
+  if ((await Promise.race([closed, late])) === "late") {
+    signalProcess(record, "SIGKILL");
+  }
+  clearTimeout(timer);
+}
+
+function signalProcess(record, signal) {
+  try {
+    if (process.platform !== "win32" && record.child.pid !== undefined) {
+      process.kill(-record.child.pid, signal);
+    } else {
+      record.child.kill(signal);
+    }
+  } catch (err) {
+    // the process is already gone
+  }
+}
+
+/**
+ * Stop every running process, at once; a host calls this when its session ends.
+ * @param {Map} processes  the same Map the host passes as options.processes
+ */
+export function stopAllProcesses(processes) {
+  for (const record of processes.values()) {
+    if (record.status === "running") {
+      record.status = "stopped";
+      signalProcess(record, "SIGTERM");
+    }
+  }
+}
+
+function processList(state) {
+  const list = [];
+  for (const record of state.processes.values()) {
+    list.unshift(new ProcessInfo(record));
+  }
+  return list;
 }
 
 // ----- fetch -----
@@ -2447,6 +2624,13 @@ function toText(value) {
   // a list of lines is its text, one line each, with no numbers
   if (isListOfLines(value)) {
     return value.map((line) => line.text).join("\n");
+  }
+  // a process: "site: running"; a list of them, one line each
+  if (value instanceof ProcessInfo) {
+    return processLine(value);
+  }
+  if (Array.isArray(value) && value.length > 0 && value.every((item) => item instanceof ProcessInfo)) {
+    return value.map(processLine).join("\n");
   }
   // the undo list: one line each, such as "1. 10:42  2 files: src/a.js, new.txt"
   if (value instanceof UndoStep) {

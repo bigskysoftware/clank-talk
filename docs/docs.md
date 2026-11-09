@@ -388,6 +388,26 @@ tool run_test with file
 end
 ```
 
+A tool can also start something that keeps running, like a dev server:
+
+```talk
+# AGENTS.talk
+tool site_server
+  start 'npm run serve-site' as 'site'
+end
+```
+
+Your agent can then look at it, and stop it:
+
+```talk
+site_server
+print the output of process 'site'
+stop process 'site'
+print the processes
+```
+
+When the session ends, ClankTalk stops them all.
+
 Got a set of tools you like? Put them in their own `.talk` file, and import it:
 
 ```talk
@@ -436,7 +456,7 @@ after run
 end
 ```
 
-A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
 
 Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
 A hook can ask you before a step happens. Only you answer, never the agent:

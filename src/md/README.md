@@ -40,6 +40,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/git.md](features/git.md): a hardened, built-in git
 - [features/ask.md](features/ask.md): ask the human, for approvals
 - [features/fetch.md](features/fetch.md): HTTP, with allowed hosts
+- [features/background.md](features/background.md): background processes, and wait
 - [infrastructure/tooling.md](infrastructure/tooling.md): language, tests, layout
 - [infrastructure/parser.md](infrastructure/parser.md): parser output, errors, tree shape
 - [infrastructure/security.md](infrastructure/security.md): all security decisions, deferred items

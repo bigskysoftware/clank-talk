@@ -67,9 +67,9 @@ export const HELP = [
   },
   {
     name: "stop", kind: "command",
-    syntax: "stop",
-    description: "In 'on error': end the script or tool with the error.",
-    examples: ["on error\n  print 'giving up'\n  stop\nend"],
+    syntax: "stop | stop process <name>",
+    description: "In 'on error': end the script or tool with the error. 'stop process <name>' stops a background process, from any script.",
+    examples: ["on error\n  print 'giving up'\n  stop\nend", "stop process 'site'"],
   },
   {
     name: "read", kind: "command",
@@ -160,6 +160,18 @@ export const HELP = [
     syntax: "reject <message>",
     description: "Only in a 'before' hook. The step does not happen, and the script gets an error with the message. 'on error' can catch it.",
     examples: ["before write\n  reject 'This project is read only'\nend"],
+  },
+  {
+    name: "start", kind: "command", where: "AGENTS.talk",
+    syntax: "start <program> [with <arg>, ...] as <name>",
+    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends.",
+    examples: ["tool site_server\n  start 'npm run serve-site' as 'site'\nend"],
+  },
+  {
+    name: "process", kind: "expression",
+    syntax: "process <name> | the processes",
+    description: "A background process that a tool started: name, status (running, exited or stopped), code, and output (the last 64 KB). Use of: the output of process 'site'. 'the processes' lists them, newest first.",
+    examples: ["print the output of process 'site'", "if the status of process 'site' is 'running'\n  stop process 'site'\nend", "print the processes"],
   },
   {
     name: "fetch", kind: "command",

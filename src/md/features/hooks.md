@@ -7,12 +7,12 @@ Users write hooks in AGENTS.talk (or a file it imports), for policy and security
 Approved:
 
 - `before <step> ... end` and `after <step> ... end`.
-- Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, `fetch`, a tool name, and `change` for any file change.
+- Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, a tool name, and `change` for any file change.
 - In a hook, a local variable with the step's name holds the step: `the write's path`, `the change's kind`.
 - `reject <message>` in a `before` hook stops the step. The script gets an error with the message. `on error` can catch it.
 - `after` hooks see `the result`.
 
-- Step fields. File changes: `kind`, `path`, plus `text` (write, append), `old` and `new` (replace in a file), `from`, `to`, `text` (replace lines, remove), `line`, `where`, `text` (put). `read`: `path`, and `text` in an `after` hook. `run`: `program`, `args`. `git`: `operation` (such as `log`), and `args`, the full git argument list without the guards; `files` and `message` for commit, `branch` for switch and merge. `fetch`: `url`, `method`, and `status` in an `after` hook. A tool: `args`, `named`.
+- Step fields. File changes: `kind`, `path`, plus `text` (write, append), `old` and `new` (replace in a file), `from`, `to`, `text` (replace lines, remove), `line`, `where`, `text` (put). `read`: `path`, and `text` in an `after` hook. `run`: `program`, `args`. `git`: `operation` (such as `log`), and `args`, the full git argument list without the guards; `files` and `message` for commit, `branch` for switch and merge. `fetch`: `url`, `method`, and `status` in an `after` hook. `start`: `program`, `args`, `name`. `stop`: `name`. A tool: `args`, `named`.
 - Hooks run in the order they are defined, across all files.
 - Hooks run for commands inside tools. Commands inside a hook do not run hooks, so a hook cannot loop on itself.
 - `reject` is only allowed in a `before` hook.

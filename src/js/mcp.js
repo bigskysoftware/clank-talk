@@ -11,7 +11,7 @@ import readline from "node:readline";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import nodePath from "node:path";
-import { run, listTools, VERSION } from "./clank-talk.js";
+import { run, listTools, stopAllProcesses, VERSION } from "./clank-talk.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -57,6 +57,7 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   undo   undo 3   undo changes to <file>   print the undo list   (file changes of earlier scripts in this session)
   ask 'question' [with 'yes' or 'no'] [within 5 minutes]   the human answers, not you; null means no answer
   fetch 'https://...' [as json | as response] [with method: 'POST', headers: {...}, body: x]   a new host asks the human first
+  process 'name'   (the output of process 'site', the status of process 'site')   the processes   stop process 'name'   (tools start them)
 
 Git (hardened; the result is git's output as text):
   git status    git diff [<files>]    git log [<count>]    git show <commit>    git branches    git branch
@@ -248,7 +249,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, fetchHosts: session.fetchHosts, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, fetchHosts: session.fetchHosts, processes: session.processes, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -356,7 +357,21 @@ export function main(args) {
   }
 
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), log };
+  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), log };
+
+  // when the client goes away, stop the background processes, so nothing is left running
+  const stopAll = () => stopAllProcesses(session.processes);
+  process.on("exit", stopAll);
+  process.stdin.on("end", () => {
+    stopAll();
+    process.exit(0);
+  });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(signal, () => {
+      stopAll();
+      process.exit(0);
+    });
+  }
 
   // notifications, such as progress, go out on stdout like responses
   session.send = (message) => {

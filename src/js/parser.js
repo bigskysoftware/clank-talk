@@ -409,6 +409,11 @@ export function parse(source, options = {}) {
     if (isWord("the")) {
       i++;
       const next = current();
+      // the processes: the background processes, newest first
+      if (next !== undefined && next.type === "word" && next.value === "processes") {
+        i++;
+        return node("processes", next, {});
+      }
       // the undo list: the scripts that undo can take back
       if (next !== undefined && next.type === "word" && next.value === "undo" && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "list") {
         i += 2;
@@ -420,6 +425,19 @@ export function parse(source, options = {}) {
       }
     }
 
+    // process <name>: a background process, by name
+    if (isWord("process")) {
+      const after = tokens[i + 1];
+      if (after !== undefined && after.line === current().line && (after.type === "string" || after.type === "template" || after.type === "word")) {
+        const processToken = current();
+        i++;
+        const name = parseAccess();
+        if (name === null) {
+          return null;
+        }
+        return node("process", processToken, { name });
+      }
+    }
     // lines <from> to <to> of <file or text>, by line number
     // "lines" alone is a plain word, so this is a range only if "to" follows the first value
     if (isWord("lines")) {
@@ -941,8 +959,17 @@ export function parse(source, options = {}) {
     return { type: "reject", message, line: token.line, column: token.column };
   }
 
-  // stop, only in "on error" (and not in a loop there): end with the error
+  // stop, only in "on error" (and not in a loop there): end with the error; or stop process <name>
   function parseStop(token) {
+    // stop process <name>: anywhere
+    if (isWord("process")) {
+      i++;
+      const name = parseExpression();
+      if (name === null) {
+        return null;
+      }
+      return { type: "stopProcess", name, line: token.line, column: token.column };
+    }
     if (!inHandler || loopDepth !== 0) {
       errors.push({ message: "'stop' is only allowed in 'on error'", line: token.line, column: token.column });
       return null;
@@ -1146,6 +1173,7 @@ export function parse(source, options = {}) {
     undo: parseUndo,
     ask: parseAsk,
     fetch: parseFetch,
+    start: parseStart,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,
@@ -1421,6 +1449,43 @@ export function parse(source, options = {}) {
       }
     }
     return { type: "run", program, args, within, line: token.line, column: token.column };
+  }
+  // start <program> [with <arg>, <arg>] as <name>, only inside a tool: a background process
+  function parseStart(token) {
+    if (!inTool) {
+      errors.push({ message: "'start' is only allowed in a tool", line: token.line, column: token.column });
+      return null;
+    }
+    const program = parseBefore(["with", "as"], parseExpression);
+    if (program === null) {
+      return null;
+    }
+    let args = null;
+    if (isWord("with")) {
+      i++;
+      args = [];
+      while (true) {
+        const arg = parseBefore(["as"], parseExpression);
+        if (arg === null) {
+          return null;
+        }
+        args.push(arg);
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+    }
+    if (!isWord("as")) {
+      error("Expected 'as' and a name, such as: start 'npm run dev' as 'site'");
+      return null;
+    }
+    i++;
+    const name = parseExpression();
+    if (name === null) {
+      return null;
+    }
+    return { type: "start", program, args, name, line: token.line, column: token.column };
   }
 
   // at the top of AGENTS.talk:
