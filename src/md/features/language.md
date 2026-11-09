@@ -99,6 +99,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: `${...}` works in both kinds of string. Any expression can go inside, with quotes too.
 - Approved: in a string with line breaks, the indent that all non-blank lines share is removed, so the string can be indented with the script.
 - Approved: `\${` gives a plain `${`. This follows the escape rule.
+- Approved: raw strings, `"""..."""`. No escapes, no `${}`, and no indent removal: the text is exactly what is between the quotes. Only a line break right after the opening quotes is dropped. A raw string ends at the first `"""`. Use raw strings for code edits.
 - Approved: indent details, as in Java text blocks. A line break right after the opening quote is dropped. If the closing quote is on its own line, the text ends with a line break. Blank lines become empty.
 - Approved: string escapes `\n`, `\t`, and `\x` for any other `x`.
 - Approved: numbers have no commas. `_` groups digits: `1_000`.

@@ -27,6 +27,7 @@ Basics:
 
 Values: 'text', "text", 'Hi \${name}' (\\\${ for a plain \${), 12, 3.5, true, false, null, [1, 2], {a: 1}
   Strings can span lines. Common indent is removed.
+  """raw text""": no escapes, no \${}, and the indent is kept exactly. Use it for code edits.
   x's y and x.y are the same.  "the" is optional: the file's text
   it / the result: the value from the last command
   $name: a global that stays between calls

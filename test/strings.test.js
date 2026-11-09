@@ -86,3 +86,21 @@ test("a bad expression in ${} is an error", async () => {
 test("an unclosed ${ is an unterminated string", async () => {
   assert.deepEqual(await errors("print 'a ${x'"), ["Unterminated string", "Expected a value"]);
 });
+
+test('raw strings keep quotes, backslashes and ${} as they are', async () => {
+  const source = 'print """it\'s "x", a\\nb and ${y}"""';
+  assert.deepEqual(await output(source), ['it\'s "x", a\\nb and ${y}']);
+});
+
+test('raw strings keep their indent, and drop only the first line break', async () => {
+  const source = 'print """\n    a\n      b\n"""';
+  assert.deepEqual(await output(source), ['    a\n      b\n']);
+});
+
+test('a raw string can be on one line', async () => {
+  assert.deepEqual(await output('print """a"""'), ['a']);
+});
+
+test('an unterminated raw string is an error', async () => {
+  assert.deepEqual(await errors('print """oops'), ['Unterminated raw string', 'Expected a value']);
+});

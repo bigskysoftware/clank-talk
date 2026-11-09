@@ -216,6 +216,38 @@ export function tokenize(source) {
       continue;
     }
 
+    // raw string: """...""" has no escapes, no ${} and no indent removal
+    // only a line break right after the opening quotes is dropped
+    if (source.startsWith('"""', i)) {
+      advance();
+      advance();
+      advance();
+      let value = "";
+      let closed = false;
+      while (i < source.length) {
+        if (source.startsWith('"""', i)) {
+          advance();
+          advance();
+          advance();
+          closed = true;
+          break;
+        }
+        value += source[i];
+        advance();
+      }
+      if (!closed) {
+        push("error", "Unterminated raw string", startLine, startColumn);
+        continue;
+      }
+      if (value.startsWith("\r\n")) {
+        value = value.slice(2);
+      } else if (value.startsWith("\n")) {
+        value = value.slice(1);
+      }
+      push("string", value, startLine, startColumn);
+      continue;
+    }
+
     // string: '...' or "..."
     // a string can span lines, and ${...} in it is a template expression
     if (c === "'" || c === '"') {
