@@ -31,6 +31,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/agents-talk.md](features/agents-talk.md): user-defined tools in AGENTS.talk
 - [features/audit.md](features/audit.md): per-step action log
 - [features/taint.md](features/taint.md): value provenance and sink checks
+- [features/secrets.md](features/secrets.md): use secrets without seeing them
 - [features/undo.md](features/undo.md): per-step undo stack
 - [features/hooks.md](features/hooks.md): user policy and security hooks
 - [infrastructure/host.md](infrastructure/host.md): host API, pi extension, Claude Code tool limits
