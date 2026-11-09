@@ -184,6 +184,8 @@ async function execute(source, options, execution) {
     allowedEnv: agents.allowedEnv,
     // hidden paths that scripts can change, from "allow changes to" in AGENTS.talk, relative to the root
     allowedChanges: agents.allowedChanges,
+    // true if AGENTS.talk has "allow git push": then push does not ask the human
+    allowGitPush: agents.allowGitPush,
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -272,7 +274,7 @@ function toolList(state, hostTools) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], hooks: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, hooks: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -317,6 +319,14 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedEnv.push(...definition.names);
         } else {
           result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "allowGitPush") {
+        if (file.name === AGENTS_TALK) {
+          result.allowGitPush = true;
+        } else {
+          result.errors.push({ message: "'allow git push' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -1048,6 +1058,21 @@ async function runGit(command, state) {
     );
   }
 
+  // push asks the human first, unless AGENTS.talk allows it
+  if (command.operation === "push" && !state.allowGitPush) {
+    const current = await spawnProgram("git", [...guardArgs(), "branch", "--show-current"], state.root, env, state.timeLimit, state, command);
+    const branch = current.output.trim();
+    const answer = await askState(state, "Push branch '" + branch + "' to origin?", ["yes", "no"], null);
+    if (answer !== "yes") {
+      throw new ScriptError(
+        "The human did not approve the push" + (state.ask === null ? ": there is no way to ask them here" : "") + ". Nothing was pushed.\n" +
+        "To push without asking, a human can add this line to AGENTS.talk:\n" +
+        "  allow git push",
+        command,
+      );
+    }
+  }
+
   // commit adds the named files first, so new files can be committed too;
   // the commit then has only those files, even if other files are staged
   if (command.operation === "commit") {
@@ -1057,7 +1082,8 @@ async function runGit(command, state) {
     }
   }
 
-  const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
+  const forPush = command.operation === "push";
+  const result = await spawnProgram("git", [...guardArgs(forPush), ...args], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
   if (result.code !== 0) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
@@ -1089,6 +1115,10 @@ async function gitArgs(command, state, step) {
       return ["switch", "--create", name];
     }
     return ["switch", name];
+  }
+  // the current branch, to a branch with the same name on origin; never force
+  if (op === "push") {
+    return ["push", "--no-verify", "origin", "HEAD"];
   }
   // fast-forward only: a merge never makes a commit, so it needs no message and cannot conflict
   if (op === "merge") {
@@ -1227,14 +1257,18 @@ async function askHuman(command, state) {
   for (const choice of command.choices) {
     choices.push(toText(await asText(await evaluate(choice, state), state, choice)));
   }
-  if (state.ask === null) {
-    return null;
-  }
   let limit = state.timeLimit;
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
   }
+  return await askState(state, question, choices, limit);
+}
 
+// ask through the host, with a time limit in ms or null; used by ask and git push
+async function askState(state, question, choices, limit) {
+  if (state.ask === null) {
+    return null;
+  }
   let timer = null;
   let answer = null;
   try {

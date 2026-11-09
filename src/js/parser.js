@@ -10,7 +10,7 @@
 
 import { tokenize } from "./tokenizer.js";
 // the words after "git"; see src/md/features/git.md
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "push"];
 
 /**
  * @typedef {Object} ParseError
@@ -1374,12 +1374,22 @@ export function parse(source, options = {}) {
   // at the top of AGENTS.talk:
   //   allow env NAME, NAME
   //   allow changes to @/.github/, @/.gitignore
+  //   allow git push
   function parseAllow(token) {
     if (isWord("changes")) {
       return parseAllowChanges(token);
     }
+    if (isWord("git")) {
+      i++;
+      if (!isWord("push")) {
+        error("Expected 'push'");
+        return null;
+      }
+      i++;
+      return { type: "allowGitPush", line: token.line, column: token.column };
+    }
     if (!isWord("env")) {
-      error("Expected 'env' or 'changes to'");
+      error("Expected 'env', 'changes to' or 'git push'");
       return null;
     }
     i++;

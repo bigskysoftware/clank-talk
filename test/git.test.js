@@ -42,7 +42,10 @@ test("guardArgs turns off hooks for every event", () => {
 });
 
 test("gitEnv keeps only PATH and HOME", () => {
-  assert.deepEqual(gitEnv({ PATH: "/bin", HOME: "/h", GIT_EXTERNAL_DIFF: "evil", SECRET: "x" }), { GIT_TERMINAL_PROMPT: "0", PATH: "/bin", HOME: "/h" });
+  assert.deepEqual(gitEnv({ PATH: "/bin", HOME: "/h", GIT_EXTERNAL_DIFF: "evil", SECRET: "x", SSH_AUTH_SOCK: "/s" }), { GIT_TERMINAL_PROMPT: "0", PATH: "/bin", HOME: "/h" });
+  assert.equal(gitEnv({ SSH_AUTH_SOCK: "/s" }, true).SSH_AUTH_SOCK, "/s");
+  assert.ok(guardArgs().includes("credential.helper="));
+  assert.ok(!guardArgs(true).includes("credential.helper="));
 });
 
 test("branch and commit names", () => {

@@ -341,7 +341,7 @@ git switch to 'main'
 git merge 'fix-parser'
 ```
 
-`git commit` adds and commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards, so it never makes a merge commit or a conflict. There's no push yet: that's still your job.
+`git commit` adds and commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards, so it never makes a merge commit or a conflict. `git push` sends the current branch to origin, but asks you first, every time. If you trust your agent with that, add `allow git push` to `AGENTS.talk`.
 
 Git can run programs from its config: hooks, pagers, filters, and more. So ClankTalk turns all of those off, and starts git with a clean environment. If the repo's own config still asks git to run a program, git won't run at all, and your agent tells you what to remove.
 

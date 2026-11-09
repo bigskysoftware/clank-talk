@@ -45,6 +45,10 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved: git is a set of built-in commands that start with `git`, not tools.
 - Approved: `git status`, `git diff <path>`, `git switch to <branch>`, `git commit <files> with <message>`.
 - Approved: no push in the first version. Push comes later, with the approval design.
+- Approved (built): `git push` runs `push --no-verify origin HEAD`: the current branch, to a branch with the same name on origin. Never force.
+- Approved (built): push asks the human first (`Push branch 'x' to origin?`, yes or no), through `ask`. With no `yes`, nothing is pushed, and the error names the `allow git push` line.
+- Approved (built): `allow git push` in AGENTS.talk lets push go without asking. Only AGENTS.talk can have it.
+- Approved (built): push keeps the user's credential helper (from their global config), and gets `SSH_AUTH_SOCK` for their ssh agent. Repo config with a `pushurl` that starts with `ext::` is refused too.
 - Approved (built): `git merge <branch>` is `merge --ff-only <branch>`. It never makes a commit, so it needs no message and cannot conflict. If a fast-forward is not possible, it is an error.
 - Approved (built): repo config with `merge.<driver>.driver` is refused too: a merge driver runs a program.
 - Approved, for the rest of the first version:
@@ -62,7 +66,6 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 
 ## Later
 
-- Push, with the approval design.
 - Clone and fetch. They run code from the remote (protocol helpers, `uploadpack.packObjectsHook` for local paths). They run code from the remote (protocol helpers, `uploadpack.packObjectsHook` for local paths).
 
 ## Limits

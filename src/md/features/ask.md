@@ -37,5 +37,5 @@ end
 - Approved (built): the runtime gets `options.ask`, an async function `({ question, choices, signal }) => text or null`. With no `options.ask`, the result is `null`.
 - Approved (built): the MCP host uses elicitation (`elicitation/create`) if the client declares `capabilities.elicitation` at `initialize`. The schema has one string field, `answer`, with an `enum` for choices. `accept` gives the answer. `decline`, `cancel` or no answer gives `null`.
 - Approved (built): an answer that is not one of the choices is `null`. A host that fails to ask gives `null`.
-- Claude Code supports elicitation (its MCP docs, "Respond to MCP elicitation requests"). Not tested by hand yet.
+- Claude Code supports elicitation (its MCP docs, "Respond to MCP elicitation requests"). Tested by hand on 2026-11-09: the dialog showed the question with the two choices, and the human's pick came back as the result.
 - Note: Claude Code has an `Elicitation` hook that can answer with no dialog. It is in `.claude/` settings, which scripts cannot change, because hidden files are refused.

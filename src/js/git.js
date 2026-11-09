@@ -81,7 +81,7 @@ function isDangerous(key, value) {
     return true;
   }
   // a remote URL with ext:: runs a program
-  if (section === "remote" && name === "url" && value.startsWith("ext::")) {
+  if (section === "remote" && (name === "url" || name === "pushurl") && value.startsWith("ext::")) {
     return true;
   }
   return false;
@@ -91,7 +91,7 @@ function isDangerous(key, value) {
  * The arguments that go before every git operation: each one turns off a way to run a program.
  * Operations add their own guards, such as --no-ext-diff and --no-verify.
  */
-export function guardArgs() {
+export function guardArgs(forPush = false) {
   const args = [
     "--no-pager",
     "-c", "core.hooksPath=/dev/null",
@@ -100,8 +100,11 @@ export function guardArgs() {
     "-c", "sequence.editor=false",
     "-c", "protocol.ext.allow=never",
     "-c", "gc.auto=0",
-    "-c", "credential.helper=",
   ];
+  // push uses the user's own credential helper, from their global config
+  if (!forPush) {
+    args.push("-c", "credential.helper=");
+  }
   for (const event of HOOK_EVENTS) {
     args.push("-c", "hook." + event + ".enabled=false");
   }
@@ -111,9 +114,14 @@ export function guardArgs() {
 /**
  * A clean environment for git: PATH and HOME only, so no GIT_* variable from outside
  * can change what git runs. GIT_TERMINAL_PROMPT=0 stops git from asking for a password.
+ * Push also gets SSH_AUTH_SOCK, for the user's ssh agent.
  */
-export function gitEnv(processEnv) {
+export function gitEnv(processEnv, forPush = false) {
   const env = { GIT_TERMINAL_PROMPT: "0" };
+  // push over ssh needs the user's ssh agent
+  if (forPush && processEnv.SSH_AUTH_SOCK !== undefined) {
+    env.SSH_AUTH_SOCK = processEnv.SSH_AUTH_SOCK;
+  }
   if (processEnv.PATH !== undefined) {
     env.PATH = processEnv.PATH;
   }

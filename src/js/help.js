@@ -175,14 +175,14 @@ export const HELP = [
   },
   {
     name: "git", kind: "command",
-    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch>",
-    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only.",
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git push",
+    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, and asks the human first, unless AGENTS.talk has 'allow git push'.",
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
-    syntax: "allow env <NAME>, ... | allow changes to <path>, ...",
-    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files.",
+    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow git push",
+    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow git push' lets git push go without asking the human.",
     examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore"],
   },
 

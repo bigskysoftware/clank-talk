@@ -138,3 +138,40 @@ test("git merge is fast-forward only", async () => {
   assert.match((await errors("git merge 'ahead'"))[0], /^git merge failed: /);
   assert.deepEqual(await errors("git merge '-s'"), ["Not a safe branch name: '-s'. Use letters, digits, -, _, / and ."]);
 });
+
+test("git push asks the human, unless AGENTS.talk allows it", async () => {
+  const bare = await fs.mkdtemp(path.join(os.tmpdir(), "clank-origin-"));
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  git(["remote", "add", "origin", bare]);
+  const remoteLog = () => execFileSync("git", ["log", "--oneline", "-1", "main"], { cwd: bare, encoding: "utf8" });
+  try {
+    const questions = [];
+    const no = async (request) => {
+      questions.push(request.question);
+      return "no";
+    };
+    let result = await run("git push", { root, ask: no });
+    assert.match(result.errors[0].message, /^The human did not approve the push\. Nothing was pushed\.\nTo push without asking/);
+    assert.deepEqual(questions, ["Push branch 'main' to origin?"]);
+    assert.throws(() => remoteLog());
+
+    result = await run("git push", { root });
+    assert.match(result.errors[0].message, /^The human did not approve the push: there is no way to ask them here/);
+
+    result = await run("git push", { root, ask: async () => "yes" });
+    assert.deepEqual(result.errors, []);
+    assert.equal(remoteLog(), git(["log", "--oneline", "-1"]));
+
+    await fs.writeFile(path.join(root, "AGENTS.talk"), "allow git push");
+    await fs.writeFile(path.join(root, "f.txt"), "f\n");
+    await output("git commit ./f.txt with 'Add f'");
+    result = await run("git push", { root, ask: no });
+    assert.deepEqual(result.errors, []);
+    assert.equal(questions.length, 1);
+    assert.equal(remoteLog(), git(["log", "--oneline", "-1"]));
+  } finally {
+    await fs.rm(path.join(root, "AGENTS.talk"), { force: true });
+    git(["remote", "remove", "origin"]);
+    await fs.rm(bare, { recursive: true, force: true });
+  }
+});
