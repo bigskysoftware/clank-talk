@@ -29,11 +29,16 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved: before each call, read the repo config (`git config list --local --show-scope`, and the worktree config). If it sets any key from the list above, refuse, and name the key. Config from the user (global, system) is trusted: the agent cannot change it.
 - Approved: each call also overrides the dangerous keys, as a second guard:
   - `-c core.hooksPath=/dev/null`, and `-c hook.<event>.enabled=false` for every hook event
-  - `-c core.fsmonitor=false`, `--no-pager`, `-c core.editor=false`, `-c diff.external=`, `-c protocol.ext.allow=never`, `-c gc.auto=0`
+  - `-c core.fsmonitor=false`, `--no-pager`, `-c core.editor=false`, `-c sequence.editor=false`, `-c protocol.ext.allow=never`, `-c gc.auto=0`, `-c credential.helper=`
+  - not `-c diff.external=`: tested, git then tries to run a program with an empty name, and diff fails. `--no-ext-diff` is the guard.
   - `--no-ext-diff` and `--no-textconv` for diff, log and show; `--no-verify` for commit
 - Approved: the child gets a clean environment: `PATH` and `HOME` only, plus `GIT_TERMINAL_PROMPT=0`. No `GIT_*` from outside.
 - Approved: push keeps the user's global config, so their name, credentials and ssh settings work. Repo config must not set `core.sshCommand`, `credential.helper` or a remote URL with `ext::`.
 - Approved: hooks in AGENTS.talk can watch git with `before git` and `after git`. The step has the operation, such as `commit`, and its values. Default: no hook.
+
+## Code
+
+`src/js/git.js` holds the guards, with no language parts: `unsafeConfig`, `guardArgs`, `gitEnv`, and the name checks. `test/git.test.js` checks with real git that the guards stop a config hook.
 
 ## Syntax
 
