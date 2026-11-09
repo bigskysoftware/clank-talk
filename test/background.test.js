@@ -41,13 +41,9 @@ async function errors(source) {
   return result.errors.map((e) => e.message);
 }
 
-function pause(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 test("start a server in a tool, look at it, and stop it from a script", async () => {
   assert.deepEqual(await output("serve\nprint it"), ["site: running"]);
-  await pause(300);
+  await output("wait until the output of process 'site' contains 'ready' within 5 seconds");
   assert.deepEqual(await output("print the output of process 'site'\nprint the status of process 'site'"), ["ready\n", "running"]);
   assert.deepEqual(await errors("serve"), ["Process 'site' is already running. Stop it first"]);
   assert.deepEqual(await output("stop process 'site'\nprint it\nprint the processes"), ["site: stopped", "site: stopped"]);
@@ -55,7 +51,7 @@ test("start a server in a tool, look at it, and stop it from a script", async ()
 
 test("a program that ends has its exit code", async () => {
   await output("quick");
-  await pause(300);
+  await output("wait until the status of process 'quick' is 'exited' within 5 seconds");
   assert.deepEqual(await output("print process 'quick'\nprint the code of process 'quick'"), ["quick: exited (code 3)", "3"]);
   assert.deepEqual(await output("print the processes"), ["quick: exited (code 3)\nsite: stopped"]);
 });

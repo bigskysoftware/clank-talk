@@ -22,7 +22,11 @@ const SECRETS = [".ssh", ".aws", ".gnupg", ".config/gh", ".netrc", ".docker", ".
  * Which sandbox this OS has: "macos", "linux", or null with the reason.
  * @returns {Promise<{ kind: string|null, reason: string }>}
  */
-export async function sandboxKind(platform = process.platform, pathText = process.env.PATH || "") {
+export async function sandboxKind(platform = process.platform, pathText = process.env.PATH || "", env = process.env) {
+  // a sandbox cannot start inside another one
+  if (env.CLANK_TALK_SANDBOXED === "1") {
+    return { kind: null, reason: "this program already runs in a ClankTalk sandbox, and a sandbox cannot start inside another" };
+  }
   if (platform === "darwin") {
     if (await isFile("/usr/bin/sandbox-exec")) {
       return { kind: "macos", reason: "" };
@@ -161,6 +165,35 @@ function regexText(path) {
 }
 
 /**
+ * A fresh home folder for the program, in its temp folder: programs look for config there, and find none.
+ * The allowed parts of the real home (caches, "reads of", "writes to") are linked in.
+ * A blocked file in the real home is an error for many programs (git: ~/.gitconfig), but a missing one is fine.
+ * @returns {Promise<string>} the new home folder, for HOME
+ */
+export async function makeHome(plan) {
+  const fakeHome = nodePath.join(plan.tmp, "home");
+  await fs.mkdir(fakeHome, { recursive: true });
+  for (const path of [...plan.reads, ...plan.writes]) {
+    if (!path.startsWith(plan.home + "/")) {
+      continue;
+    }
+    try {
+      await fs.access(path);
+    } catch (err) {
+      continue;
+    }
+    const link = nodePath.join(fakeHome, nodePath.relative(plan.home, path));
+    await fs.mkdir(nodePath.dirname(link), { recursive: true });
+    try {
+      await fs.symlink(path, link);
+    } catch (err) {
+      // a link for a folder above this one is already there
+    }
+  }
+  return fakeHome;
+}
+
+/**
  * The macOS sandbox profile (SBPL). Later rules win over earlier ones.
  */
 export function macosProfile(plan) {
@@ -190,7 +223,7 @@ export function macosProfile(plan) {
 
   // the same rules as scripts: no .git, no .talk files, no @/talk, no hidden files in the project
   const root = regexText(plan.root);
-  lines.push("(deny file-write* (subpath \"" + plan.root + "/.git\") (subpath \"" + plan.root + "/talk\") (regex #\"\\.talk$\") (regex #\"^" + root + "/(.*/)?\\.[^/]*\"))");
+  lines.push("(deny file-write* (subpath \"" + plan.root + "/.git\") (subpath \"" + plan.root + "/talk\") (regex #\"^" + root + "/(.*/)?[^/]*\\.talk$\") (regex #\"^" + root + "/(.*/)?\\.[^/]*\"))");
   for (const path of plan.allowedChanges) {
     lines.push("(allow file-write* (subpath \"" + plan.root + "/" + path + "\"))");
   }
@@ -298,7 +331,16 @@ export async function selfTest(kind) {
   const tmp = await fs.mkdtemp(nodePath.join(os.tmpdir(), "clank-sbx-"));
   const outside = nodePath.join(os.tmpdir(), "clank-sbx-outside-" + process.pid);
   const server = (await import("node:net")).createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+  } catch (err) {
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(tmp, { recursive: true, force: true });
+    return { ok: false, problems: ["the self-test could not start: " + err.message] };
+  }
   try {
     const plan = await sandboxPlan({ root, tmp, programDirs: [nodePath.dirname(nodePath.dirname(process.execPath))] });
     const gitFile = nodePath.join(plan.root, ".git", "clank-talk-sandbox-probe");

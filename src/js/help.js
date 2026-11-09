@@ -133,9 +133,9 @@ export const HELP = [
   },
   {
     name: "run", kind: "command", where: "AGENTS.talk",
-    syntax: "run <program and args> | run <program> with <arg>, ... [within <duration>]",
-    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on.",
-    examples: ["tool test\n  run 'npm test' within 10 minutes\nend"],
+    syntax: "run <program and args> | run <program> with <arg>, ... [in a sandbox [with network, writes to <path>, reads of <path>]] [within <duration>]",
+    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on. 'in a sandbox' runs it in an OS sandbox: it can write only the project (not .git, .talk or hidden files), read only system folders, its own install folder and tool caches, and use no network. On an OS with no sandbox, it is an error, and nothing runs.",
+    examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend"],
   },
   {
     name: "import", kind: "command", where: "AGENTS.talk",
@@ -169,9 +169,9 @@ export const HELP = [
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",
-    syntax: "start <program> [with <arg>, ...] as <name>",
+    syntax: "start <program> [with <arg>, ...] as <name> [in a sandbox [with ...]]",
     description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends.",
-    examples: ["tool site_server\n  start 'npm run serve-site' as 'site'\nend"],
+    examples: ["tool site_server\n  start 'npm run serve-site' as 'site' in a sandbox\nend"],
   },
   {
     name: "process", kind: "expression",

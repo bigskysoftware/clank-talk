@@ -1452,7 +1452,7 @@ export function parse(source, options = {}) {
       errors.push({ message: "'run' is only allowed in a tool", line: token.line, column: token.column });
       return null;
     }
-    const program = parseExpression();
+    const program = parseBefore(["with", "in", "within"], parseExpression);
     if (program === null) {
       return null;
     }
@@ -1461,7 +1461,7 @@ export function parse(source, options = {}) {
       i++;
       args = [];
       while (true) {
-        const arg = parseExpression();
+        const arg = parseBefore(["in", "within"], parseExpression);
         if (arg === null) {
           return null;
         }
@@ -1472,6 +1472,13 @@ export function parse(source, options = {}) {
         i++;
       }
     }
+    let sandbox = null;
+    if (isWord("in")) {
+      sandbox = parseSandbox();
+      if (sandbox === null) {
+        return null;
+      }
+    }
     let within = null;
     if (isWord("within")) {
       i++;
@@ -1480,7 +1487,65 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "run", program, args, within, line: token.line, column: token.column };
+    return { type: "run", program, args, sandbox, within, line: token.line, column: token.column };
+  }
+
+  // in a sandbox [with network, writes to <path>, reads of <path>], after run or start
+  // see src/md/features/sandbox-run.md
+  function parseSandbox() {
+    i++;
+    if (!isWord("a")) {
+      error("Expected 'a sandbox'");
+      return null;
+    }
+    i++;
+    if (!isWord("sandbox")) {
+      error("Expected 'sandbox'");
+      return null;
+    }
+    i++;
+    const sandbox = { network: false, writes: [], reads: [] };
+    if (!isWord("with")) {
+      return sandbox;
+    }
+    i++;
+    while (true) {
+      if (isWord("network")) {
+        i++;
+        sandbox.network = true;
+      } else if (isWord("writes")) {
+        i++;
+        if (!isWord("to")) {
+          error("Expected 'to'");
+          return null;
+        }
+        i++;
+        const path = parseBefore(["within"], parseExpression);
+        if (path === null) {
+          return null;
+        }
+        sandbox.writes.push(path);
+      } else if (isWord("reads")) {
+        i++;
+        if (!isWord("of")) {
+          error("Expected 'of'");
+          return null;
+        }
+        i++;
+        const path = parseBefore(["within"], parseExpression);
+        if (path === null) {
+          return null;
+        }
+        sandbox.reads.push(path);
+      } else {
+        error("Expected network, writes to <path>, or reads of <path>");
+        return null;
+      }
+      if (!isOp(",")) {
+        return sandbox;
+      }
+      i++;
+    }
   }
   // start <program> [with <arg>, <arg>] as <name>, only inside a tool: a background process
   function parseStart(token) {
@@ -1488,7 +1553,7 @@ export function parse(source, options = {}) {
       errors.push({ message: "'start' is only allowed in a tool", line: token.line, column: token.column });
       return null;
     }
-    const program = parseBefore(["with", "as"], parseExpression);
+    const program = parseBefore(["with", "as", "in"], parseExpression);
     if (program === null) {
       return null;
     }
@@ -1497,7 +1562,7 @@ export function parse(source, options = {}) {
       i++;
       args = [];
       while (true) {
-        const arg = parseBefore(["as"], parseExpression);
+        const arg = parseBefore(["as", "in"], parseExpression);
         if (arg === null) {
           return null;
         }
@@ -1513,11 +1578,18 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    const name = parseExpression();
+    const name = parseBefore(["in"], parseExpression);
     if (name === null) {
       return null;
     }
-    return { type: "start", program, args, name, line: token.line, column: token.column };
+    let sandbox = null;
+    if (isWord("in")) {
+      sandbox = parseSandbox();
+      if (sandbox === null) {
+        return null;
+      }
+    }
+    return { type: "start", program, args, name, sandbox, line: token.line, column: token.column };
   }
 
   // at the top of AGENTS.talk:

@@ -6,11 +6,15 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { sandboxKind, installDirs, sandboxPlan, macosProfile, wrapCommand, selfTest } from "../src/js/sandbox.js";
 
+// the real sandbox tests cannot run inside a sandbox: a sandbox cannot start inside another
+const realMac = process.platform === "darwin" && process.env.CLANK_TALK_SANDBOXED !== "1";
+
 test("sandboxKind: macOS, Linux with bwrap, and nothing else", async () => {
-  assert.equal((await sandboxKind("win32")).kind, null);
-  assert.match((await sandboxKind("win32")).reason, /no sandbox for win32/);
-  assert.match((await sandboxKind("linux", "")).reason, /bubblewrap is not installed/);
-  if (process.platform === "darwin") {
+  assert.match((await sandboxKind("darwin", "", { CLANK_TALK_SANDBOXED: "1" })).reason, /already runs in a ClankTalk sandbox/);
+  assert.equal((await sandboxKind("win32", "", {})).kind, null);
+  assert.match((await sandboxKind("win32", "", {})).reason, /no sandbox for win32/);
+  assert.match((await sandboxKind("linux", "", {})).reason, /bubblewrap is not installed/);
+  if (realMac) {
     assert.equal((await sandboxKind("darwin")).kind, "macos");
   }
 });
@@ -36,11 +40,11 @@ test("the macOS profile: deny by default, the project, no secrets, network only 
   await assert.rejects(sandboxPlan({ root: '/p/a"b', tmp: "/t" }), /cannot hold a quote/);
 });
 
-test("on macOS, the sandbox really holds", { skip: process.platform !== "darwin" }, async () => {
+test("on macOS, the sandbox really holds", { skip: !realMac }, async () => {
   assert.deepEqual(await selfTest("macos"), { ok: true, problems: [] });
 });
 
-test("on macOS: a sandboxed program can write the project, but not .git, a hidden file, or outside", { skip: process.platform !== "darwin" }, async () => {
+test("on macOS: a sandboxed program can write the project, but not .git, a hidden file, or outside", { skip: !realMac }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-sbx-t-"));
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "clank-sbx-tt-"));
   await fs.mkdir(path.join(root, ".git"));

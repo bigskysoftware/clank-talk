@@ -428,9 +428,39 @@ run_test './test/app.test.js'
 run_test with file: './test/app.test.js'
 ```
 
+### Sandboxes
+
+Your agent can write code, and `npm test` runs code. So a tool that runs your tests can, in effect, run anything your agent writes. Put it in a sandbox:
+
+```talk
+# AGENTS.talk
+tool run_tests
+  run 'npm test' in a sandbox
+end
+
+tool install
+  run 'npm install' in a sandbox with network, writes to '~/.npm'
+end
+```
+
+In a sandbox, a program can write only your project (but not `.git`, `.talk` files or hidden files), read only system folders, its own install folder and tool caches, and has no network. Loosen it with `with network`, `writes to <path>` and `reads of <path>`.
+
+It works on macOS (`sandbox-exec`) and Linux (`bubblewrap`). Anywhere else, a sandboxed `run` is an error. It never quietly runs without the sandbox. Before the first sandboxed run, ClankTalk tests that the sandbox really holds.
+
+Want every `run` sandboxed? Say so with a hook:
+
+```talk
+# AGENTS.talk
+before run
+  if the run's sandbox is null
+    reject 'Use a sandbox'
+  end
+end
+```
+
 A few rules keep this safe:
 
-* `run` only works inside a tool, and never uses a shell
+* `run` only works inside a tool, and never uses a shell. Use `in a sandbox` for anything that runs project code
 * The program gets only the environment variables that `allow env` lists
 * Scripts can't change `.talk` files, so your agent can't change its own tools
 * Scripts can't change hidden files or folders, like `.env`, `.git/` or `.github/`. Those hold secrets, and config that runs code. Nothing is allowed by default. If your agent needs one, it tells you the line to add:

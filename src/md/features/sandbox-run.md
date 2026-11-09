@@ -1,6 +1,6 @@
 # Sandbox for run
 
-Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the self-test). The syntax for `run` and `start` is the next branch.
+Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the self-test), and the "sandbox" section of `src/js/runtime.js`.
 
 `run` and `start` are where the ClankTalk sandbox ends: a program can do anything the user can do. `npm test` runs project code, and the agent can write that code. The OS sandbox puts a limit on such programs.
 
@@ -12,12 +12,16 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 
 - Approved: on each `run` and `start`: `run 'npm test' in a sandbox`, `start 'npm run dev' as 'site' in a sandbox`.
 - Approved: options after `with`: `network`, `writes to <path>`, `reads of <path>`. For example: `run 'npm install' in a sandbox with network`, `run 'mvn test' in a sandbox with writes to '~/.m2'`, `run 'gh pr list' in a sandbox with network, reads of '~/.config/gh'`.
-- Proposed: `in a sandbox` comes after the arguments, and before `within`: `run 'npm' with 'test' in a sandbox within 10 minutes`. `in` is claimed while the arguments parse (the follows set).
-- Proposed: a `run` with no `in a sandbox` works as now. Later, maybe: `require sandbox` in AGENTS.talk.
+- Approved (built): `in a sandbox` comes after the arguments, and before `within`: `run 'npm' with 'test' in a sandbox within 10 minutes`. `in` is claimed while the arguments parse (the follows set).
+- Approved (built): a `run` with no `in a sandbox` works as now. A hook can require a sandbox: the step's `sandbox` is null without one.
+- Approved (built): each sandboxed run gets its own temp folder (`TMPDIR`), removed after the run, or when a process ends.
+- Proposed (built): `HOME` is a fresh folder in that temp folder. The allowed parts of the real home (the caches, `reads of`, `writes to`) are linked into it. Why: many programs look for config in the home folder. A missing file is fine for them, but a blocked file is a fatal error (git: `unable to access '~/.gitconfig'`). Thus secrets such as `~/.npmrc` are not even visible.
+- Proposed (built): a sandboxed program gets `CLANK_TALK_SANDBOXED=1`. A sandbox cannot start inside another, so a ClankTalk inside the sandbox fails at once with a clear reason.
+- Tested: this repo's `npm test` passes in a sandbox `with network` (the fetch tests need local servers). The real-sandbox tests skip there.
 
 ## What the sandbox allows
 
-- Proposed: writes only inside the project, and never to `.git/`, `.talk` files, `@/talk/`, or hidden files and folders (the same rules as scripts, plus what `allow changes to` allows). Also the program's own temp folder.
+- Approved (built): writes only inside the project, and never to `.git/`, `.talk` files, `@/talk/`, or hidden files and folders (the same rules as scripts, plus what `allow changes to` allows). Also the program's own temp folder.
 - Approved: no home folder by default. A program can read:
   - system folders: `/usr`, `/bin`, `/sbin`, `/System`, `/Library`, `/etc`, `/opt`, `/dev`, and its own temp folder
   - the project
@@ -26,8 +30,8 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
   - what `with reads of` adds
 - Approved: secret files are blocked even inside an allowed folder: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.netrc`, `~/.docker`, `~/.kube`, `~/.npmrc`, `~/.m2/settings.xml`, `~/.gradle/gradle.properties`, `~/.cargo/credentials`, `~/.cargo/credentials.toml`, `~/.pypirc`, and `.env` files in the project.
 - Why: a sandboxed program can write what it reads into the project, and the agent can read the project. Thus a wide read leaks to the agent, even with no network.
-- Proposed: no network. With `in a sandbox`, a `start` can still listen on localhost, so a dev server works.
-- Proposed: the limits hold for every child process, because the OS applies them to the process tree.
+- Approved (built): no network. With `in a sandbox`, a `start` can still listen on localhost, so a dev server works.
+- Approved (built): the limits hold for every child process, because the OS applies them to the process tree.
 
 ## Where it works
 
@@ -37,7 +41,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 
 ## Proof before trust
 
-- Proposed: at the first sandboxed `run` in a session, ClankTalk runs a self-test in the sandbox: it tries to write outside the project, to write `.git/`, to read `~/.ssh`, and to open a network connection. If any of these works, the sandbox is broken: the run is an error, and so is each later sandboxed run in the session.
+- Approved (built): at the first sandboxed `run` in a session, ClankTalk runs a self-test in the sandbox: it tries to write outside the project, to write `.git/`, to read `~/.ssh`, and to open a network connection. If any of these works, the sandbox is broken: the run is an error, and so is each later sandboxed run in the session.
 
 ## Limits
 

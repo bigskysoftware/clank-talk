@@ -67,6 +67,7 @@ Git (hardened; the result is git's output as text):
   git delete branch <branch>   (only a merged branch)
   You cannot change .talk files, @/talk/, or hidden files and folders (.env, .git/), unless AGENTS.talk allows them.
   If a change is refused because of AGENTS.talk, tell the human the line to add. Do not try another way to make the change.
+  Tools can run programs in an OS sandbox ('in a sandbox'). If a sandboxed program fails for a missing read, write or network, tell the human what the tool needs.
 
 help lists everything. help <word> shows one command, expression or tool, with examples: help replace`;
 

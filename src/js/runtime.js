@@ -8,8 +8,10 @@
 import { parse } from "./parser.js";
 import { helpIndex, helpFor } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
+import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
+import os from "node:os";
 import { spawn } from "node:child_process";
 
 const DEFAULT_MAX_STEPS = 10_000;
@@ -1044,6 +1046,8 @@ async function runProgram(command, state) {
   const step = Object.create(null);
   step.program = program;
   step.args = args;
+  const sandbox = await sandboxValues(command, state);
+  step.sandbox = sandbox;
   await runHooks("before", ["run"], step, state, command);
 
   const env = allowedEnvFor(state);
@@ -1052,7 +1056,17 @@ async function runProgram(command, state) {
     limit = shorter(limit, await durationMs(command.within, state));
   }
 
-  const result = await spawnProgram(program, args, state.cwd, env, limit, state, command);
+  let result;
+  if (sandbox === null) {
+    result = await spawnProgram(program, args, state.cwd, env, limit, state, command);
+  } else {
+    const wrapped = await sandboxCommand(program, args, sandbox, env, false, state, command);
+    try {
+      result = await spawnProgram(wrapped.program, wrapped.args, state.cwd, wrapped.env, limit, state, command);
+    } finally {
+      await fs.rm(wrapped.tmp, { recursive: true, force: true });
+    }
+  }
 
   // after hooks see the result
   state.result = result;
@@ -1312,6 +1326,60 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
   });
 }
 
+// ----- sandbox -----
+// see src/md/features/sandbox-run.md and src/js/sandbox.js
+
+// the self-test runs once for each server process, and its result stays
+let sandboxTest = null;
+
+// "in a sandbox with ...": the values, or null for no sandbox; hooks see them as the step's sandbox
+async function sandboxValues(command, state) {
+  if (command.sandbox === null || command.sandbox === undefined) {
+    return null;
+  }
+  const values = { network: command.sandbox.network, reads: [], writes: [] };
+  for (const path of command.sandbox.reads) {
+    values.reads.push(toText(await evaluate(path, state)));
+  }
+  for (const path of command.sandbox.writes) {
+    values.writes.push(toText(await evaluate(path, state)));
+  }
+  return values;
+}
+
+// the program and arguments with the OS sandbox around them, its env, and its temp folder
+// fails closed: no sandbox, or a sandbox that does not hold, means the program does not run
+async function sandboxCommand(program, args, sandbox, env, listen, state, node) {
+  const support = await sandboxKind();
+  if (support.kind === null) {
+    throw new ScriptError("Cannot run in a sandbox: " + support.reason + ". Nothing ran", node);
+  }
+  if (support.kind === "linux" && listen && !sandbox.network) {
+    throw new ScriptError("On Linux, a sandboxed start needs 'with network', or the host cannot reach the server. Nothing ran", node);
+  }
+  if (sandboxTest === null) {
+    sandboxTest = await selfTest(support.kind);
+  }
+  if (!sandboxTest.ok) {
+    throw new ScriptError("The sandbox does not hold on this machine: " + sandboxTest.problems.join(", ") + ". Nothing runs in a sandbox", node);
+  }
+  const tmp = await fs.mkdtemp(nodePath.join(os.tmpdir(), "clank-sandbox-"));
+  const plan = await sandboxPlan({
+    root: state.root,
+    tmp,
+    programDirs: await installDirs(program, env.PATH || ""),
+    reads: sandbox.reads,
+    writes: sandbox.writes,
+    allowedChanges: state.allowedChanges,
+    network: sandbox.network,
+    listen,
+  });
+  const wrapped = await wrapCommand(support.kind, plan, program, args, state.cwd);
+  const home = await makeHome(plan);
+  // CLANK_TALK_SANDBOXED: a ClankTalk inside the sandbox knows it cannot start another sandbox
+  return { program: wrapped.program, args: wrapped.args, env: { ...env, TMPDIR: plan.tmp, HOME: home, CLANK_TALK_SANDBOXED: "1" }, tmp };
+}
+
 // ----- wait -----
 
 const WAIT_UNTIL_LIMIT = 30_000;
@@ -1417,10 +1485,29 @@ async function startProcess(command, state) {
   step.program = program;
   step.args = args;
   step.name = name;
+  const sandbox = await sandboxValues(command, state);
+  step.sandbox = sandbox;
   await runHooks("before", ["start"], step, state, command);
 
+  let spawnProgramName = program;
+  let spawnArgs = args;
+  let env = allowedEnvFor(state);
+  let tmp = null;
+  if (sandbox !== null) {
+    const wrapped = await sandboxCommand(program, args, sandbox, env, true, state, command);
+    spawnProgramName = wrapped.program;
+    spawnArgs = wrapped.args;
+    env = wrapped.env;
+    tmp = wrapped.tmp;
+  }
+
   // its own process group (not on Windows), so stop can end its children too
-  const child = spawn(program, args, { cwd: state.cwd, env: allowedEnvFor(state), shell: false, detached: process.platform !== "win32" });
+  const child = spawn(spawnProgramName, spawnArgs, { cwd: state.cwd, env, shell: false, detached: process.platform !== "win32" });
+  if (tmp !== null) {
+    child.on("close", () => {
+      fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+    });
+  }
   const record = { name, child, status: "running", code: null, output: "" };
   const add = (chunk) => {
     record.output += chunk;
