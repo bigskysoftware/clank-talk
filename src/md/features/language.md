@@ -26,6 +26,7 @@ Code: `src/tokenizer.js`. The tokenizer makes a flat list of tokens. Each token 
 | path | `./a.js`, `../x`, `@/src/a.js`, `./"my file.txt"` | See paths below. |
 | possessive | `'s` | Only when it touches a word and no word character follows. |
 | op | `(`, `+`, `.` | One character. |
+| error | | A problem in the source. The value is the message. |
 
 ### Syntax status
 
@@ -38,8 +39,8 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: string escapes `\n`, `\t`, and `\x` for any other `x`.
 - Approved: numbers have no commas. `_` groups digits: `1_000`.
 - Approved: negative numbers.
-- Approved: `-` is part of a number only if a digit follows and the `-` does not touch the token before it. Thus `set x to -3` is a negative number, and `x - 3` and `x-3` are subtraction. Note: `x -3` is also a negative number.
-- Errors give the line and column. This is not syntax.
+- Approved: `-` is part of a number only if a digit follows and the `-` comes after the start, whitespace, or one of `( [ { , = :`. Thus `set x to -3`, `[-1]` and `x=-1` have negative numbers, and `x - 3` and `x-3` are subtraction. Note: `x -3` is also a negative number.
+- Problems do not stop the tokenizer. Each problem becomes an error token with the line and column where it starts, and tokenizing goes on. The compiler reports all errors together. This is not syntax.
 
 ### Paths
 

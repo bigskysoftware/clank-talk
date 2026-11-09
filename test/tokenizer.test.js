@@ -27,8 +27,15 @@ test("string escapes", () => {
   assert.deepEqual(simple("'it\\'s' 'a\\nb'"), ["string:it's", "string:a\nb"]);
 });
 
-test("unterminated string is an error", () => {
-  assert.throws(() => tokenize("say 'oops"), /Unterminated string at line 1, column 10/);
+test("unterminated string is an error token", () => {
+  const tokens = tokenize("say 'oops");
+  assert.deepEqual(tokens[1], { type: "error", value: "Unterminated string", line: 1, column: 5 });
+});
+
+test("tokenizing goes on after an error", () => {
+  assert.deepEqual(simple("say 'oops\nsay ~ 2"), [
+    "word:say", "error:Unterminated string", "word:say", "error:Unexpected character '~'", "number:2",
+  ]);
 });
 
 test("paths", () => {
@@ -55,12 +62,13 @@ test("quoted paths can hold spaces", () => {
   assert.deepEqual(simple('@/"a b"'), ["path:@/a b"]);
 });
 
-test("unterminated quoted path is an error", () => {
-  assert.throws(() => tokenize('read ./"oops'), /Unterminated path/);
+test("unterminated quoted path is an error token", () => {
+  const tokens = tokenize('read ./"oops');
+  assert.deepEqual(tokens[1], { type: "error", value: "Unterminated path", line: 1, column: 6 });
 });
 
-test("@ without / is an error", () => {
-  assert.throws(() => tokenize("@x"), /Unexpected character '@'/);
+test("@ without / is an error token", () => {
+  assert.deepEqual(simple("@x"), ["error:Unexpected character '@'", "word:x"]);
 });
 
 test("underscores group digits", () => {
@@ -70,6 +78,13 @@ test("underscores group digits", () => {
 test("negative numbers", () => {
   assert.deepEqual(simple("set x to -3"), ["word:set", "word:x", "word:to", "number:-3"]);
   assert.deepEqual(simple("f(-1, -2.5)"), ["word:f", "op:(", "number:-1", "op:,", "number:-2.5", "op:)"]);
+});
+
+test("negative numbers after ( [ { , = :", () => {
+  assert.deepEqual(simple("[-1]"), ["op:[", "number:-1", "op:]"]);
+  assert.deepEqual(simple("{-1}"), ["op:{", "number:-1", "op:}"]);
+  assert.deepEqual(simple("x=-1"), ["word:x", "op:=", "number:-1"]);
+  assert.deepEqual(simple("a:-1"), ["word:a", "op::", "number:-1"]);
 });
 
 test("minus that touches a value is subtraction", () => {
@@ -99,8 +114,9 @@ test("operators", () => {
   ]);
 });
 
-test("unexpected character is an error", () => {
-  assert.throws(() => tokenize("say ~"), /Unexpected character '~' at line 1, column 5/);
+test("unexpected character is an error token", () => {
+  const tokens = tokenize("say ~");
+  assert.deepEqual(tokens[1], { type: "error", value: "Unexpected character '~'", line: 1, column: 5 });
 });
 
 test("line and column", () => {

@@ -2,11 +2,14 @@
 //
 // The tokenizer does not know about keywords. "if", "set" and "file" are all
 // words. The parser decides what a word means.
+//
+// Problems do not stop the tokenizer. A problem becomes an "error" token, and
+// the tokenizer keeps going, so all problems can be reported together later.
 
 /**
  * @typedef {Object} Token
- * @property {string} type    word, string, number, path, possessive or op
- * @property {string} value   the text of the token (strings without quotes)
+ * @property {string} type    word, string, number, path, possessive, op or error
+ * @property {string} value   the text of the token (strings without quotes), or the error message
  * @property {number} line    1-based line of the first character
  * @property {number} column  1-based column of the first character
  */
@@ -62,18 +65,14 @@ export function tokenize(source) {
     return digits;
   }
 
-  function error(message) {
-    return new Error(message + " at line " + line + ", column " + column);
+  function push(type, value, startLine, startColumn) {
+    tokens.push({ type, value, line: startLine, column: startColumn });
   }
 
   while (i < source.length) {
     const c = source[i];
     const startLine = line;
     const startColumn = column;
-
-    function push(type, value) {
-      tokens.push({ type, value, line: startLine, column: startColumn });
-    }
 
     // whitespace
     if (isSpace(c)) {
@@ -95,7 +94,7 @@ export function tokenize(source) {
     if (c === "'" && source[i + 1] === "s" && prev !== undefined && isWordChar(prev) && !isWordChar(source[i + 2] || " ")) {
       advance();
       advance();
-      push("possessive", "'s");
+      push("possessive", "'s", startLine, startColumn);
       continue;
     }
 
@@ -103,12 +102,14 @@ export function tokenize(source) {
     if (c === "'" || c === '"') {
       const quote = c;
       let value = "";
+      let closed = false;
       advance();
       while (true) {
         if (i >= source.length || source[i] === "\n") {
-          throw error("Unterminated string");
+          break;
         }
         if (source[i] === quote) {
+          closed = true;
           advance();
           break;
         }
@@ -128,7 +129,11 @@ export function tokenize(source) {
         value += source[i];
         advance();
       }
-      push("string", value);
+      if (closed) {
+        push("string", value, startLine, startColumn);
+      } else {
+        push("error", "Unterminated string", startLine, startColumn);
+      }
       continue;
     }
 
@@ -146,12 +151,13 @@ export function tokenize(source) {
 
       if (source[i] === '"') {
         advance();
-        while (source[i] !== '"') {
-          if (i >= source.length || source[i] === "\n") {
-            throw error("Unterminated path");
-          }
+        while (i < source.length && source[i] !== '"' && source[i] !== "\n") {
           value += source[i];
           advance();
+        }
+        if (source[i] !== '"') {
+          push("error", "Unterminated path", startLine, startColumn);
+          continue;
         }
         advance();
       } else {
@@ -160,14 +166,15 @@ export function tokenize(source) {
           advance();
         }
       }
-      push("path", value);
+      push("path", value, startLine, startColumn);
       continue;
     }
 
     // number: 12, 3.5, 1_000, -3
-    // "-" is part of the number only if a digit follows and it does not touch the token before it,
-    // so "x - 3" and "x-3" are subtraction, and "set x to -3" is a negative number
-    const negative = c === "-" && isDigit(source[i + 1] || "") && (prev === undefined || isSpace(prev) || prev === "(" || prev === ",");
+    // "-" is part of the number only if a digit follows and it comes after
+    // the start, whitespace or one of ( [ { , = :
+    // so "x - 3" and "x-3" are subtraction, and "set x to -3" and "[-1]" are negative numbers
+    const negative = c === "-" && isDigit(source[i + 1] || "") && (prev === undefined || isSpace(prev) || "([{,=:".includes(prev));
     if (isDigit(c) || negative) {
       let value = "";
       if (negative) {
@@ -180,7 +187,7 @@ export function tokenize(source) {
         advance();
         value += readDigits();
       }
-      push("number", value);
+      push("number", value, startLine, startColumn);
       continue;
     }
 
@@ -191,18 +198,20 @@ export function tokenize(source) {
         value += source[i];
         advance();
       }
-      push("word", value);
+      push("word", value, startLine, startColumn);
       continue;
     }
 
     // operator: a single character
     if (OP_CHARS.includes(c)) {
       advance();
-      push("op", c);
+      push("op", c, startLine, startColumn);
       continue;
     }
 
-    throw error("Unexpected character '" + c + "'");
+    // anything else: record it and skip the character
+    advance();
+    push("error", "Unexpected character '" + c + "'", startLine, startColumn);
   }
 
   return tokens;
