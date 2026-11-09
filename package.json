@@ -5,11 +5,13 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
+    "test": "node --test 'test/**/*.test.js'",
     "build-site": "node docs/build.js",
     "serve-site": "node docs/serve.js",
     "build-coming-soon": "node docs/build.js && cp _site/coming-soon.html _site/index.html"
   },
   "devDependencies": {
     "marked": "^18.1.3"
-  }
+  },
+  "main": "src/clank-talk.js"
 }
