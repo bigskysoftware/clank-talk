@@ -64,7 +64,8 @@ test("unary binds tighter than math", () => {
 test("conversion", () => {
   assert.equal(expr("x as json"), "(x as json)");
   assert.equal(expr("the file's text as json"), "(file.text as json)");
-  assert.deepEqual(errors("x as banana"), ["Expected one of: json, number, text"]);
+  assert.deepEqual(errors("x as banana"), ["Expected one of: json, number, text, pretty json"]);
+  assert.equal(expr("x as pretty json"), "(x as pretty json)");
 });
 
 test("conversion binds tighter than math", () => {

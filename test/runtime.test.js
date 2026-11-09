@@ -62,7 +62,8 @@ test("logic", async () => {
 
 test("as json goes both ways", async () => {
   assert.deepEqual(await output("print ('{\"a\": 1}' as json).a"), ["1"]);
-  assert.deepEqual(await output("print [1] as json"), ["[\n  1\n]"]);
+  assert.deepEqual(await output("print [1] as json"), ["[1]"]);
+  assert.deepEqual(await output("print [1] as pretty json"), ["[\n  1\n]"]);
 });
 
 test("bad JSON is an error", async () => {

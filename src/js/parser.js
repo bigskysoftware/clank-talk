@@ -301,13 +301,19 @@ export function parse(source, options = {}) {
     while (value !== null && isWord("as")) {
       const token = current();
       i++;
+      // "as pretty json" is two words
+      let pretty = false;
+      if (isWord("pretty")) {
+        pretty = true;
+        i++;
+      }
       const to = current();
-      if (to === undefined || to.type !== "word" || !CONVERSIONS.includes(to.value)) {
-        error("Expected one of: " + CONVERSIONS.join(", "));
+      if (to === undefined || to.type !== "word" || !CONVERSIONS.includes(to.value) || (pretty && to.value !== "json")) {
+        error("Expected one of: " + CONVERSIONS.join(", ") + ", pretty json");
         return null;
       }
       i++;
-      value = node("conversion", token, { value, to: to.value });
+      value = node("conversion", token, { value, to: pretty ? "pretty json" : to.value });
     }
     return value;
   }
@@ -362,8 +368,14 @@ export function parse(source, options = {}) {
 
   function parsePrimary() {
     // "the" is optional noise
+    // after "the", a word is always a value, even a command word: the write's path
     if (isWord("the")) {
       i++;
+      const next = current();
+      if (next !== undefined && next.type === "word" && COMMANDS[next.value] !== undefined) {
+        i++;
+        return node("variable", next, { name: next.value });
+      }
     }
 
     // read as an expression: set readme to read @/README.md
@@ -656,6 +668,46 @@ export function parse(source, options = {}) {
     return { type: "read", file, line: token.line, column: token.column };
   }
 
+  // write <expression> to <file>
+  // append <expression> to <file>
+  function parseWrite(token) {
+    const value = parseExpression();
+    if (value === null) {
+      return null;
+    }
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const file = parseExpression();
+    return { type: token.value, value, file, line: token.line, column: token.column };
+  }
+
+  // replace <expression> with <expression> in <file, variable or property>
+  function parseReplace(token) {
+    const old = parseExpression();
+    if (old === null) {
+      return null;
+    }
+    if (!isWord("with")) {
+      error("Expected 'with'");
+      return null;
+    }
+    i++;
+    const replacement = parseExpression();
+    if (replacement === null) {
+      return null;
+    }
+    if (!isWord("in")) {
+      error("Expected 'in'");
+      return null;
+    }
+    i++;
+    const target = parseExpression();
+    return { type: "replace", old, replacement, target, line: token.line, column: token.column };
+  }
+
   // set <target> to <expression>
   // the target is a variable, a property (x's y, x.y) or an index (x[0])
   function parseSet(token) {
@@ -706,6 +758,9 @@ export function parse(source, options = {}) {
     print: parsePrint,
     if: parseIf,
     read: parseRead,
+    write: parseWrite,
+    append: parseWrite,
+    replace: parseReplace,
     set: parseSet,
     increment: parseIncrement,
     decrement: parseIncrement,

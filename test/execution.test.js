@@ -7,11 +7,11 @@ test("start gives an execution object at once", async () => {
   assert.equal(execution.status, "running");
   const result = await execution.done;
   assert.equal(execution.status, "done");
-  assert.deepEqual(result, { status: "done", output: ["1"], errors: [], steps: 1 });
+  assert.deepEqual(result, { status: "done", output: ["1"], errors: [], steps: 1, changes: [] });
 });
 
 test("run is a short form of start(...).done", async () => {
-  assert.deepEqual(await run("print 1"), { status: "done", output: ["1"], errors: [], steps: 1 });
+  assert.deepEqual(await run("print 1"), { status: "done", output: ["1"], errors: [], steps: 1, changes: [] });
 });
 
 test("a parse error gives status failed", async () => {

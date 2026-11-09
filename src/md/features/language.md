@@ -28,7 +28,8 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `print` is the output to the agent.
 - `read` and `fetch` put their value in `it` and `the result`. `read` is also an expression: `set readme to read @/README.md`.
 - `ask` asks the human, waits for the answer, and can time out. The answer goes in `the result`.
-- `replace a with b in <file>` changes the file itself.
+- `replace a with b in <file>` changes the file itself. `replace a with b in <variable>` changes the variable.
+- `write <value> to <file>` and `append <value> to <file>`.
 - `as json` parses text to an object, and formats an object to text.
 - Loops:
   - `for x in <list> ... end`. Later: also the lines of a file.
@@ -48,6 +49,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 Approved:
 
 - `the` is optional before any expression. It changes nothing. Agents are encouraged to use it where it makes code clearer.
+- Approved: after `the`, a word is always a value, even a command word. Thus `the write's path` works in a hook, and `set the write to ...` sets a variable named `write`. Without `the`, a command word at the start of a value is an error. To refer to a command by name, write `the <command>`.
 - `it` and `result` are special words. A command sets them. `the result` and `result` are the same.
 - Lists `[1, 2]` and objects `{name: 'x'}`, as in JavaScript.
 - No function calls in expressions for now.
@@ -62,7 +64,7 @@ Approved (from hyperscript):
 - Comparison: `is`, `is not`, `is less than`, `is greater than`, `is less than or equal to`, `is greater than or equal to`. Symbols too: `== != < > <= >=`. Both forms stay.
 - Text and lists: `contains`, `does not contain`, `starts with`, `ends with`, `is in`, `is not in`, `is empty`, `is not empty`, `exists`, `does not exist`. These also work on files: on a file they use the file's text, so `the file contains 'TODO'` is the same as `the file's text contains 'TODO'`.
 - Logic: `and`, `or`.
-- Conversion: `as json`, `as number`, `as text`.
+- Conversion: `as json`, `as pretty json`, `as number`, `as text`. `as json` formats compact JSON, `as pretty json` uses 2-space indents.
 - Order, highest first: access, unary, `as`, math, comparison, logic.
 - `is not less than` and `is not greater than` do not exist. Use `is greater than or equal to` and `is less than or equal to`.
 - Only one comparison in a row. `a < b < c` is an error.

@@ -18,6 +18,8 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "print", value }
 { type: "if", condition, body: [...] }
 { type: "read", file }                  a command, and also an expression
+{ type: "write" | "append", value, file }
+{ type: "replace", old, replacement, target }
 { type: "set", target, value }          target: variable, property or index
 { type: "for", name, list, index, body: [...] }       index is a name or null
 { type: "repeat", kind, value, index, body: [...] }   kind: "times", "while" or "until"

@@ -47,6 +47,11 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 - `read <file>` puts the text in the result. `read <file>` is also an expression. Its argument is only a value with access, so `read ./a.txt + '!'` reads `./a.txt` and then adds `'!'`.
 - A missing file is an error for `read`. `exists` is false for it.
 - All files are UTF-8.
+- `write` and `append` make a missing file, and missing parent folders.
+- What goes in: text as it is; a file or line gives its text; lists and objects as compact JSON.
+- `replace` changes every match. The result is a list of replacements, `{ line, column, old, new }`, with the place of each match in the old text. With no match, nothing changes and the result is empty. `replace` of empty text is an error.
+- A glob with several files is not a write target. Use a `for` loop.
+- Each write records `{ path, before, after }` in `execution.changes`, and the run result has `changes`. `before` is `null` for a new file. This is the start of undo.
 
 ## Value rules (approved)
 

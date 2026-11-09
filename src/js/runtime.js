@@ -79,6 +79,8 @@ export function start(source, options = {}) {
     status: "running",
     steps: 0,
     output: [],
+    // every file write: { path, before, after }; before is null for a new file
+    changes: [],
     errors: [],
     signal: controller.signal,
     cancel() {
@@ -148,7 +150,7 @@ async function execute(source, options, execution) {
 function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
-  return { status, output: execution.output, errors, steps: execution.steps };
+  return { status, output: execution.output, errors, steps: execution.steps, changes: execution.changes };
 }
 
 // ----- commands -----
@@ -254,6 +256,40 @@ async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "read") {
     state.result = await readText(await evaluate(command.file, state), state, command);
     return null;
+  }
+
+  if (command.type === "write" || command.type === "append") {
+    const value = await evaluate(command.value, state);
+    const file = await evaluate(command.file, state);
+    const text = toText(await asText(value, state, command));
+    await writeText(file, text, command.type === "append", state, command);
+    return null;
+  }
+
+  if (command.type === "replace") {
+    const old = toText(await asText(await evaluate(command.old, state), state, command));
+    const replacement = toText(await asText(await evaluate(command.replacement, state), state, command));
+    if (old === "") {
+      throw new ScriptError("Cannot replace empty text", command);
+    }
+    const target = await evaluate(command.target, state);
+    if (target instanceof FileRef) {
+      const before = await readText(target, state, command);
+      const { text, replacements } = replaceAll(before, old, replacement);
+      if (replacements.length > 0) {
+        await writeText(target, text, false, state, command);
+      }
+      state.result = replacements;
+      return null;
+    }
+    const isAssignable = command.target.type === "variable" || command.target.type === "property" || command.target.type === "index";
+    if (typeof target === "string" && isAssignable) {
+      const { text, replacements } = replaceAll(target, old, replacement);
+      await assign(command.target, text, state);
+      state.result = replacements;
+      return null;
+    }
+    throw new ScriptError("Expected a file, or a variable with text, found " + describe(target), command);
   }
 
   if (command.type === "set") {
@@ -585,6 +621,9 @@ function convert(node, value) {
         throw new ScriptError("Not valid JSON: " + err.message, node);
       }
     }
+    return JSON.stringify(value);
+  }
+  if (node.to === "pretty json") {
     return JSON.stringify(value, null, 2);
   }
   if (node.to === "number") {
@@ -694,6 +733,72 @@ async function readText(file, state, node) {
     throw new ScriptError("Not a file: " + file.path, node);
   }
   return await fs.readFile(real, "utf8");
+}
+
+// write or append text to a file, and record the change
+async function writeText(file, text, append, state, node) {
+  if (Array.isArray(file)) {
+    throw new ScriptError("Expected one file, found a list of " + file.length + ". Use a for loop", node);
+  }
+  if (!(file instanceof FileRef)) {
+    throw new ScriptError("Expected a file, found " + describe(file), node);
+  }
+
+  let real = await realPath(file, state, node);
+  let before = null;
+  if (real !== null) {
+    const stats = await fs.stat(real);
+    if (!stats.isFile()) {
+      throw new ScriptError("Not a file: " + file.path, node);
+    }
+    before = await fs.readFile(real, "utf8");
+  } else {
+    await makeParentFolders(file, state, node);
+    real = file.absolute;
+  }
+
+  let after = text;
+  if (append && before !== null) {
+    after = before + text;
+  }
+  await fs.writeFile(real, after, "utf8");
+  state.execution.changes.push({ path: file.path, before, after });
+}
+
+// make missing parent folders for a new file
+// the nearest folder that exists must be inside the root after symlinks,
+// so a symlinked folder cannot lead a new file outside the root
+async function makeParentFolders(file, state, node) {
+  const parent = nodePath.dirname(file.absolute);
+  let existing = parent;
+  while (true) {
+    try {
+      await fs.stat(existing);
+      break;
+    } catch (err) {
+      existing = nodePath.dirname(existing);
+    }
+  }
+  const realExisting = await fs.realpath(existing);
+  const realRoot = await fs.realpath(state.root);
+  if (!isInside(realExisting, realRoot)) {
+    throw new ScriptError("Path is outside the project root: " + file.path, node);
+  }
+  await fs.mkdir(parent, { recursive: true });
+}
+
+// replace every match, and list where each one was in the old text
+function replaceAll(text, old, replacement) {
+  const replacements = [];
+  let index = text.indexOf(old);
+  while (index !== -1) {
+    const before = text.slice(0, index);
+    const line = before.split("\n").length;
+    const column = index - before.lastIndexOf("\n");
+    replacements.push({ line, column, old, new: replacement });
+    index = text.indexOf(old, index + old.length);
+  }
+  return { text: text.split(old).join(replacement), replacements };
 }
 
 async function fileProperty(file, name, state, node) {

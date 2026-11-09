@@ -25,6 +25,7 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - Every path is checked against the project root, before symlinks (`path.resolve`) and after them (`fs.realpath`). A path or symlink that goes outside the root is an error.
 - Glob results are checked one by one.
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
+- Writes use the same checks. For a new file, the nearest folder that exists must be inside the root after symlinks, before any folder is made. Thus a symlinked folder cannot lead a new file outside the root.
 
 ## `run`
 
