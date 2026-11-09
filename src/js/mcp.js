@@ -9,6 +9,7 @@
 
 import readline from "node:readline";
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import nodePath from "node:path";
 import { run, listTools, VERSION } from "./clank-talk.js";
 
@@ -82,16 +83,16 @@ async function describeTool(root) {
 }
 
 // turn a run result into text for the agent
-export function formatResult(result, script) {
+export function formatResult(result, script, root) {
   const sections = [];
   if (result.output.length > 0) {
     sections.push(result.output.join("\n"));
   }
   if (result.warnings && result.warnings.length > 0) {
-    sections.push("--- warnings ---\n" + formatProblems(result.warnings, script));
+    sections.push("--- warnings ---\n" + formatProblems(result.warnings, script, root));
   }
   if (result.errors.length > 0) {
-    sections.push("--- " + result.status + " ---\n" + formatProblems(result.errors, script));
+    sections.push("--- " + result.status + " ---\n" + formatProblems(result.errors, script, root));
   }
   if (result.changes.length > 0) {
     const paths = [];
@@ -106,21 +107,35 @@ export function formatResult(result, script) {
   return sections.join("\n\n");
 }
 
-// errors or warnings: "file line:column message", then the script line with an arrow
-// a problem in AGENTS.talk has a file, and no script line
-function formatProblems(problems, script) {
+// errors or warnings: "file line:column message", then the source line with an arrow
+// a problem in a .talk file has a file; the server reads that file from the root to show the line
+function formatProblems(problems, script, root) {
   const lines = [];
   for (const p of problems) {
     const file = p.file ? p.file + " " : "";
     lines.push(file + p.line + ":" + p.column + " " + p.message);
-    if (!p.file && script !== undefined) {
-      const arrow = pointAt(script, p.line, p.column);
+    let source = script;
+    if (p.file) {
+      source = readTalkFile(root, p.file);
+    }
+    if (source !== undefined && source !== null) {
+      const arrow = pointAt(source, p.line, p.column);
       if (arrow !== null) {
         lines.push(arrow);
       }
     }
   }
   return lines.join("\n");
+}
+
+// the text of a .talk file, for the line of an error in it; null if it cannot be read
+// the name comes from the runtime, which loads .talk files only from inside the root
+function readTalkFile(root, file) {
+  try {
+    return readFileSync(nodePath.resolve(root || ".", file), "utf8");
+  } catch (err) {
+    return null;
+  }
 }
 
 // the source line of an error, with an arrow under the column:
@@ -222,10 +237,10 @@ export async function handleMessage(message, session) {
       }
     }
     if (session.log) {
-      await writeLog(session.log, script, result);
+      await writeLog(session.log, script, result, session.root);
     }
     return reply(id, {
-      content: [{ type: "text", text: formatResult(result, script) }],
+      content: [{ type: "text", text: formatResult(result, script, session.root) }],
       isError: result.status !== "done",
     });
   }
@@ -235,9 +250,9 @@ export async function handleMessage(message, session) {
 
 // a log that humans can read: each script as written, then what happened
 // the host writes it, not the script, so the sandbox does not apply
-async function writeLog(file, script, result) {
+async function writeLog(file, script, result, root) {
   const time = new Date().toISOString().replace("T", " ").slice(0, 19);
-  const entry = "\n=== " + time + "  " + result.status + "  " + result.steps + " steps ===\n" + script + "\n\n" + formatResult(result, script) + "\n";
+  const entry = "\n=== " + time + "  " + result.status + "  " + result.steps + " steps ===\n" + script + "\n\n" + formatResult(result, script, root) + "\n";
   await fs.mkdir(nodePath.dirname(file), { recursive: true });
   await fs.appendFile(file, entry);
 }

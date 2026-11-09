@@ -143,3 +143,9 @@ test('warnings show before errors, with an arrow', async () => {
   assert.equal(response.result.isError, false);
   assert.equal(response.result.content[0].text, "--- warnings ---\n2:1 No match in the variable for 'x'\n  2 | replace 'x' with 'y' in t\n    | ^");
 });
+
+test('an error in AGENTS.talk shows its line, with an arrow', async () => {
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), "tool bad\n  print 1\n  print 2 * x\nend");
+  const response = await call('bad');
+  assert.equal(response.result.content[0].text, '1\n\n--- failed ---\nAGENTS.talk 3:11 Expected a number, found null\n  3 |   print 2 * x\n    |           ^');
+});
