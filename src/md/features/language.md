@@ -33,6 +33,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `as json` parses text to an object, and formats an object to text.
 - Approved: `lines <from> to <to> of <file or text>` gives a range of lines, by line number (from 1), with both ends included. `lines` alone is still a plain word.
 - Approved: edits by line number. `replace lines 5 to 7 of <file> with <text>`, `put <text> before line 5 of <file>`, `put <text> after line 5 of <file>`, `remove lines 5 to 7 of <file>`.
+- Approved: `find <text> in <file, list of files, or text>`. The result is the lines that contain the text, as plain text with letter case. A line from a file has `file`. `print` shows `path:number: text`. `find` reads each file, so read hooks run and line edits can follow. Later, maybe: patterns, and no letter case.
 - Approved: a line edit needs an earlier read of the file, and fails if the file changed since that read.
 - Approved: `help` and `help <word>`. See [discoverability.md](discoverability.md).
 - Approved: `on error ... end`, with `stop` (the default) and `continue`. See the error rules in [runtime.md](runtime.md).

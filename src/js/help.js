@@ -96,6 +96,12 @@ export const HELP = [
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
+    name: "find", kind: "command",
+    syntax: "find <text> in <file, list of files, or text>",
+    description: "Put the lines that contain the text in the result. Each line has number and text, and file when it comes from a file. print shows path:number: text. The match is plain text, and letter case counts.",
+    examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'all good' end"],
+  },
+  {
     name: "put", kind: "command",
     syntax: "put <text> before line <n> of <file> | put <text> after line <n> of <file>",
     description: "Put new lines into a file. Needs a read of the file first. Line numbers shift after an edit.",

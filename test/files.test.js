@@ -171,3 +171,16 @@ test("first and last of a file are lines", async () => {
 test('a list of paths, and possessives after a list or object', async () => {
   assert.deepEqual(await output(`print [./notes.txt, ./README.md]'s last\nprint {a: 1}'s a\nprint (first of ./notes.txt)'s number`), ['README.md', '1', '1']);
 });
+
+test('find gives the lines that contain the text, and print shows path:number', async () => {
+  assert.deepEqual(await output(`find 'var' in ./src/**/*.js\nprint the result`), ['src/a.js:1: var a = 1\nsrc/deep/c.js:1: var c = 3']);
+  assert.deepEqual(await output(`find 'TODO' in ./notes.txt\nprint the result's first's number\nprint the result's first's file`), ['2', 'notes.txt']);
+  assert.deepEqual(await output(`find 'b' in 'abc\\nxyz\\nb'\nprint the result`), ['1: abc\n3: b']);
+  assert.deepEqual(await output(`find 'nope' in ./notes.txt\nprint the result is empty`), ['true']);
+});
+
+test('find errors', async () => {
+  assert.deepEqual(await errors(`find '' in ./notes.txt`), ['Cannot find empty text']);
+  assert.deepEqual(await errors(`find 'x' in 5`), ["'find' needs a file, a list of files, or text, found 5"]);
+  assert.deepEqual((await errors(`find 'x' ./notes.txt`))[0], "Expected 'in'");
+});

@@ -247,3 +247,8 @@ test('line edits cannot change .talk files', async () => {
   const [message] = await errors(`read ./x.talk\nremove lines 1 to 1 of ./x.talk`);
   assert.match(message, /^A script cannot change .talk files/);
 });
+
+test('find reads the files, so a line edit can follow', async () => {
+  await ok(`find 'var y' in ./a.txt\nset n to the result's first's number\nreplace lines n to (n) of ./a.txt with 'let y'`);
+  assert.equal(await readProject('a.txt'), 'var x\nlet y\n');
+});

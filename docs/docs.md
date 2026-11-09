@@ -251,6 +251,25 @@ print the last of ./notes.txt
 
 `first` and `last` work on lists, files and text.
 
+### Finding
+
+`find` gives you the lines that contain some text, in one file or many:
+
+```talk
+find 'TODO' in @/src/**/*.js
+print the result
+```
+
+Each line knows its file and its number, so `print` shows `src/app.js:12: // TODO: fix`. `find` also works on text, such as the output of a tool:
+
+```talk
+run_tests
+find 'FAIL' in the result's output
+if the result is empty
+  print 'all good'
+end
+```
+
 ### Changing Files
 
 ```talk

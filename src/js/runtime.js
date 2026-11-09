@@ -54,15 +54,25 @@ class FileRef {
 }
 
 // one line of a file; as text, a line is its content
+// file is set for lines that find gives back, so they know where they came from
 class Line {
   constructor(number, text) {
     this.number = number;
     this.text = text;
+    this.file = null;
   }
 
   toJSON() {
     return this.text;
   }
+}
+
+// how print starts a line: "12: ", or "src/a.js:12: " for a line from find
+function lineLabel(line) {
+  if (line.file !== null) {
+    return line.file.path + ":" + line.number + ": ";
+  }
+  return line.number + ": ";
 }
 
 /**
@@ -471,7 +481,7 @@ async function runCommand(command, state, tools, maxSteps) {
     const value = await evaluate(command.value, state);
     // print shows a list of lines with their numbers, as an editor does
     if (isListOfLines(value)) {
-      state.execution.output.push(value.map((line) => line.number + ": " + line.text).join("\n"));
+      state.execution.output.push(value.map((line) => lineLabel(line) + line.text).join("\n"));
     } else {
       state.execution.output.push(toText(value));
     }
@@ -535,6 +545,16 @@ async function runCommand(command, state, tools, maxSteps) {
 
   if (command.type === "read") {
     state.result = await readText(await evaluate(command.file, state), state, command);
+    return null;
+  }
+
+  if (command.type === "find") {
+    const text = toText(await asText(await evaluate(command.text, state), state, command));
+    if (text === "") {
+      throw new ScriptError("Cannot find empty text", command);
+    }
+    const target = await evaluate(command.target, state);
+    state.result = await findLines(text, target, state, command);
     return null;
   }
 
@@ -1657,6 +1677,38 @@ function toText(value) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+// the lines that contain the text, in a file, a list of files, or text
+// lines from a file know their file, so print can show path:number
+async function findLines(text, target, state, node) {
+  if (typeof target === "string") {
+    const found = [];
+    for (const line of splitLines(target)) {
+      if (line.text.includes(text)) {
+        found.push(line);
+      }
+    }
+    return found;
+  }
+  let files = null;
+  if (target instanceof FileRef) {
+    files = [target];
+  } else if (Array.isArray(target) && target.every((item) => item instanceof FileRef)) {
+    files = target;
+  } else {
+    throw new ScriptError("'find' needs a file, a list of files, or text, found " + describe(target), node);
+  }
+  const found = [];
+  for (const file of files) {
+    for (const line of splitLines(await readText(file, state, node))) {
+      if (line.text.includes(text)) {
+        line.file = file;
+        found.push(line);
+      }
+    }
+  }
+  return found;
 }
 
 // a value for an error message: text in quotes, and a long value cut short

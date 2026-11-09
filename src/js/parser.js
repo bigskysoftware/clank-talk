@@ -851,6 +851,24 @@ export function parse(source, options = {}) {
     return { type: "replace", old, replacement, target, line: token.line, column: token.column };
   }
 
+  // find <text> in <file, list of files, or text>
+  function parseFind(token) {
+    const text = parseExpression();
+    if (text === null) {
+      return null;
+    }
+    if (!isWord("in")) {
+      error("Expected 'in'");
+      return null;
+    }
+    i++;
+    const target = parseExpression();
+    if (target === null) {
+      return null;
+    }
+    return { type: "find", text, target, line: token.line, column: token.column };
+  }
+
   // put <text> before|after line <n> of <file>
   function parsePut(token) {
     const text = parseExpression();
@@ -950,6 +968,7 @@ export function parse(source, options = {}) {
     write: parseWrite,
     append: parseWrite,
     replace: parseReplace,
+    find: parseFind,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,

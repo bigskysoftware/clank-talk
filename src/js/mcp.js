@@ -52,6 +52,7 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   read <file>          set x to read <file>
   write <value> to <file>      append <value> to <file>
   replace 'old' with 'new' in <file or variable>   the result lists each replacement
+  find 'text' in <file, files or text>   the result is the lines that contain it; print shows path:number: text
   You cannot change .talk files or @/talk/.
 
 help lists everything. help <word> shows one command, expression or tool, with examples: help replace`;
