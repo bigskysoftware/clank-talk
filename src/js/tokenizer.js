@@ -33,10 +33,13 @@ function isSpace(c) {
   return c === " " || c === "\t" || c === "\r" || c === "\n";
 }
 
-// true if the ' at index j is the 's of a possessive: it touches a word, and no word character follows the s
+// true if the ' at index j is the 's of a possessive: it touches a word, "]", "}" or ")", and no word character follows the s
 function isPossessive(text, j) {
   const prev = text[j - 1];
-  return text[j + 1] === "s" && prev !== undefined && isWordChar(prev) && !isWordChar(text[j + 2] || " ");
+  if (text[j + 1] !== "s" || prev === undefined || isWordChar(text[j + 2] || " ")) {
+    return false;
+  }
+  return isWordChar(prev) || prev === "]" || prev === "}" || prev === ")";
 }
 
 // index of the "}" that closes a "${", or -1
@@ -305,7 +308,7 @@ export function tokenize(source) {
     }
 
     // path: ./foo and ../foo are relative to the current directory, @/foo to the project root
-    // a path ends at whitespace, ")", "," or a possessive 's
+    // a path ends at whitespace, ")", ",", an unmatched "]" or "}", or a possessive 's
     // ./"my file.txt" puts the rest of the path in double quotes, so it can hold those characters
     if (source.startsWith("./", i) || source.startsWith("../", i) || source.startsWith("@/", i)) {
       let value = "";
@@ -328,7 +331,18 @@ export function tokenize(source) {
         }
         advance();
       } else {
+        // a "[" or "{" in a path is part of a glob, so only an unmatched "]" or "}" ends the path
+        let depth = 0;
         while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && source[i] !== "," && !(source[i] === "'" && isPossessive(source, i))) {
+          if (source[i] === "[" || source[i] === "{") {
+            depth++;
+          }
+          if (source[i] === "]" || source[i] === "}") {
+            if (depth === 0) {
+              break;
+            }
+            depth--;
+          }
           value += source[i];
           advance();
         }

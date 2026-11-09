@@ -55,6 +55,7 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 - Approved: `print` shows a list of lines with their numbers (`551: text`), one line each. As text (`as text`, `+`, `write`), a list of lines is its text, one line each, with no numbers.
 - Approved: `lines ... of` also works on text, so tool output can be split into lines.
 - Approved: line edits split the new text into lines, so a final line break in it does not add an empty line. The file keeps its own final line break.
+- Approved: empty text is one empty line, so `put '' after line 5 of f` adds an empty line. Use `remove lines` to take lines away.
 - Approved: a line edit outside the file (or with a number that is not whole) is an error, unlike a read range.
 - Approved: the result of a line edit is the old lines, so `print the result` shows what changed. For `put`, the result is empty.
 - Approved, on error: the handler gets a local variable `error` with `message`, `line`, `column` and (for errors in AGENTS.talk) `file`.

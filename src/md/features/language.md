@@ -93,7 +93,7 @@ Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each tok
 | template | `'Hi ${name}'` | A string with `${...}` in it. The value is a list of parts: text, or a token list. |
 | number | `2`, `3.5`, `1_000`, `-3` | `_` groups digits and is dropped. |
 | path | `./a.js`, `../x`, `@/src/a.js`, `./"my file.txt"` | See paths below. |
-| possessive | `'s` | Only when it touches a word and no word character follows. |
+| possessive | `'s` | Only when it touches a word, `)`, `]` or `}`, and no word character follows. |
 | op | `(`, `+`, `.`, `<=` | One character, except `==`, `!=`, `<=`, `>=`. |
 | error | | A problem in the source. The value is the message. |
 
@@ -103,7 +103,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 
 - Approved: `#` starts a comment, anywhere on a line, to the end of the line.
 - Approved: the tokenizer does not make newline tokens. The parser uses `end` and command words to find structure. Tokens keep the line number if the parser needs it later.
-- Approved: `'` after a word character is a possessive only before a non-word character. Thus `file's` is a possessive, and `say 'sun'` is a string. `'s` does not work after `)`, `]` or `}`. Use `.` there: `(x as json).a`.
+- Approved: `'` after a word character, `)`, `]` or `}` is a possessive only before a non-word character. Thus `file's`, `[1, 2]'s last` and `(x as json)'s a` are possessives, and `say 'sun'` is a string. This replaces the earlier rule that `'s` does not work after `)`, `]` or `}`.
 - Approved: both `'` and `"` make strings.
 - Approved: a string can span lines. A missing quote takes the rest of the source.
 - Approved: `${...}` works in both kinds of string. Any expression can go inside, with quotes too.
@@ -122,8 +122,9 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: `./` and `../` are relative to the current directory.
 - Approved: `@/` is relative to the project root.
 - Approved: `../` is legal syntax. The sandbox can refuse a path that goes outside the project root.
-- Approved: a path ends at whitespace, `)` or `,`.
+- Approved: a path ends at whitespace, `)`, `,`, or a `]` or `}` with no `[` or `{` before it in the path. Thus `[./a, ./b]` and `{f: ./a}` work, and `./src/[ab].js` is one path.
 - Approved: a path also ends at a possessive `'s`, so `./notes.txt's lines` works. Note: `[` and `'` are still part of a path, so `./a.txt['x']` is one path.
+- Limit: a `,` ends a path, so a brace glob such as `./src/*.{js,ts}` does not work.
 - Approved: `./"..."` (and `../"..."`, `@/"..."`) puts the path in double quotes, so it can hold spaces, `)` and `,`.
 - Approved: the path ends at the closing quote. Escapes do not work in a quoted path.
 

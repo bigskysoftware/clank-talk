@@ -207,6 +207,11 @@ test('put before and after a line', async () => {
   assert.equal(await readProject('a.txt'), 'top\nvar x\nvar y\nend\n');
 });
 
+test('put empty text adds one empty line', async () => {
+  await ok(`read ./a.txt\nput '' after line 1 of ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'var x\n\nvar y\n');
+});
+
 test('remove lines', async () => {
   await ok(`read ./a.txt\nremove lines 1 to 1 of ./a.txt`);
   assert.equal(await readProject('a.txt'), 'var y\n');

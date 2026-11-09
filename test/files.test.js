@@ -167,3 +167,7 @@ test('range errors', async () => {
 test("first and last of a file are lines", async () => {
   assert.deepEqual(await output("print first of ./notes.txt\nprint the number of the last of ./notes.txt\nprint ./notes.txt's last"), ["first", "2", "TODO: second"]);
 });
+
+test('a list of paths, and possessives after a list or object', async () => {
+  assert.deepEqual(await output(`print [./notes.txt, ./README.md]'s last\nprint {a: 1}'s a\nprint (first of ./notes.txt)'s number`), ['README.md', '1', '1']);
+});

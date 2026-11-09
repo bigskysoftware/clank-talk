@@ -1412,7 +1412,8 @@ async function editLines(file, from, to, newText, state, node, putLine) {
   if (newText !== null) {
     newParts = newText.split("\n");
     // a final line break in the new text does not make an extra empty line
-    if (newParts.length > 0 && newParts[newParts.length - 1] === "") {
+    // but empty text is one empty line; "remove lines" takes lines away
+    if (newParts.length > 1 && newParts[newParts.length - 1] === "") {
       newParts.pop();
     }
   }
