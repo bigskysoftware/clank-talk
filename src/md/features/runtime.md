@@ -8,11 +8,16 @@ Code: `src/js/runtime.js`. `run(source, { tools, maxSteps, globals })` gives `{ 
 - Parse errors stop the script before it runs.
 - A runtime error stops the script. `on error` comes later.
 - Everything is async, so later commands (`read`, `fetch`, `ask`) can wait without a change to how scripts are written.
-- Each command is one step. When the step count goes over `maxSteps` (default 10,000), the script stops.
+- Each command is one step, and each pass of a loop is one step. When the step count goes over `maxSteps` (default 10,000), the script stops. Thus `repeat while true end` stops too.
+- `break` and `continue` pass up from `runCommand` as a return value, until a loop takes them.
 - `print` adds a line to `output`.
 - Local variables last for one run. `$` globals live in `options.globals`. A host keeps them for a session when it passes the same object to each run.
 
 ## Value rules (approved)
+
+- A loop index starts at 0, as in hyperscript.
+- `for x in null` makes no passes. A value that is not a list is an error.
+- The loop variable and the index are ordinary variables. They stay set after the loop.
 
 - `increment` and `decrement` on a variable that is not set start at 0.
 

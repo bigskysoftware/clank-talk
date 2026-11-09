@@ -30,6 +30,11 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `ask` asks the human, waits for the answer, and can time out. The answer goes in `the result`.
 - `replace a with b in <file>` changes the file itself.
 - `as json` parses text to an object, and formats an object to text.
+- Loops:
+  - `for x in <list> ... end`. Later: also the lines of a file.
+  - `repeat <n> times ... end`, `repeat while <condition> ... end`, `repeat until <condition> ... end`.
+  - An index on any loop: `index i` or `with index i`.
+  - `break` and `continue` in loops. Outside a loop they are errors.
 - `increment x by n` and `decrement x by n`. With no `by`, the amount is 1, as in hyperscript.
 - Possessive and dot access are the same: `line's number` and `line.number`.
 - A file gives `name`, `path`, `text`, `lines`, `size`, `modified`. A line gives `number`, and is its content as text.

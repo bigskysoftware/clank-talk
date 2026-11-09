@@ -16,7 +16,7 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - Property access sees only own data properties. `constructor`, `__proto__`, `prototype` and functions give `null`.
 - Object literals have no prototype, so a field named `__proto__` is only a field.
 - `set` makes a plain own field with `Object.defineProperty`, so `set x's __proto__ to ...` cannot change a prototype.
-- Each command is one step. The step budget stops scripts that do not end.
+- Each command is one step, and each loop pass is one step. The step budget stops scripts that do not end, even an empty `repeat while true end`.
 
 ## `run`
 

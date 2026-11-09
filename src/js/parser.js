@@ -39,6 +39,9 @@ export function parse(source, options = {}) {
 
   let i = 0;
 
+  // how many loops the parser is inside, for break and continue
+  let loopDepth = 0;
+
   // ----- token helpers -----
 
   function current() {
@@ -476,13 +479,120 @@ export function parse(source, options = {}) {
 
   function parseIf(token) {
     const condition = parseExpression();
+    const body = parseBody(token);
+    return { type: "if", condition, body, line: token.line, column: token.column };
+  }
+
+  // commands up to the "end" of a block, and the "end" itself
+  function parseBody(token) {
     const body = parseCommands();
     if (isWord("end")) {
       i++;
     } else {
-      error("Expected 'end' for the 'if' at line " + token.line);
+      error("Expected 'end' for the '" + token.value + "' at line " + token.line);
     }
-    return { type: "if", condition, body, line: token.line, column: token.column };
+    return body;
+  }
+
+  // a loop body: like parseBody, but break and continue are allowed in it
+  function parseLoopBody(token) {
+    loopDepth++;
+    const body = parseBody(token);
+    loopDepth--;
+    return body;
+  }
+
+  // a variable name, for "for x" and "index i"
+  function parseName() {
+    const token = current();
+    if (token === undefined || token.type !== "word") {
+      error("Expected a variable name");
+      return null;
+    }
+    i++;
+    return token.value;
+  }
+
+  // optional "index i" or "with index i" after a loop header
+  // gives the name, or null if there is no index, or undefined if there is an error
+  function parseIndex() {
+    if (isWord("with")) {
+      i++;
+      if (!isWord("index")) {
+        error("Expected 'index'");
+        return undefined;
+      }
+    }
+    if (!isWord("index")) {
+      return null;
+    }
+    i++;
+    const name = parseName();
+    if (name === null) {
+      return undefined;
+    }
+    return name;
+  }
+
+  // for <name> in <expression> [with] [index <name>] ... end
+  function parseFor(token) {
+    const name = parseName();
+    if (name === null) {
+      return null;
+    }
+    if (!isWord("in")) {
+      error("Expected 'in'");
+      return null;
+    }
+    i++;
+    const list = parseExpression();
+    if (list === null) {
+      return null;
+    }
+    const index = parseIndex();
+    if (index === undefined) {
+      return null;
+    }
+    const body = parseLoopBody(token);
+    return { type: "for", name, list, index, body, line: token.line, column: token.column };
+  }
+
+  // repeat <expression> times ... end
+  // repeat while <expression> ... end
+  // repeat until <expression> ... end
+  // each can have [with] index <name>
+  function parseRepeat(token) {
+    let kind = "times";
+    if (isWord("while") || isWord("until")) {
+      kind = current().value;
+      i++;
+    }
+    const value = parseExpression();
+    if (value === null) {
+      return null;
+    }
+    if (kind === "times") {
+      if (!isWord("times")) {
+        error("Expected 'times', 'while' or 'until'");
+        return null;
+      }
+      i++;
+    }
+    const index = parseIndex();
+    if (index === undefined) {
+      return null;
+    }
+    const body = parseLoopBody(token);
+    return { type: "repeat", kind, value, index, body, line: token.line, column: token.column };
+  }
+
+  // break and continue, only inside a loop
+  function parseLoopControl(token) {
+    if (loopDepth === 0) {
+      errors.push({ message: "'" + token.value + "' is only allowed in a loop", line: token.line, column: token.column });
+      return null;
+    }
+    return { type: token.value, line: token.line, column: token.column };
   }
 
   // set <target> to <expression>
@@ -537,6 +647,10 @@ export function parse(source, options = {}) {
     set: parseSet,
     increment: parseIncrement,
     decrement: parseIncrement,
+    for: parseFor,
+    repeat: parseRepeat,
+    break: parseLoopControl,
+    continue: parseLoopControl,
   };
 
   // one command, or null if there is an error

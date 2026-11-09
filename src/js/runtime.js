@@ -59,15 +59,32 @@ export async function run(source, options = {}) {
 
 // ----- commands -----
 
+// every command is one step, and so is every pass of a loop,
+// so a script that does not end stops at the budget
+function takeStep(node, state, maxSteps) {
+  state.steps++;
+  if (state.steps > maxSteps) {
+    throw new ScriptError("Step budget of " + maxSteps + " used up", node);
+  }
+}
+
+// gives "break" or "continue" if a loop command ran, so the loop can see it
 async function runCommands(commands, state, tools, maxSteps) {
   for (const command of commands) {
-    // every command is one step, so a script that does not end stops at the budget
-    state.steps++;
-    if (state.steps > maxSteps) {
-      throw new ScriptError("Step budget of " + maxSteps + " used up", command);
+    takeStep(command, state, maxSteps);
+    const signal = await runCommand(command, state, tools, maxSteps);
+    if (signal === "break" || signal === "continue") {
+      return signal;
     }
-    await runCommand(command, state, tools, maxSteps);
   }
+  return null;
+}
+
+// one pass of a loop body; gives true if the loop must stop
+async function runLoopBody(node, state, tools, maxSteps) {
+  takeStep(node, state, maxSteps);
+  const signal = await runCommands(node.body, state, tools, maxSteps);
+  return signal === "break";
 }
 
 async function runCommand(command, state, tools, maxSteps) {
@@ -80,9 +97,56 @@ async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "if") {
     const condition = await evaluate(command.condition, state);
     if (isTrue(condition)) {
-      await runCommands(command.body, state, tools, maxSteps);
+      // pass break and continue up to the loop
+      return await runCommands(command.body, state, tools, maxSteps);
     }
-    return;
+    return null;
+  }
+
+  if (command.type === "break" || command.type === "continue") {
+    return command.type;
+  }
+
+  if (command.type === "for") {
+    const list = await evaluate(command.list, state);
+    const items = loopItems(list, command);
+    for (let index = 0; index < items.length; index++) {
+      setOwn(scopeFor(command.name, state), command.name, items[index]);
+      if (command.index !== null) {
+        setOwn(scopeFor(command.index, state), command.index, index);
+      }
+      if (await runLoopBody(command, state, tools, maxSteps)) {
+        break;
+      }
+    }
+    return null;
+  }
+
+  if (command.type === "repeat") {
+    let count = null;
+    if (command.kind === "times") {
+      count = toNumber(await evaluate(command.value, state), command);
+    }
+    let index = 0;
+    while (true) {
+      if (command.kind === "times" && index >= count) {
+        break;
+      }
+      if (command.kind === "while" && !isTrue(await evaluate(command.value, state))) {
+        break;
+      }
+      if (command.kind === "until" && isTrue(await evaluate(command.value, state))) {
+        break;
+      }
+      if (command.index !== null) {
+        setOwn(scopeFor(command.index, state), command.index, index);
+      }
+      if (await runLoopBody(command, state, tools, maxSteps)) {
+        break;
+      }
+      index++;
+    }
+    return null;
   }
 
   if (command.type === "set") {
@@ -179,6 +243,18 @@ async function evaluate(node, state) {
   }
 
   throw new ScriptError("Unknown expression type '" + type + "'", node);
+}
+
+// what a "for" loop goes over: a list; null gives no passes
+// later: the lines of a file
+function loopItems(value, node) {
+  if (value === null || value === undefined) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  throw new ScriptError("Cannot loop over " + describe(value) + ", expected a list", node);
 }
 
 // $name is a global, any other name is local to the script
