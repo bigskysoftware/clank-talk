@@ -2,11 +2,17 @@
 // Plodding char-by-char scan: comments, strings, numbers, paths, keywords
 
 const KEYWORDS = [
-  "def", "tool", "end", "if", "else", "then", "for", "in", "return",
-  "set", "put", "into", "to", "with", "as", "from",
-  "read", "write", "replace", "fetch", "run", "files", "matching",
-  "contains", "is", "not", "and", "or", "the", "result", "it",
-  "less", "than", "json", "before", "after", "ends", "reject", "undo", "last", "steps", "use", "plugin",
+  // commands
+  "print", "set", "increment", "decrement", "if", "else", "end", "then",
+  "for", "in", "index", "repeat", "times", "while", "until", "break", "continue",
+  "read", "write", "append", "replace", "with", "to", "by",
+  "tool", "import", "run", "fetch", "ask", "before", "after", "reject", "undo", "on", "error",
+  // expressions
+  "the", "it", "result", "true", "false", "null", "not", "no", "and", "or", "mod",
+  "is", "less", "greater", "than", "equal", "contains", "does", "contain", "starts", "ends",
+  "exists", "exist", "empty", "as", "json", "pretty",
+  // site examples that are not built yet
+  "last", "steps",
 ];
 
 function escape(text) {

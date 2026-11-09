@@ -74,7 +74,7 @@ The runtime is pure JavaScript. No bash, no exec, no escape hatches. If ClankTal
 
 ```talk
 write 'hello' to ../../etc/hosts
-# error: ../../etc/hosts is outside the project root
+# error: Path is outside the project root: ../../etc/hosts
 ```
 
 </div>
@@ -167,17 +167,17 @@ end
 
 </div>
 
-## Everything Is A Plugin
+## Share Your Tools
 
-In ClankTalk, tools are syntax and syntax is a plugin. New commands are just vanilla JavaScript.
+Tools are just ClankTalk, so they're easy to read and easy to share. Pull in a whole set with `import`.
 
-You pick the plugins. Your agent doesn't.
+You pick the imports. Your agent doesn't, and it can't touch a `.talk` file.
 
 <div class="window">
 <div class="window-title">AGENTS.talk</div>
 
 ```talk
-use plugin ./plugins/git.js
+import ./tools/git.talk
 ```
 
 </div>
