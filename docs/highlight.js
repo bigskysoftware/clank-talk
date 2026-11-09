@@ -1,5 +1,5 @@
 // Build-time syntax highlighter for ```talk code blocks
-// Plodding char-by-char scan: comments, strings, numbers, keywords
+// Plodding char-by-char scan: comments, strings, numbers, paths, keywords
 
 const KEYWORDS = [
   "def", "tool", "end", "if", "else", "then", "for", "in", "return",
@@ -40,8 +40,8 @@ export function highlight(code) {
   while (i < code.length) {
     const c = code[i];
 
-    // comment: -- to end of line
-    if (code.startsWith("--", i)) {
+    // comment: # to end of line
+    if (c === "#") {
       let j = code.indexOf("\n", i);
       if (j === -1) {
         j = code.length;
@@ -51,8 +51,8 @@ export function highlight(code) {
       continue;
     }
 
-    // path literal: ./foo or ../foo, up to whitespace
-    if (code.startsWith("./", i) || code.startsWith("../", i)) {
+    // path literal: ./foo, ../foo or @/foo, up to whitespace
+    if (code.startsWith("./", i) || code.startsWith("../", i) || code.startsWith("@/", i)) {
       let j = i;
       while (j < code.length && !/\s/.test(code[j])) {
         j++;

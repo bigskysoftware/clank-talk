@@ -74,7 +74,7 @@ The runtime is pure JavaScript. No bash, no exec, no escape hatches. If ClankTal
 
 ```talk
 write 'hello' to ../../etc/hosts
--- error: ../../etc/hosts is outside the project root
+# error: ../../etc/hosts is outside the project root
 ```
 
 </div>
@@ -109,9 +109,9 @@ When tainted data heads somewhere sensitive, your hooks get a say.
 
 ```talk
 fetch https://example.com/data as json
--- the result is tainted: it came from the network
+# the result is tainted: it came from the network
 write the result to ./data.json
--- a hook asks the user first
+# a hook asks the user first
 ```
 
 </div>

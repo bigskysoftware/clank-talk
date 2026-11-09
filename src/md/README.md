@@ -28,6 +28,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/sandbox.md](features/sandbox.md): isolation model, in-process runtime
 - [features/core-tools.md](features/core-tools.md): built-in fs and fetch
 - [features/plugins.md](features/plugins.md): explicit imports for syntax and tools
+- [features/discoverability.md](features/discoverability.md): list all syntax, introspect each piece with examples
 - [features/agents-talk.md](features/agents-talk.md): user-defined tools in AGENTS.talk
 - [features/audit.md](features/audit.md): per-step action log
 - [features/taint.md](features/taint.md): value provenance and sink checks

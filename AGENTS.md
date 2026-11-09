@@ -20,3 +20,9 @@ Read https://grugbrain.dev for the general vibe.
 - No big-bang changes. If a change grows, stop and split it.
 - Record important decisions in src/md as part of the same branch.
 - Write user docs in docs/ as features land, in the tone of https://hyperscript.org.
+
+## Syntax design
+
+- Humans design and approve all syntax. Agents can propose syntax, but must not decide it.
+- Readability is more important than writeability.
+- Mark each syntax rule in src/md as "approved" or "proposed". Implement only approved rules.
