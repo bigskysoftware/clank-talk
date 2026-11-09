@@ -1,4 +1,4 @@
-// Build-time syntax highlighter for ```ct code blocks
+// Build-time syntax highlighter for ```talk code blocks
 // Plodding char-by-char scan: comments, strings, numbers, keywords
 
 const KEYWORDS = [

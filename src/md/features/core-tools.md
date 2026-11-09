@@ -16,4 +16,4 @@ The runtime includes these capabilities by default.
 
 ## Not included
 
-- General process execution. Users expose specific commands through AGENTS.ct.
+- General process execution. Users expose specific commands through AGENTS.talk.

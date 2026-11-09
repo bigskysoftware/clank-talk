@@ -4,6 +4,7 @@
 @font-face { font-family: "IBM Plex Sans"; src: url("../fonts/IBMPlexSans-Regular.woff2") format("woff2"); font-weight: 400; }
 @font-face { font-family: "IBM Plex Sans"; src: url("../fonts/IBMPlexSans-SemiBold.woff2") format("woff2"); font-weight: 600; }
 @font-face { font-family: "IBM Plex Mono"; src: url("../fonts/IBMPlexMono-Regular.woff2") format("woff2"); font-weight: 400; }
+@font-face { font-family: "IBM Plex Mono"; src: url("../fonts/IBMPlexMono-SemiBold.woff2") format("woff2"); font-weight: 600; }
 
 :root {
   --bg: #ffffff;
@@ -40,12 +41,10 @@ a { color: var(--accent); }
 
 h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; }
 
-.content { max-width: 960px; margin: 0 auto; padding: 2rem 16px 4rem; }
+.content { max-width: 1140px; margin: 0 auto; padding: 2rem 16px 4rem; }
 
-/* hero: text left, code right */
-.hero { display: flex; gap: 2rem; align-items: center; padding: 2rem 0 1rem; }
-.hero-text { flex: 1; min-width: 0; }
-.hero-side { flex: 1; min-width: 0; }
+/* hero: one centered column */
+.hero { padding: 2rem 0 1rem; text-align: center; }
 .hero-title {
   font-family: var(--font-display);
   font-weight: 400;
@@ -55,14 +54,61 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; }
   color: #000000;
 }
 .hero-accent { color: #4a84c4; }
-.hero h1 { margin: 0.5rem 0; font-size: 1.4rem; color: var(--text-muted); }
-.subtitle { margin: 0; font-size: 1.05rem; color: var(--text-muted); }
-.hero-code { margin: 0; }
+.hero h1 { margin: 0.5rem 0 2rem; font-size: 1.4rem; color: var(--text-muted); }
+.subtitle { max-width: 680px; margin: 1.5rem auto 0; font-size: 1.05rem; color: var(--text-muted); }
+
+/* speech bubble with code, robot to the right */
+.hero-art { display: flex; align-items: flex-start; justify-content: center; gap: 36px; text-align: left; }
+.hero-art img { display: block; width: 220px; max-width: 30%; height: auto; flex-shrink: 0; }
+.hero-bubble {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 1.1rem 1.3rem;
+  background: #fdf6ea;
+  border: 4px solid #13202e;
+  border-radius: 28px;
+}
+/* tail: dark triangle, then a cream triangle on top of it */
+.hero-bubble::before,
+.hero-bubble::after {
+  content: "";
+  position: absolute;
+  top: 46px;
+  border-style: solid;
+  border-color: transparent;
+}
+.hero-bubble::before {
+  right: -30px;
+  border-width: 16px 0 16px 30px;
+  border-left-color: #13202e;
+}
+/* the cream triangle starts inside the border, so it hides the border line */
+.hero-bubble::after {
+  right: -22px;
+  margin-top: 3px;
+  border-width: 13px 0 13px 26px;
+  border-left-color: #fdf6ea;
+}
+.hero-bubble pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  background: none;
+  color: #13202e;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.hero-bubble code { font-size: inherit; }
+.hero-bubble .tok-keyword { color: #1d4ed8; }
+.hero-bubble .tok-string { color: #15803d; }
+.hero-bubble .tok-path { color: #b45309; }
+.hero-bubble .tok-comment { color: #6b7280; }
+
 .note { text-align: center; font-size: 0.85rem; color: var(--text-muted); }
 
-@media (max-width: 760px) {
-  .hero { flex-direction: column; align-items: stretch; }
-}
 
 /* window chrome */
 .window {

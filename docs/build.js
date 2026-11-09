@@ -9,14 +9,14 @@ const SRC = "docs";
 const OUT = "_site";
 const SKIP = ["build.js", "highlight.js", "serve.js", "template.html"];
 
-// ```ct blocks get highlighted, other blocks use the default renderer
+// ```talk blocks get highlighted, other blocks use the default renderer
 marked.use({
   renderer: {
     code(token) {
-      if (token.lang !== "ct") {
+      if (token.lang !== "talk") {
         return false;
       }
-      return '<pre><code class="language-ct">' + highlight(token.text) + "</code></pre>\n";
+      return '<pre><code class="language-talk">' + highlight(token.text) + "</code></pre>\n";
     },
   },
 });

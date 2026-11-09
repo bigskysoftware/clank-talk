@@ -11,7 +11,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - The runtime records a full audit of agent actions.
 - The runtime tracks taint on values.
 - The runtime supports undo for as many actions as is practical.
-- Users add tools and syntax with plugins and AGENTS.ct files.
+- Users add tools and syntax with plugins and AGENTS.talk files.
 
 ## Non-goals
 
@@ -28,7 +28,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/sandbox.md](features/sandbox.md): isolation model, in-process runtime
 - [features/core-tools.md](features/core-tools.md): built-in fs and fetch
 - [features/plugins.md](features/plugins.md): explicit imports for syntax and tools
-- [features/agents-ct.md](features/agents-ct.md): user-defined tools in AGENTS.ct
+- [features/agents-talk.md](features/agents-talk.md): user-defined tools in AGENTS.talk
 - [features/audit.md](features/audit.md): per-step action log
 - [features/taint.md](features/taint.md): value provenance and sink checks
 - [features/undo.md](features/undo.md): per-step undo stack
