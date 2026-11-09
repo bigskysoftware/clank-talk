@@ -61,6 +61,7 @@ Git (hardened; the result is git's output as text):
   git status    git diff [<files>]    git log [<count>]    git show <commit>    git branches    git branch
   git switch to [new branch] <branch>    git commit <files> with <message>   (commits only those files)    git merge <branch>   (fast-forward only)
   git push   (current branch to origin; the human approves it in a dialog, unless AGENTS.talk allows it)
+  git delete branch <branch>   (only a merged branch)
   You cannot change .talk files, @/talk/, or hidden files and folders (.env, .git/), unless AGENTS.talk allows them.
   If a change is refused because of AGENTS.talk, tell the human the line to add. Do not try another way to make the change.
 

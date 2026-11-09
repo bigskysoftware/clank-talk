@@ -1116,6 +1116,15 @@ async function gitArgs(command, state, step) {
     }
     return ["switch", name];
   }
+  // only a branch that is merged: --delete, never --force
+  if (op === "delete") {
+    const name = toText(await evaluate(command.value, state));
+    if (!isSafeBranchName(name)) {
+      throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
+    }
+    step.branch = name;
+    return ["branch", "--delete", name];
+  }
   // the current branch, to a branch with the same name on origin; never force
   if (op === "push") {
     return ["push", "--no-verify", "origin", "HEAD"];

@@ -175,3 +175,13 @@ test("git push asks the human, unless AGENTS.talk allows it", async () => {
     await fs.rm(bare, { recursive: true, force: true });
   }
 });
+
+test("git delete branch deletes only a merged branch", async () => {
+  await output("git switch to new branch 'done'\ngit switch to 'main'\ngit delete branch 'done'");
+  assert.doesNotMatch(git(["branch", "--list"]), /done/);
+  await output("git switch to new branch 'open'");
+  await fs.writeFile(path.join(root, "o.txt"), "o\n");
+  await output("git commit ./o.txt with 'Add o'\ngit switch to 'main'");
+  assert.match((await errors("git delete branch 'open'"))[0], /^git delete failed: .*not fully merged/s);
+  assert.deepEqual(await errors("git delete branch '-D'"), ["Not a safe branch name: '-D'. Use letters, digits, -, _, / and ."]);
+});

@@ -10,7 +10,7 @@
 
 import { tokenize } from "./tokenizer.js";
 // the words after "git"; see src/md/features/git.md
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "push"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "push", "delete"];
 
 /**
  * @typedef {Object} ParseError
@@ -851,7 +851,7 @@ export function parse(source, options = {}) {
   // git <operation> ...: a hardened git, see src/md/features/git.md
   //   git status    git diff [<path>]    git log [<count>]    git show <commit>
   //   git branches  git branch
-  //   git switch to [new branch] <branch>    git commit <files> with <message>    git merge <branch>
+  //   git switch to [new branch] <branch>    git commit <files> with <message>    git merge <branch>    git delete branch <branch>
   function parseGit(token) {
     const op = current();
     if (op === undefined || op.type !== "word" || !GIT_OPERATIONS.includes(op.value)) {
@@ -860,8 +860,16 @@ export function parse(source, options = {}) {
     }
     i++;
     const command = { type: "git", operation: op.value, value: null, line: token.line, column: token.column };
-    // git show <commit>, git merge <branch>
-    if (op.value === "show" || op.value === "merge") {
+    // git delete branch <branch>
+    if (op.value === "delete") {
+      if (!isWord("branch")) {
+        error("Expected 'branch'");
+        return null;
+      }
+      i++;
+    }
+    // git show <commit>, git merge <branch>, git delete branch <branch>
+    if (op.value === "show" || op.value === "merge" || op.value === "delete") {
       command.value = parseExpression();
       if (command.value === null) {
         return null;

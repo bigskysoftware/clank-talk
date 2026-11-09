@@ -339,6 +339,7 @@ git switch to new branch 'fix-parser'
 git commit [./src/app.js, ./test/app.test.js] with 'Fix the parser'
 git switch to 'main'
 git merge 'fix-parser'
+git delete branch 'fix-parser'
 ```
 
 `git commit` adds and commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards, so it never makes a merge commit or a conflict. `git push` sends the current branch to origin, but asks you first, every time. If you trust your agent with that, add `allow git push` to `AGENTS.talk`.

@@ -47,6 +47,7 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved: no push in the first version. Push comes later, with the approval design.
 - Approved (built): `git push` runs `push --no-verify origin HEAD`: the current branch, to a branch with the same name on origin. Never force.
 - Approved (built): push asks the human first (`Push branch 'x' to origin?`, yes or no), through `ask`. With no `yes`, nothing is pushed, and the error names the `allow git push` line.
+- Approved (built): `git delete branch <branch>` runs `branch --delete <branch>`, so git deletes only a branch that is merged. Never `--force`.
 - Approved (built): `allow git push` in AGENTS.talk lets push go without asking. Only AGENTS.talk can have it.
 - Approved (built): push keeps the user's credential helper (from their global config), and gets `SSH_AUTH_SOCK` for their ssh agent. Repo config with a `pushurl` that starts with `ext::` is refused too.
 - Approved (built): `git merge <branch>` is `merge --ff-only <branch>`. It never makes a commit, so it needs no message and cannot conflict. If a fast-forward is not possible, it is an error.
