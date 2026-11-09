@@ -129,7 +129,7 @@ test('git commands', () => {
 });
 
 test('git errors', () => {
-  assert.deepEqual(errors('git fetch'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit, merge, push, delete @1:5']);
+  assert.deepEqual(errors('git rebase'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit, merge, push, delete @1:5']);
   assert.deepEqual(errors('git show'), ['Expected a value @1:5']);
 });
 
@@ -158,4 +158,13 @@ test('ask', () => {
   assert.deepEqual(choice.choices, [{ type: 'string', value: 'yes' }, { type: 'string', value: 'no' }]);
   assert.equal(choice.within.ms, 60000);
   assert.deepEqual(errors("ask 'x' with 'a'"), ["Expected 'or' and a second choice @1:14"]);
+});
+
+test('fetch', () => {
+  const [plain, full] = commands("fetch 'https://x.com'\nfetch url as json with method: 'POST', body: {a: 1} within 5 seconds");
+  assert.deepEqual(plain, { type: 'fetch', url: { type: 'string', value: 'https://x.com' }, as: 'text', named: [], within: null });
+  assert.equal(full.as, 'json');
+  assert.deepEqual(full.named.map((n) => n.name), ['method', 'body']);
+  assert.equal(full.within.ms, 1000);
+  assert.deepEqual(errors("fetch 'x' as html"), ['Expected json, response or text @1:14']);
 });

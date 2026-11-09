@@ -322,6 +322,27 @@ end
 
 `on error` can go anywhere in a script, and covers all of it. `continue` goes on with the command after the one that failed. `stop`, the default, ends the script with the error.
 
+## Fetch
+
+```talk
+fetch 'https://api.github.com/repos/bigskysoftware/htmx' as json
+print it's stargazers_count
+
+fetch 'https://example.com/api' as response with method: 'POST', body: { name: 'x' }
+if the result's status is not 201
+  print the result's text
+end
+```
+
+A fetch can send your project's data anywhere, so the first fetch to a new host asks you. Say yes, and that host is fine for the rest of the session. Hosts you always trust go in `AGENTS.talk`:
+
+```talk
+# AGENTS.talk
+allow fetch from 'api.github.com', '*.npmjs.org'
+```
+
+`localhost` and private addresses must be listed there too, so a script can't poke at your local services or your cloud's metadata server by accident.
+
 ## Git
 
 ClankTalk has git built in, with the dangerous parts taken out:
@@ -415,7 +436,7 @@ after run
 end
 ```
 
-A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
 
 Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
 A hook can ask you before a step happens. Only you answer, never the agent:

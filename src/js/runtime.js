@@ -22,7 +22,7 @@ const DESCRIBE_LENGTH = 80;
 const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
-const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git"];
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git", "fetch"];
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -112,6 +112,7 @@ function lineLabel(line) {
  * @param {string} [options.cwd]                      the directory for ./ and ../ paths (default: root)
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
+ * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
  * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
  */
 export function start(source, options = {}) {
@@ -186,6 +187,9 @@ async function execute(source, options, execution) {
     allowedChanges: agents.allowedChanges,
     // true if AGENTS.talk has "allow git push": then push does not ask the human
     allowGitPush: agents.allowGitPush,
+    // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
+    allowedFetch: agents.allowedFetch,
+    fetchHosts: options.fetchHosts || new Set(),
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -274,7 +278,7 @@ function toolList(state, hostTools) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, hooks: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], hooks: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -319,6 +323,14 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedEnv.push(...definition.names);
         } else {
           result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "allowFetch") {
+        if (file.name === AGENTS_TALK) {
+          result.allowedFetch.push(...definition.hosts);
+        } else {
+          result.errors.push({ message: "'allow fetch from' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -603,6 +615,10 @@ async function runCommand(command, state, tools, maxSteps) {
     return null;
   }
 
+  if (command.type === "fetch") {
+    await runFetch(command, state);
+    return null;
+  }
   if (command.type === "ask") {
     state.result = await askHuman(command, state);
     return null;
@@ -1254,6 +1270,205 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
       }
     });
   });
+}
+
+// ----- fetch -----
+
+const FETCH_TIME_LIMIT = 30_000;
+const FETCH_MAX_BYTES = 5 * 1024 * 1024;
+const FETCH_MAX_REDIRECTS = 5;
+
+// fetch <url> [as json | response | text] [with method, headers, body] [within <duration>]
+// see src/md/features/fetch.md
+async function runFetch(command, state) {
+  const url = parseUrl(toText(await evaluate(command.url, state)), command.url);
+
+  let method = "GET";
+  const headers = {};
+  let body;
+  for (const arg of command.named) {
+    const value = await evaluate(arg.value, state);
+    if (arg.name === "method") {
+      method = toText(value).toUpperCase();
+    } else if (arg.name === "headers") {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        throw new ScriptError("headers must be an object, such as { 'Accept': 'text/plain' }", arg.value);
+      }
+      for (const name of Object.keys(value)) {
+        headers[name] = toText(value[name]);
+      }
+    } else if (arg.name === "body") {
+      // an object or a list goes as JSON
+      if (value !== null && typeof value === "object") {
+        body = JSON.stringify(value);
+        if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+          headers["Content-Type"] = "application/json";
+        }
+      } else {
+        body = toText(value);
+      }
+    } else {
+      throw new ScriptError("fetch takes method, headers and body, not '" + arg.name + "'", arg.value);
+    }
+  }
+
+  const step = Object.create(null);
+  step.url = url.href;
+  step.method = method;
+  await runHooks("before", ["fetch"], step, state, command);
+
+  let limit = shorter(state.timeLimit, FETCH_TIME_LIMIT);
+  if (command.within !== null) {
+    limit = shorter(limit, await durationMs(command.within, state));
+  }
+  const signal = AbortSignal.any([state.execution.signal, AbortSignal.timeout(limit)]);
+
+  // follow redirects by hand, so each new host is checked too
+  let current = url;
+  let response = null;
+  for (let hops = 0; ; hops++) {
+    await checkFetchHost(current, state, command);
+    try {
+      response = await fetch(current, { method, headers, body, redirect: "manual", signal });
+    } catch (err) {
+      if (state.execution.signal.aborted) {
+        throw new Cancelled("Cancelled", command);
+      }
+      if (signal.aborted) {
+        throw new ScriptError("fetch did not finish within " + limit + "ms: " + current.href, command);
+      }
+      throw new ScriptError("fetch failed: " + current.href + ": " + (err.cause ? err.cause.message : err.message), command);
+    }
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400 || location === null) {
+      break;
+    }
+    if (hops >= FETCH_MAX_REDIRECTS) {
+      throw new ScriptError("fetch stopped after " + FETCH_MAX_REDIRECTS + " redirects: " + url.href, command);
+    }
+    current = parseUrl(new URL(location, current).href, command);
+    // a 303, or a 301 or 302 after a POST, goes on as a GET with no body, as browsers do
+    if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST")) {
+      method = "GET";
+      body = undefined;
+    }
+  }
+
+  const text = await readLimited(response, current, command);
+  step.status = response.status;
+
+  let result;
+  if (command.as === "response") {
+    const responseHeaders = Object.create(null);
+    for (const [name, value] of response.headers) {
+      responseHeaders[name] = value;
+    }
+    result = { status: response.status, headers: responseHeaders, text };
+  } else {
+    if (response.status >= 400) {
+      throw new ScriptError("fetch got status " + response.status + " from " + current.href + ": " + describe(text), command);
+    }
+    if (command.as === "json") {
+      try {
+        result = JSON.parse(text);
+      } catch (err) {
+        throw new ScriptError("fetch did not get valid JSON from " + current.href + ": " + describe(text), command);
+      }
+    } else {
+      result = text;
+    }
+  }
+  state.result = result;
+  await runHooks("after", ["fetch"], step, state, command);
+  return result;
+}
+
+function parseUrl(text, node) {
+  let url;
+  try {
+    url = new URL(text);
+  } catch (err) {
+    throw new ScriptError("Not a valid URL: " + describe(text), node);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new ScriptError("fetch only takes http and https URLs, found " + describe(text), node);
+  }
+  return url;
+}
+
+// read the body as text, and stop at the size limit
+async function readLimited(response, url, node) {
+  if (response.body === null) {
+    return "";
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    size += value.length;
+    if (size > FETCH_MAX_BYTES) {
+      await reader.cancel();
+      throw new ScriptError("fetch got more than " + FETCH_MAX_BYTES + " bytes from " + url.href, node);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+// a host is allowed if AGENTS.talk names it, or the human said yes in this session
+// a local or private address must be named in AGENTS.talk
+async function checkFetchHost(url, state, node) {
+  const host = url.hostname.toLowerCase();
+  if (isAllowedFetchHost(host, state.allowedFetch)) {
+    return;
+  }
+  const allowLine = "To allow it, a human can add this line to AGENTS.talk:\n  allow fetch from '" + host + "'";
+  if (isPrivateHost(host)) {
+    throw new ScriptError("fetch refused: " + host + " is a local or private address.\n" + allowLine, node);
+  }
+  if (state.fetchHosts.has(host)) {
+    return;
+  }
+  const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
+  if (answer !== "yes") {
+    throw new ScriptError("The human did not approve a fetch from " + host + (state.ask === null ? ": there is no way to ask them here" : "") + ".\n" + allowLine, node);
+  }
+  state.fetchHosts.add(host);
+}
+
+// 'api.github.com' allows that host; '*.github.com' allows hosts under github.com
+function isAllowedFetchHost(host, allowed) {
+  for (const pattern of allowed) {
+    if (pattern === host) {
+      return true;
+    }
+    if (pattern.startsWith("*.") && host.endsWith(pattern.slice(1))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// localhost, and IP addresses in loopback, private and link-local ranges
+function isPrivateHost(host) {
+  if (host === "localhost" || host.endsWith(".localhost")) {
+    return true;
+  }
+  // IPv6 hosts come in brackets
+  if (host.startsWith("[")) {
+    const ip = host.slice(1, -1);
+    return ip === "::1" || ip === "::" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80") || ip.startsWith("::ffff:");
+  }
+  const parts = host.split(".");
+  if (parts.length !== 4 || !parts.every((part) => /^\d+$/.test(part))) {
+    return false;
+  }
+  const [a, b] = parts.map(Number);
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
 }
 
 // ----- ask -----

@@ -162,6 +162,12 @@ export const HELP = [
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
+    name: "fetch", kind: "command",
+    syntax: "fetch <url> [as json | as response | as text] [with method: ..., headers: ..., body: ...] [within <duration>]",
+    description: "Get a URL over http or https. The result is the body as text, or parsed with 'as json'. 'as response' gives { status, headers, text }. A new host asks the human first, unless AGENTS.talk has 'allow fetch from'. Local and private addresses must be in AGENTS.talk. Limits: 30 seconds, 5 MB.",
+    examples: ["fetch 'https://api.github.com/repos/bigskysoftware/htmx' as json\nprint it's stargazers_count", "fetch 'https://example.com/api' as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
+  },
+  {
     name: "ask", kind: "command",
     syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
     description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text they type, or the choice they pick. With no way to ask, no answer in time, or a 'no thanks', the result is null, so treat null as no.",
@@ -181,8 +187,8 @@ export const HELP = [
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
-    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow git push",
-    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow git push' lets git push go without asking the human.",
+    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow git push | allow fetch from '<host>', ...",
+    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow git push' lets git push go without asking the human. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com.",
     examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore"],
   },
 

@@ -10,9 +10,7 @@ The runtime includes these capabilities by default.
 
 ## Fetch
 
-- HTTP requests: TODO
-- Allowed hosts: TODO
-- Response values are tainted.
+See [fetch.md](fetch.md). Later: response values are tainted.
 
 ## Not included
 

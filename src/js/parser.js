@@ -1145,6 +1145,7 @@ export function parse(source, options = {}) {
     git: parseGit,
     undo: parseUndo,
     ask: parseAsk,
+    fetch: parseFetch,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,
@@ -1236,30 +1237,73 @@ export function parse(source, options = {}) {
   }
 
   // name 'a', 'b'   or   name with x: 'a', y: 'b'   or   name
+  // name: value, name: value; adds to the list, and gives false on an error
+  function parseNamedArgs(named) {
+    while (true) {
+      const name = current();
+      if (name === undefined || name.type !== "word") {
+        error("Expected an argument name");
+        return false;
+      }
+      i++;
+      if (!expectOp(":")) {
+        return false;
+      }
+      const value = parseExpression();
+      if (value === null) {
+        return false;
+      }
+      named.push({ name: name.value, value });
+      if (!isOp(",")) {
+        return true;
+      }
+      i++;
+    }
+  }
+
+  // fetch <url> [as json | as response | as text] [with name: value, ...] [within <duration>]
+  // see src/md/features/fetch.md
+  function parseFetch(token) {
+    const url = parseBefore(["as", "with", "within"], parseExpression);
+    if (url === null) {
+      return null;
+    }
+    let as = "text";
+    if (isWord("as")) {
+      i++;
+      if (!isWord("json") && !isWord("response") && !isWord("text")) {
+        error("Expected json, response or text");
+        return null;
+      }
+      as = current().value;
+      i++;
+    }
+    const named = [];
+    if (isWord("with")) {
+      i++;
+      const ok = parseBefore(["within"], () => parseNamedArgs(named));
+      if (!ok) {
+        return null;
+      }
+    }
+    let within = null;
+    if (isWord("within")) {
+      i++;
+      within = parseDuration();
+      if (within === null) {
+        return null;
+      }
+    }
+    return { type: "fetch", url, as, named, within, line: token.line, column: token.column };
+  }
+
   function parseToolCall(token) {
     const args = [];
     const named = [];
     if (isWord("with")) {
       i++;
-      while (true) {
-        const name = current();
-        if (name === undefined || name.type !== "word") {
-          error("Expected an argument name");
-          return null;
-        }
-        i++;
-        if (!expectOp(":")) {
-          return null;
-        }
-        const value = parseExpression();
-        if (value === null) {
-          return null;
-        }
-        named.push({ name: name.value, value });
-        if (!isOp(",")) {
-          break;
-        }
-        i++;
+      if (!parseNamedArgs(named)) {
+        return null;
       }
     } else if (canStartValue()) {
       while (true) {
@@ -1383,7 +1427,31 @@ export function parse(source, options = {}) {
   //   allow env NAME, NAME
   //   allow changes to @/.github/, @/.gitignore
   //   allow git push
+  //   allow fetch from 'api.github.com', '*.npmjs.org'
   function parseAllow(token) {
+    if (isWord("fetch")) {
+      i++;
+      if (!isWord("from")) {
+        error("Expected 'from'");
+        return null;
+      }
+      i++;
+      const hosts = [];
+      while (true) {
+        const host = current();
+        if (host === undefined || host.type !== "string") {
+          error("Expected a host in quotes, such as 'api.github.com'");
+          return null;
+        }
+        i++;
+        hosts.push(host.value.toLowerCase());
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+      return { type: "allowFetch", hosts, line: token.line, column: token.column };
+    }
     if (isWord("changes")) {
       return parseAllowChanges(token);
     }
@@ -1397,7 +1465,7 @@ export function parse(source, options = {}) {
       return { type: "allowGitPush", line: token.line, column: token.column };
     }
     if (!isWord("env")) {
-      error("Expected 'env', 'changes to' or 'git push'");
+      error("Expected 'env', 'changes to', 'git push' or 'fetch from'");
       return null;
     }
     i++;
