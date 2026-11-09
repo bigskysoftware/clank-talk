@@ -99,3 +99,15 @@ test("the server speaks JSON-RPC over stdio", async () => {
   assert.equal(lines[0].id, 1);
   assert.equal(lines[1].result.content[0].text, "hello");
 });
+
+test('the log has each script as written, and what happened', async () => {
+  session.log = path.join(root, 'logs', 'run.log');
+  await call('print 1\nprint 2');
+  const text = await fs.readFile(session.log, 'utf8');
+  assert.match(text, /=== \d{4}-\d\d-\d\d \d\d:\d\d:\d\d  done  2 steps ===\nprint 1\nprint 2\n\n1\n2\n/);
+});
+
+test('no log unless the host asks for one', async () => {
+  await call('print 1');
+  await assert.rejects(fs.stat(path.join(root, 'logs')));
+});

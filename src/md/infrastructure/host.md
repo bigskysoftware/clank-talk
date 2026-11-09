@@ -19,6 +19,7 @@ Approved:
 - One `globals` object for the life of the server, so `$` variables stay between calls.
 - The tool description teaches the language: a short syntax summary, then the tools from AGENTS.talk with their parameters. It is read at `tools/list`, so a change to AGENTS.talk shows when the client lists tools again.
 - Logs go to stderr. stdout is only for protocol messages.
+- `--log <file>` appends a readable log of each run: a header with the time, status and steps, the script as written, then the same text the agent gets. The host writes it, so the sandbox does not apply. Humans watch it with `tail -f`. This is the start of the audit feature.
 
 ## Dogfood
 

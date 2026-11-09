@@ -8,6 +8,8 @@
 // Logs go to stderr. stdout is only for protocol messages.
 
 import readline from "node:readline";
+import fs from "node:fs/promises";
+import nodePath from "node:path";
 import { run, listTools, VERSION } from "./clank-talk.js";
 
 const TOOL_NAME = "clank_talk";
@@ -141,6 +143,9 @@ export async function handleMessage(message, session) {
       return replyError(id, -32602, "The argument 'script' must be text");
     }
     const result = await run(script, { root: session.root, globals: session.globals });
+    if (session.log) {
+      await writeLog(session.log, script, result);
+    }
     return reply(id, {
       content: [{ type: "text", text: formatResult(result) }],
       isError: result.status !== "done",
@@ -148,6 +153,15 @@ export async function handleMessage(message, session) {
   }
 
   return replyError(id, -32601, "Method not found: " + message.method);
+}
+
+// a log that humans can read: each script as written, then what happened
+// the host writes it, not the script, so the sandbox does not apply
+async function writeLog(file, script, result) {
+  const time = new Date().toISOString().replace("T", " ").slice(0, 19);
+  const entry = "\n=== " + time + "  " + result.status + "  " + result.steps + " steps ===\n" + script + "\n\n" + formatResult(result) + "\n";
+  await fs.mkdir(nodePath.dirname(file), { recursive: true });
+  await fs.appendFile(file, entry);
 }
 
 function reply(id, result) {
@@ -169,8 +183,15 @@ export function main(args) {
     root = args[rootIndex + 1];
   }
 
-  // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null) };
+// --log <file>: append a readable log of each run
+let log = null;
+const logIndex = args.indexOf("--log");
+if (logIndex !== -1 && args[logIndex + 1]) {
+  log = nodePath.resolve(args[logIndex + 1]);
+}
+
+// one session for the life of the server, so $ globals stay between calls
+const session = { root, globals: Object.create(null), log };
 
   const input = readline.createInterface({ input: process.stdin });
   input.on("line", async (line) => {
