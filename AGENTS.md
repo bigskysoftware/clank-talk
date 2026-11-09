@@ -1,28 +1,23 @@
 # clank-talk
 
-## Intent
-
-This project follows https://srcmd.org, with the Markdown in src/md.
-Read src/md/README.md first.
-
+This project follows https://srcmd.org. Read src/md/README.md first.
 Keep temporary files and plans in tmp/.
 
 ## Code style
 
-Keep the code as simple and direct as possible.
-Prefer plodding if/then code to sophisticated approaches.
-Read https://grugbrain.dev for the general vibe.
+Keep code simple and direct. Prefer plodding if/then code. See https://grugbrain.dev.
 
 ## Workflow
 
-- Work in small increments. Each increment is one branch off master.
-- Keep each diff small enough for a human to read and understand.
-- No big-bang changes. If a change grows, stop and split it.
-- Record important decisions in src/md as part of the same branch.
+- One small branch off master per feature. Never work on master.
+- Flow: user reviews the branch, merge to master, next feature.
+- Keep diffs small enough for a human to understand. If a change grows, split it.
+- Record decisions in src/md, in the same branch.
 - Write user docs in docs/ as features land, in the tone of https://hyperscript.org.
+- End each reply with a list of uncommitted files to review, if any.
 
-## Syntax design
+## Syntax
 
-- Humans design and approve all syntax. Agents can propose syntax, but must not decide it.
-- Readability is more important than writeability.
-- Mark each syntax rule in src/md as "approved" or "proposed". Implement only approved rules.
+- Humans approve all syntax. Agents only propose.
+- Readability over writeability.
+- Mark rules in src/md as "approved" or "proposed". Implement only approved rules.
