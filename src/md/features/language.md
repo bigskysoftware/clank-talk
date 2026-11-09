@@ -31,6 +31,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `replace a with b in <file>` changes the file itself. `replace a with b in <variable>` changes the variable.
 - `write <value> to <file>` and `append <value> to <file>`.
 - `as json` parses text to an object, and formats an object to text.
+- Approved: `lines <from> to <to> of <file or text>` gives a range of lines, by line number (from 1), with both ends included. `lines` alone is still a plain word.
 - `if ... else if ... else ... end`. One `end` closes the whole chain. There is no `otherwise`.
 - Loops:
   - `for x in <list> ... end`. Later: also the lines of a file.

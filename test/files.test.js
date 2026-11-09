@@ -133,3 +133,33 @@ test("file objects cannot be changed or looked into", async () => {
   assert.deepEqual(await errors("set f to ./README.md\nset f's path to 'x'"), ["Cannot set 'path' on a file"]);
   assert.deepEqual(await output("set f to ./README.md\nprint f['absolute']"), ["null"]);
 });
+
+test('lines a to b of a file, by line number', async () => {
+  assert.deepEqual(await output(`print lines 1 to 1 of ./notes.txt`), ['1: first']);
+  assert.deepEqual(await output(`print lines 1 to 2 of ./notes.txt`), ['1: first\n2: TODO: second']);
+});
+
+test('a range past the end stops at the last line', async () => {
+  assert.deepEqual(await output(`print lines 2 to 99 of ./notes.txt`), ['2: TODO: second']);
+});
+
+test('lines a to b of text', async () => {
+  assert.deepEqual(await output(`set t to 'a\\nb\\nc'\nprint lines 2 to 3 of t`), ['2: b\n3: c']);
+});
+
+test('a loop over a range', async () => {
+  assert.deepEqual(await output(`for line in lines 2 to 2 of ./notes.txt\n  print line.number\nend`), ['2']);
+});
+
+test('as text joins the lines, with no numbers', async () => {
+  assert.deepEqual(await output(`print (lines 1 to 2 of ./notes.txt) as text`), ['first\nTODO: second']);
+});
+
+test('lines alone is still a variable', async () => {
+  assert.deepEqual(await output(`set lines to 5\nprint lines`), ['5']);
+});
+
+test('range errors', async () => {
+  assert.deepEqual(await errors(`print lines 1 to 2 of 5`), ['Expected a file or text, found 5']);
+  assert.deepEqual((await errors(`print lines 1 to 2 ./notes.txt`))[0], `Expected 'of'`);
+});

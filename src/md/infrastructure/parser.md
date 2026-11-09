@@ -17,6 +17,7 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "script", commands: [...] }
 { type: "print", value }
 { type: "if", condition, body: [...] }
+{ type: "lines", from, to, target }      lines 1 to 5 of <file or text>
 { type: "read", file }                  a command, and also an expression
 { type: "write" | "append", value, file }
 { type: "replace", old, replacement, target }

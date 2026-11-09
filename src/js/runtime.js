@@ -276,7 +276,12 @@ async function runLoopBody(node, state, tools, maxSteps) {
 async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
     const value = await evaluate(command.value, state);
-    state.execution.output.push(toText(value));
+// print shows a list of lines with their numbers, as an editor does
+if (isListOfLines(value)) {
+  state.execution.output.push(value.map((line) => line.number + ": " + line.text).join("\n"));
+} else {
+  state.execution.output.push(toText(value));
+}
     return;
   }
 
@@ -448,7 +453,22 @@ async function evaluate(node, state) {
   if (type === "path") {
     return await resolvePath(node.value, state, node);
   }
-  if (type === "read") {
+if (type === "lines") {
+  const target = await evaluate(node.target, state);
+  let all;
+  if (target instanceof FileRef) {
+    all = splitLines(await readText(target, state, node));
+  } else if (typeof target === "string") {
+    all = splitLines(target);
+  } else {
+    throw new ScriptError("Expected a file or text, found " + describe(target), node);
+  }
+  const from = toNumber(await evaluate(node.from, state), node);
+  const to = toNumber(await evaluate(node.to, state), node);
+  // line numbers start at 1, both ends are included, and a range past the end stops at the last line
+  return all.slice(Math.max(from, 1) - 1, Math.max(to, 0));
+}
+if (type === "read") {
     return await readText(await evaluate(node.file, state), state, node);
   }
   if (type === "null") {
@@ -1107,17 +1127,7 @@ async function fileProperty(file, name, state, node) {
     return await readText(file, state, node);
   }
   if (name === "lines") {
-    const text = await readText(file, state, node);
-    const parts = text.split("\n");
-    // a final line break does not make an extra empty line
-    if (parts.length > 0 && parts[parts.length - 1] === "") {
-      parts.pop();
-    }
-    const lines = [];
-    for (let index = 0; index < parts.length; index++) {
-      lines.push(new Line(index + 1, parts[index].replace(/\r$/, "")));
-    }
-    return lines;
+    return splitLines(await readText(file, state, node));
   }
   if (name === "size" || name === "modified") {
     const real = await realPath(file, state, node);
@@ -1179,6 +1189,24 @@ function toNumber(value, node) {
   throw new ScriptError("Expected a number, found " + describe(value), node);
 }
 
+// split text into Line objects, numbered from 1
+// a final line break does not make an extra empty line, and a \r at a line end is removed
+function splitLines(text) {
+  const parts = text.split("\n");
+  if (parts.length > 0 && parts[parts.length - 1] === "") {
+    parts.pop();
+  }
+  const lines = [];
+  for (let index = 0; index < parts.length; index++) {
+    lines.push(new Line(index + 1, parts[index].replace(/\r$/, "")));
+  }
+  return lines;
+}
+
+function isListOfLines(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((item) => item instanceof Line);
+}
+
 function toText(value) {
   if (value === null || value === undefined) {
     return "null";
@@ -1193,7 +1221,11 @@ function toText(value) {
   if (typeof value === "string") {
     return value;
   }
-  if (typeof value === "object") {
+// a list of lines is its text, one line each, with no numbers
+if (isListOfLines(value)) {
+  return value.map((line) => line.text).join("\n");
+}
+if (typeof value === "object") {
     return JSON.stringify(value);
   }
   return String(value);

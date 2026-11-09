@@ -39,6 +39,7 @@ Operators: + - * / mod (mixing needs parentheses), is, is not, < > <= >=, is les
 Files (paths: ./x and ../x from the current folder, @/x from the project root):
   ./src/**/*.js gives a list of files. A file has name, path, text, lines, size, modified.
   A line has number and text. Text operators work on files and lines.
+  lines 10 to 20 of <file or text>: a range by line number. print shows each line with its number.
   read <file>          set x to read <file>
   write <value> to <file>      append <value> to <file>
   replace 'old' with 'new' in <file or variable>   the result lists each replacement
