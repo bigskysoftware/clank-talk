@@ -466,12 +466,12 @@ async function runLoopBody(node, state, tools, maxSteps) {
 async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
     const value = await evaluate(command.value, state);
-// print shows a list of lines with their numbers, as an editor does
-if (isListOfLines(value)) {
-  state.execution.output.push(value.map((line) => line.number + ": " + line.text).join("\n"));
-} else {
-  state.execution.output.push(toText(value));
-}
+    // print shows a list of lines with their numbers, as an editor does
+    if (isListOfLines(value)) {
+      state.execution.output.push(value.map((line) => line.number + ": " + line.text).join("\n"));
+    } else {
+      state.execution.output.push(toText(value));
+    }
     return;
   }
 
@@ -705,21 +705,21 @@ async function evaluate(node, state) {
   if (type === "path") {
     return await resolvePath(node.value, state, node);
   }
-if (type === "lines") {
-  const target = await evaluate(node.target, state);
-  let all;
-  if (target instanceof FileRef) {
-    all = splitLines(await readText(target, state, node));
-  } else if (typeof target === "string") {
-    all = splitLines(target);
-  } else {
-    throw new ScriptError("Expected a file or text, found " + describe(target), node);
+  if (type === "lines") {
+    const target = await evaluate(node.target, state);
+    let all;
+    if (target instanceof FileRef) {
+      all = splitLines(await readText(target, state, node));
+    } else if (typeof target === "string") {
+      all = splitLines(target);
+    } else {
+      throw new ScriptError("Expected a file or text, found " + describe(target), node);
+    }
+    const from = toNumber(await evaluate(node.from, state), node);
+    const to = toNumber(await evaluate(node.to, state), node);
+    // line numbers start at 1, both ends are included, and a range past the end stops at the last line
+    return all.slice(Math.max(from, 1) - 1, Math.max(to, 0));
   }
-  const from = toNumber(await evaluate(node.from, state), node);
-  const to = toNumber(await evaluate(node.to, state), node);
-  // line numbers start at 1, both ends are included, and a range past the end stops at the last line
-  return all.slice(Math.max(from, 1) - 1, Math.max(to, 0));
-}
 if (type === "read") {
     return await readText(await evaluate(node.file, state), state, node);
   }
@@ -1449,13 +1449,13 @@ async function writeText(file, text, append, state, node) {
     if (!stats.isFile()) {
       throw new ScriptError("Not a file: " + file.path, node);
     }
-  before = await fs.readFile(real, "utf8");
-  // stale-write check: the file changed after this script read it
-  // append is not checked, because it keeps what is in the file
-  if (!append && state.seen.has(real) && state.seen.get(real) !== before) {
-    throw new ScriptError("File changed since it was read: " + file.path + ". Read it again", node);
-  }
-} else {
+    before = await fs.readFile(real, "utf8");
+    // stale-write check: the file changed after this script read it
+    // append is not checked, because it keeps what is in the file
+    if (!append && state.seen.has(real) && state.seen.get(real) !== before) {
+      throw new ScriptError("File changed since it was read: " + file.path + ". Read it again", node);
+    }
+  } else {
     await makeParentFolders(file, state, node);
     real = file.absolute;
   }
@@ -1646,11 +1646,11 @@ function toText(value) {
   if (typeof value === "string") {
     return value;
   }
-// a list of lines is its text, one line each, with no numbers
-if (isListOfLines(value)) {
-  return value.map((line) => line.text).join("\n");
-}
-if (typeof value === "object") {
+  // a list of lines is its text, one line each, with no numbers
+  if (isListOfLines(value)) {
+    return value.map((line) => line.text).join("\n");
+  }
+  if (typeof value === "object") {
     return JSON.stringify(value);
   }
   return String(value);

@@ -392,35 +392,35 @@ export function parse(source, options = {}) {
       }
     }
 
-// lines <from> to <to> of <file or text>, by line number
-// "lines" alone is a plain word, so this is a range only if "to" follows the first value
-if (isWord("lines")) {
-  const linesToken = current();
-  const savedIndex = i;
-  const savedErrorCount = errors.length;
-  i++;
-  const from = parseMath();
-  if (from !== null && isWord("to")) {
-    i++;
-    const to = parseMath();
-    if (to === null) {
-      return null;
+    // lines <from> to <to> of <file or text>, by line number
+    // "lines" alone is a plain word, so this is a range only if "to" follows the first value
+    if (isWord("lines")) {
+      const linesToken = current();
+      const savedIndex = i;
+      const savedErrorCount = errors.length;
+      i++;
+      const from = parseMath();
+      if (from !== null && isWord("to")) {
+        i++;
+        const to = parseMath();
+        if (to === null) {
+          return null;
+        }
+        if (!isWord("of")) {
+          error("Expected 'of'");
+          return null;
+        }
+        i++;
+        const target = parseAccess();
+        if (target === null) {
+          return null;
+        }
+        return node("lines", linesToken, { from, to, target });
+      }
+      // not a range: go back, and forget errors from the try
+      i = savedIndex;
+      errors.length = savedErrorCount;
     }
-    if (!isWord("of")) {
-      error("Expected 'of'");
-      return null;
-    }
-    i++;
-    const target = parseAccess();
-    if (target === null) {
-      return null;
-    }
-    return node("lines", linesToken, { from, to, target });
-  }
-  // not a range: go back, and forget errors from the try
-  i = savedIndex;
-  errors.length = savedErrorCount;
-}
 
 // read as an expression: set readme to read @/README.md
     if (isWord("read")) {

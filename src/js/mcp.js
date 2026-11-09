@@ -14,6 +14,12 @@ import { run, listTools, VERSION } from "./clank-talk.js";
 
 const TOOL_NAME = "clank_talk";
 
+// the step budget for each call, also the "total" of the progress bar
+const MAX_STEPS = 10_000;
+
+// send progress at most this often, so a busy loop does not flood the client
+const PROGRESS_EVERY_MS = 200;
+
 const SYNTAX = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
 
 Basics:
@@ -152,7 +158,25 @@ export async function handleMessage(message, session) {
     if (typeof script !== "string") {
       return replyError(id, -32602, "The argument 'script' must be text");
     }
-    const result = await run(script, { root: session.root, globals: session.globals, seen: session.seen });
+    // the client asks for progress with a token; then each step can send a notification
+    let onStep = null;
+    const token = params._meta && params._meta.progressToken;
+    if (token !== undefined && session.send) {
+      let lastSent = 0;
+      onStep = (step) => {
+        const now = Date.now();
+        if (now - lastSent < PROGRESS_EVERY_MS) {
+          return;
+        }
+        lastSent = now;
+        session.send({
+          jsonrpc: "2.0",
+          method: "notifications/progress",
+          params: { progressToken: token, progress: step.steps, total: MAX_STEPS, message: "line " + step.line + ": " + step.type },
+        });
+      };
+    }
+    const result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, maxSteps: MAX_STEPS, onStep });
     if (session.log) {
       await writeLog(session.log, script, result);
     }
@@ -193,15 +217,20 @@ export function main(args) {
     root = args[rootIndex + 1];
   }
 
-// --log <file>: append a readable log of each run
-let log = null;
-const logIndex = args.indexOf("--log");
-if (logIndex !== -1 && args[logIndex + 1]) {
-  log = nodePath.resolve(args[logIndex + 1]);
-}
+  // --log <file>: append a readable log of each run
+  let log = null;
+  const logIndex = args.indexOf("--log");
+  if (logIndex !== -1 && args[logIndex + 1]) {
+    log = nodePath.resolve(args[logIndex + 1]);
+  }
 
-// one session for the life of the server, so $ globals stay between calls
-const session = { root, globals: Object.create(null), seen: new Map(), log };
+  // one session for the life of the server, so $ globals stay between calls
+  const session = { root, globals: Object.create(null), seen: new Map(), log };
+
+  // notifications, such as progress, go out on stdout like responses
+  session.send = (message) => {
+    process.stdout.write(JSON.stringify(message) + "\n");
+  };
 
   const input = readline.createInterface({ input: process.stdin });
   input.on("line", async (line) => {

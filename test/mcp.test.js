@@ -111,3 +111,21 @@ test('no log unless the host asks for one', async () => {
   await call('print 1');
   await assert.rejects(fs.stat(path.join(root, 'logs')));
 });
+
+test('progress notifications when the client asks for them', async () => {
+  const sent = [];
+  session.send = (message) => sent.push(message);
+  await handleMessage({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'clank_talk', arguments: { script: 'print 1\nprint 2' }, _meta: { progressToken: 'abc' } } }, session);
+  assert.deepEqual(sent[0], {
+    jsonrpc: '2.0',
+    method: 'notifications/progress',
+    params: { progressToken: 'abc', progress: 1, total: 10000, message: 'line 1: print' },
+  });
+});
+
+test('no progress without a token', async () => {
+  const sent = [];
+  session.send = (message) => sent.push(message);
+  await call('print 1');
+  assert.deepEqual(sent, []);
+});
