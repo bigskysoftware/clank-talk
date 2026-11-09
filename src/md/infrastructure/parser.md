@@ -37,7 +37,9 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "run", program, args, within }   args is null for "run 'a b'" (split on spaces)
 { type: "duration", value, ms }          ms: the length of one unit
 { type: "allowEnv", names: [...] }
-{ type: "import", path }                AGENTS.talk and imported files only       AGENTS.talk only
+{ type: "import", path }
+{ type: "hook", when, name, body: [...] }   when: "before" or "after"; AGENTS.talk only
+{ type: "reject", message }             only in a "before" hook                AGENTS.talk and imported files only       AGENTS.talk only
 { type: "tool", name, params: [...], body: [...] }     AGENTS.talk only
 { type: "definitions", definitions: [...] }            the top of AGENTS.talk
 { type: "string" | "number" | "path" | "boolean", value }

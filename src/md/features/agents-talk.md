@@ -62,7 +62,11 @@ Approved:
 
 See [../infrastructure/security.md](../infrastructure/security.md).
 
-## Hooks (plan)
+## Hooks
+
+See [hooks.md](hooks.md).
+
+## Hooks (old plan)
 
 - Inside `before <command>` and `after <command>`, a local variable with the name of the command holds that step. Refer to it with `the`: `the write's path`, `the fetch's url`, `the run_tests's code`.
 - Each command declares the fields of its step. List them in src/md, so discoverability can show them.

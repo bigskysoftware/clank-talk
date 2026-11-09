@@ -14,6 +14,9 @@ import { spawn } from "node:child_process";
 const DEFAULT_MAX_STEPS = 10_000;
 const AGENTS_TALK = "AGENTS.talk";
 
+// the steps a hook can watch, apart from tool names
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "run"];
+
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
   constructor(message, node) {
@@ -25,6 +28,9 @@ class ScriptError extends Error {
 
 // the host cancelled the script
 class Cancelled extends ScriptError {}
+
+// a "before" hook rejected a step; "on error" can handle this
+class Rejected extends ScriptError {}
 
 // the step budget is used up; "on error" cannot handle this
 class StepBudget extends ScriptError {}
@@ -145,6 +151,11 @@ async function execute(source, options, execution) {
     handler: findHandler(script.commands),
     handling: false,
     allowedEnv: agents.allowedEnv,
+    // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
+    hooks: agents.hooks,
+    inHook: false,
+    tools,
+    maxSteps,
     // the time limit for "run", in ms, from "within" on a tool call; null for no limit
     timeLimit: null,
     cwd: nodePath.resolve(root, options.cwd || "."),
@@ -220,7 +231,7 @@ function toolList(state, hostTools) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], hooks: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -249,6 +260,15 @@ async function loadAgentsTalk(root, hostTools) {
     for (const definition of script.definitions) {
       const where = { line: definition.line, column: definition.column, file: file.name };
       if (definition.type === "import") {
+        continue;
+      }
+      if (definition.type === "hook") {
+        if (!HOOK_STEPS.includes(definition.name) && !names.includes(definition.name)) {
+          result.errors.push({ message: "Unknown step '" + definition.name + "' for a hook. Use " + HOOK_STEPS.join(", ") + ", or a tool name", ...where });
+        } else {
+          definition.file = file.name;
+          result.hooks.push(definition);
+        }
         continue;
       }
       if (definition.type === "allowEnv") {
@@ -519,7 +539,10 @@ if (isListOfLines(value)) {
     const value = await evaluate(command.value, state);
     const file = await evaluate(command.file, state);
     const text = toText(await asText(value, state, command));
+    const step = changeStep(command.type, file, { text });
+    await changeHooks("before", step, state, command);
     await writeText(file, text, command.type === "append", state, command);
+    await changeHooks("after", step, state, command);
     return null;
   }
 
@@ -532,7 +555,10 @@ if (isListOfLines(value)) {
     if (command.type === "replaceLines") {
       newText = toText(await asText(await evaluate(command.text, state), state, command));
     }
+    const step = changeStep(command.type === "replaceLines" ? "replace" : "remove", file, { from, to, text: newText });
+    await changeHooks("before", step, state, command);
     state.result = await editLines(file, from, to, newText, state, command);
+    await changeHooks("after", step, state, command);
     return null;
   }
 
@@ -542,7 +568,10 @@ if (isListOfLines(value)) {
     const newText = toText(await asText(await evaluate(command.text, state), state, command));
     // an empty range: before line n puts the text just before it, after line n just after it
     const at = command.where === "before" ? number : number + 1;
+    const step = changeStep("put", file, { line: number, where: command.where, text: newText });
+    await changeHooks("before", step, state, command);
     state.result = await editLines(file, at, at - 1, newText, state, command, number);
+    await changeHooks("after", step, state, command);
     return null;
   }
 
@@ -554,12 +583,15 @@ if (isListOfLines(value)) {
     }
     const target = await evaluate(command.target, state);
     if (target instanceof FileRef) {
+      const step = changeStep("replace", target, { old, new: replacement });
+      await changeHooks("before", step, state, command);
       const before = await readText(target, state, command);
       const { text, replacements } = replaceAll(before, old, replacement);
       if (replacements.length > 0) {
         await writeText(target, text, false, state, command);
       }
       state.result = replacements;
+      await changeHooks("after", step, state, command);
       return null;
     }
     const isAssignable = command.target.type === "variable" || command.target.type === "property" || command.target.type === "index";
@@ -575,6 +607,10 @@ if (isListOfLines(value)) {
   if (command.type === "run") {
     state.result = await runProgram(command, state);
     return null;
+  }
+
+  if (command.type === "reject") {
+    throw new Rejected(toText(await evaluate(command.message, state)), command);
   }
 
   if (command.type === "help") {
@@ -621,6 +657,11 @@ if (isListOfLines(value)) {
       named[arg.name] = await evaluate(arg.value, state);
     }
 
+    const step = Object.create(null);
+    step.args = args;
+    step.named = named;
+    await runHooks("before", [command.name], step, state, command);
+
     const definition = state.definitions[command.name];
     if (definition !== undefined) {
       // "within" on the call limits every run inside the tool; the shorter limit wins
@@ -633,6 +674,7 @@ if (isListOfLines(value)) {
       } finally {
         state.timeLimit = savedLimit;
       }
+      await runHooks("after", [command.name], step, state, command);
       return null;
     }
 
@@ -645,7 +687,8 @@ if (isListOfLines(value)) {
       }
       throw new ScriptError("Tool '" + command.name + "' failed: " + err.message, command);
     }
-    return;
+    await runHooks("after", [command.name], step, state, command);
+    return null;
   }
 
   throw new ScriptError("Unknown command type '" + command.type + "'", command);
@@ -861,6 +904,11 @@ async function runProgram(command, state) {
     throw new ScriptError("Nothing to run", command);
   }
 
+  const step = Object.create(null);
+  step.program = program;
+  step.args = args;
+  await runHooks("before", ["run"], step, state, command);
+
   // only the environment variables that AGENTS.talk allows
   const env = {};
   for (const name of state.allowedEnv) {
@@ -875,7 +923,7 @@ async function runProgram(command, state) {
   }
 
   const signal = state.execution.signal;
-  return await new Promise((resolve, reject) => {
+  const result = await new Promise((resolve, reject) => {
     let output = "";
     let timedOut = false;
     let timer = null;
@@ -918,6 +966,78 @@ async function runProgram(command, state) {
       }
     });
   });
+
+  // after hooks see the result
+  state.result = result;
+  await runHooks("after", ["run"], step, state, command);
+  return result;
+}
+
+// ----- hooks -----
+
+// the step for a file change hook: kind, path and more fields
+function changeStep(kind, file, fields) {
+  const step = Object.create(null);
+  step.kind = kind;
+  step.path = null;
+  if (file instanceof FileRef) {
+    step.path = file.path;
+  }
+  for (const name of Object.keys(fields)) {
+    step[name] = fields[name];
+  }
+  return step;
+}
+
+// a file change runs the hooks for its kind (write, replace, ...) and the "change" hooks
+async function changeHooks(when, step, state, node) {
+  await runHooks(when, [step.kind, "change"], step, state, node);
+}
+
+// run the hooks for a step, in the order they are defined
+// names: the step names a hook can use, for example ["write", "change"]
+// commands inside a hook do not run hooks
+async function runHooks(when, names, step, state, node) {
+  if (state.inHook) {
+    return;
+  }
+  for (const hook of state.hooks) {
+    if (hook.when === when && names.includes(hook.name)) {
+      await runHook(hook, step, state, node);
+    }
+  }
+}
+
+// a hook has its own local variables: the step, with the name the hook uses
+async function runHook(hook, step, state, node) {
+  const savedVariables = state.variables;
+  const savedResult = state.result;
+  const savedHandler = state.handler;
+  const savedHandling = state.handling;
+  const locals = Object.create(null);
+  setOwn(locals, hook.name, step);
+  state.variables = locals;
+  state.handler = findHandler(hook.body);
+  state.handling = false;
+  state.inHook = true;
+  try {
+    await runCommands(hook.body, state, state.tools, state.maxSteps);
+  } catch (err) {
+    // a reject points at the command it stopped, so the agent sees where
+    if (err instanceof Rejected) {
+      throw new Rejected(err.message, node);
+    }
+    if (err instanceof ScriptError && !err.file) {
+      err.file = hook.file;
+    }
+    throw err;
+  } finally {
+    state.variables = savedVariables;
+    state.result = savedResult;
+    state.handler = savedHandler;
+    state.handling = savedHandling;
+    state.inHook = false;
+  }
 }
 
 // what a "for" loop goes over: a list; null gives no passes
@@ -1221,9 +1341,14 @@ async function readText(file, state, node) {
   if (!stats.isFile()) {
     throw new ScriptError("Not a file: " + file.path, node);
   }
+  const step = Object.create(null);
+  step.path = file.path;
+  await runHooks("before", ["read"], step, state, node);
   const text = await fs.readFile(real, "utf8");
   // remember what the script saw, for the stale-write check
   state.seen.set(real, text);
+  step.text = text;
+  await runHooks("after", ["read"], step, state, node);
   return text;
 }
 

@@ -52,6 +52,9 @@ export function parse(source, options = {}) {
   // true while the parser is inside a tool definition, where "run" is allowed
   let inTool = false;
 
+  // "before" or "after" while the parser is inside a hook, else null
+  let inHook = null;
+
   // blocks the parser is inside (if, loops, tool bodies), to keep "on error" at the top level
   let blockDepth = 0;
 
@@ -752,6 +755,19 @@ if (isWord("lines")) {
     return { type: "help", word, line: token.line, column: token.column };
   }
 
+  // reject <message>, only in a "before" hook: the step does not happen
+  function parseReject(token) {
+    if (inHook !== "before") {
+      errors.push({ message: "'reject' is only allowed in a 'before' hook", line: token.line, column: token.column });
+      return null;
+    }
+    const message = parseExpression();
+    if (message === null) {
+      return null;
+    }
+    return { type: "reject", message, line: token.line, column: token.column };
+  }
+
   // stop, only in "on error" (and not in a loop there): end with the error
   function parseStop(token) {
     if (!inHandler || loopDepth !== 0) {
@@ -769,7 +785,7 @@ if (isWord("lines")) {
     }
     i++;
     let problem = null;
-    if (blockDepth !== (inTool ? 1 : 0)) {
+    if (blockDepth !== (inTool || inHook !== null ? 1 : 0)) {
       problem = "'on error' must be at the top level of a script or tool";
     } else if (handlerSeen) {
       problem = "Only one 'on error' is allowed in a script or tool";
@@ -946,6 +962,7 @@ if (isWord("lines")) {
     continue: parseLoopControl,
     stop: parseStop,
     help: parseHelp,
+    reject: parseReject,
     on: parseOn,
   };
 
@@ -1189,6 +1206,24 @@ if (isWord("lines")) {
     return { type: "allowEnv", names, line: token.line, column: token.column };
   }
 
+  // before <step> ... end and after <step> ... end, in AGENTS.talk
+  // the step is a command name (write, run, ...), "change", or a tool name
+  function parseHook(token) {
+    const name = current();
+    if (name === undefined || name.type !== "word") {
+      error("Expected a step name, such as write, run or change");
+      return null;
+    }
+    i++;
+    inHook = token.value;
+    const savedHandlerSeen = handlerSeen;
+    handlerSeen = false;
+    const body = parseBody(token);
+    handlerSeen = savedHandlerSeen;
+    inHook = null;
+    return { type: "hook", when: token.value, name: name.value, body, line: token.line, column: token.column };
+  }
+
   // AGENTS.talk: only definitions at the top level
   function parseDefinitions() {
     const definitions = [];
@@ -1200,7 +1235,7 @@ if (isWord("lines")) {
         if (definition !== null) {
           definitions.push(definition);
         } else {
-          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import")) {
+          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import") && !isWord("before") && !isWord("after")) {
             i++;
           }
         }
@@ -1212,13 +1247,24 @@ if (isWord("lines")) {
         const path = current();
         if (path === undefined || path.type !== "path") {
           error("Expected a path after 'import', such as ./talk/git.talk");
-          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import")) {
+          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import") && !isWord("before") && !isWord("after")) {
             i++;
           }
           continue;
         }
         i++;
         definitions.push({ type: "import", path: path.value, line: token.line, column: token.column });
+        continue;
+      }
+      if (isWord("before") || isWord("after")) {
+        const token = current();
+        i++;
+        const definition = parseHook(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        } else {
+          skipToNextCommand();
+        }
         continue;
       }
       if (isWord("tool")) {
@@ -1234,7 +1280,7 @@ if (isWord("lines")) {
       }
       error("Only definitions are allowed here, such as 'tool'");
       i++;
-      while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import")) {
+      while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import") && !isWord("before") && !isWord("after")) {
         i++;
       }
     }

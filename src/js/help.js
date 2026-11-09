@@ -138,6 +138,24 @@ export const HELP = [
     examples: ["import ./talk/git.talk", "import @/talk/maven.talk"],
   },
   {
+    name: "before", kind: "command", where: "AGENTS.talk",
+    syntax: "before <step> ... end",
+    description: "Only in AGENTS.talk. Run commands before a step: read, write, append, replace, put, remove, change (any file change), run, or a tool name. 'the <step>' holds the step. 'reject' stops the step.",
+    examples: ["before change\n  if the change's path ends with '.env'\n    reject 'Cannot change env files!'\n  end\nend"],
+  },
+  {
+    name: "after", kind: "command", where: "AGENTS.talk",
+    syntax: "after <step> ... end",
+    description: "Only in AGENTS.talk. Run commands after a step. 'the <step>' holds the step, and 'the result' holds what it gave back.",
+    examples: ["after run\n  print 'ran ' + the run's program + ': ' + the result's code\nend"],
+  },
+  {
+    name: "reject", kind: "command", where: "AGENTS.talk",
+    syntax: "reject <message>",
+    description: "Only in a 'before' hook. The step does not happen, and the script gets an error with the message. 'on error' can catch it.",
+    examples: ["before write\n  reject 'This project is read only'\nend"],
+  },
+  {
     name: "allow env", kind: "command", where: "AGENTS.talk",
     syntax: "allow env <NAME>, ...",
     description: "Only at the top of AGENTS.talk. The environment variables that 'run' passes on.",

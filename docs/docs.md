@@ -333,6 +333,29 @@ A few rules keep this safe:
 * The program gets only the environment variables that `allow env` lists
 * Scripts can't change `.talk` files, so your agent can't change its own tools
 
+## Hooks
+
+Security policy should be code you can read. Hooks go in `AGENTS.talk`, and run before or after a step:
+
+```talk
+# AGENTS.talk
+before change
+  if the change's path ends with '.env'
+    reject 'Cannot change env files!'
+  end
+end
+
+after run
+  print 'ran ' + the run's program + ': ' + the result's code
+end
+```
+
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `run`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
+
+Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
+
+## The Fine Print
+
 Be honest with yourself about one thing: if a tool runs project code, like a test suite, the agent can write that code. `run` is where the ClankTalk sandbox ends.
 
 </div>
