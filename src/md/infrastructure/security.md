@@ -30,6 +30,16 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
 - Writes use the same checks. For a new file, the nearest folder that exists must be inside the root after symlinks, before any folder is made. Thus a symlinked folder cannot lead a new file outside the root.
 
+## Hidden files and folders
+
+Feature: [../features/agents-talk.md](../features/agents-talk.md).
+
+- Approved: a script cannot change a hidden file or folder: a path with a part that starts with `.`, such as `.env`, `.git/config`, `.github/workflows/ci.yml` or `src/.cache`. These hold secrets, and config that makes other programs run code: `.git/hooks`, `.git/config`, CI workflows, `.claude/settings.json`, `.mcp.json`.
+- Approved: scripts can still read them. Reads of secrets such as `.env` are a separate decision. See [../features/secrets.md](../features/secrets.md).
+- Approved: the check uses the path as written, and the real path after symlinks. For a new file, it uses the real path of the nearest folder that exists, plus the rest of the path. Thus a symlink cannot lead a write into a hidden folder.
+- Approved: `allow changes to @/.github/, @/.gitignore` in AGENTS.talk lets scripts change those paths. A folder allows all of its files. Only AGENTS.talk can have it, and each path must be inside the root.
+- Approved: AGENTS.talk can allow `.git/` too. The human decides. Note: a script that can change `.git/hooks` or `.git/config` can make git run any code.
+- Limit: a program that `run` starts can still change hidden files. Only an OS sandbox closes this.
 ## .talk files and the talk folder
 
 Feature: [../features/agents-talk.md](../features/agents-talk.md).

@@ -54,7 +54,7 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   write <value> to <file>      append <value> to <file>
   replace 'old' with 'new' in <file or variable>   the result lists each replacement
   find 'text' in <file, files or text>   the result is the lines that contain it; print shows path:number: text
-  You cannot change .talk files or @/talk/.
+  You cannot change .talk files, @/talk/, or hidden files and folders (.env, .git/), unless AGENTS.talk allows them.
 
 help lists everything. help <word> shows one command, expression or tool, with examples: help replace`;
 

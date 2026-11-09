@@ -167,6 +167,8 @@ async function execute(source, options, execution) {
     handler: findHandler(script.commands),
     handling: false,
     allowedEnv: agents.allowedEnv,
+    // hidden paths that scripts can change, from "allow changes to" in AGENTS.talk, relative to the root
+    allowedChanges: agents.allowedChanges,
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -249,7 +251,7 @@ function toolList(state, hostTools) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], hooks: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], hooks: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -294,6 +296,23 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedEnv.push(...definition.names);
         } else {
           result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "allowChanges") {
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'allow changes to' is only allowed in " + AGENTS_TALK, ...where });
+          continue;
+        }
+        for (const shown of definition.paths) {
+          // @/ and ./ both start from the root, where AGENTS.talk is
+          const rest = shown.startsWith("@/") ? shown.slice(2) : shown;
+          const absolute = nodePath.resolve(root, rest);
+          if (!isInside(absolute, root) || absolute === root) {
+            result.errors.push({ message: "Cannot allow changes to " + shown + ": it must be inside the project root", ...where });
+            continue;
+          }
+          result.allowedChanges.push(nodePath.relative(root, absolute).split(nodePath.sep).join("/"));
         }
         continue;
       }
@@ -1489,6 +1508,9 @@ async function writeText(file, text, append, state, node) {
   if (await isProtected(file, state, node)) {
     throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
   }
+  if (await isHidden(file, state)) {
+    throw new ScriptError("A script cannot change hidden files or folders (a name that starts with .): " + file.path, node);
+  }
 
   let real = await realPath(file, state, node);
   let before = null;
@@ -1548,6 +1570,50 @@ async function isProtected(file, state, node) {
   } catch (err) {
     return false;
   }
+}
+
+// true if a part of the path starts with ".": .env, .git/config, .github/workflows/ci.yml
+function isHiddenPath(relative) {
+  for (const part of relative.split("/")) {
+    if (part.startsWith(".") && part !== "." && part !== "..") {
+      return true;
+    }
+  }
+  return false;
+}
+
+// scripts cannot change hidden files or folders: they hold secrets (.env),
+// and config that runs code (.git/hooks, .github/workflows, .claude, .mcp.json)
+// "allow changes to" in AGENTS.talk can allow some of them
+// the check uses the path as written, and the real path after symlinks;
+// for a new file, the real path of its nearest folder that exists, plus the rest
+async function isHidden(file, state) {
+  if (isHiddenPath(file.path) && !isAllowedChange(file.path, state)) {
+    return true;
+  }
+  let existing = file.absolute;
+  while (true) {
+    try {
+      await fs.stat(existing);
+      break;
+    } catch (err) {
+      existing = nodePath.dirname(existing);
+    }
+  }
+  const real = nodePath.join(await fs.realpath(existing), nodePath.relative(existing, file.absolute));
+  const realRoot = await fs.realpath(state.root);
+  const relative = nodePath.relative(realRoot, real).split(nodePath.sep).join("/");
+  return isHiddenPath(relative) && !isAllowedChange(relative, state);
+}
+
+// true if "allow changes to" lists the path, or a folder that holds it
+function isAllowedChange(relative, state) {
+  for (const allowed of state.allowedChanges) {
+    if (relative === allowed || relative.startsWith(allowed + "/")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // make missing parent folders for a new file

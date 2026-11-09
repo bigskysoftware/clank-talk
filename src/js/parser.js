@@ -1228,10 +1228,15 @@ export function parse(source, options = {}) {
     return { type: "run", program, args, within, line: token.line, column: token.column };
   }
 
-  // allow env NAME, NAME at the top of AGENTS.talk
-  function parseAllowEnv(token) {
+  // at the top of AGENTS.talk:
+  //   allow env NAME, NAME
+  //   allow changes to @/.github/, @/.gitignore
+  function parseAllow(token) {
+    if (isWord("changes")) {
+      return parseAllowChanges(token);
+    }
     if (!isWord("env")) {
-      error("Expected 'env'");
+      error("Expected 'env' or 'changes to'");
       return null;
     }
     i++;
@@ -1248,6 +1253,31 @@ export function parse(source, options = {}) {
       i++;
     }
     return { type: "allowEnv", names, line: token.line, column: token.column };
+  }
+
+  // allow changes to <path>, <path>: hidden paths that scripts can change
+  function parseAllowChanges(token) {
+    i++;
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const paths = [];
+    while (true) {
+      const path = current();
+      if (path === undefined || path.type !== "path") {
+        error("Expected a path, such as @/.github/");
+        return null;
+      }
+      i++;
+      paths.push(path.value);
+      if (!isOp(",")) {
+        break;
+      }
+      i++;
+    }
+    return { type: "allowChanges", paths, line: token.line, column: token.column };
   }
 
   // before <step> ... end and after <step> ... end, in AGENTS.talk
@@ -1275,7 +1305,7 @@ export function parse(source, options = {}) {
       if (isWord("allow")) {
         const token = current();
         i++;
-        const definition = parseAllowEnv(token);
+        const definition = parseAllow(token);
         if (definition !== null) {
           definitions.push(definition);
         } else {

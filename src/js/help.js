@@ -162,10 +162,10 @@ export const HELP = [
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
-    name: "allow env", kind: "command", where: "AGENTS.talk",
-    syntax: "allow env <NAME>, ...",
-    description: "Only at the top of AGENTS.talk. The environment variables that 'run' passes on.",
-    examples: ["allow env PATH, HOME"],
+    name: "allow", kind: "command", where: "AGENTS.talk",
+    syntax: "allow env <NAME>, ... | allow changes to <path>, ...",
+    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files.",
+    examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore"],
   },
 
   // ----- expressions -----

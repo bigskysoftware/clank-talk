@@ -257,3 +257,56 @@ test('put after line n of f, with a variable', async () => {
   await ok(`read ./a.txt\nset n to 1\nput 'mid' after line n of ./a.txt`);
   assert.equal(await readProject('a.txt'), 'var x\nmid\nvar y\n');
 });
+
+test('scripts cannot change hidden files or folders', async () => {
+  for (const target of ['./.env', './.git/config', './.github/workflows/ci.yml', './src/.hidden']) {
+    const [message] = await errors(`write 'x' to ${target}`);
+    assert.match(message, /^A script cannot change hidden files or folders/, target);
+  }
+  const [message] = await errors(`append 'x' to ./.gitignore`);
+  assert.match(message, /^A script cannot change hidden files or folders/);
+});
+
+test('a symlink cannot lead a write into a hidden folder', async () => {
+  await fs.mkdir(path.join(root, '.git'), { recursive: true });
+  await fs.writeFile(path.join(root, '.git', 'config'), '');
+  await fs.symlink(path.join(root, '.git'), path.join(root, 'plain'));
+  await fs.symlink(path.join(root, '.git', 'config'), path.join(root, 'config-link'));
+  try {
+    assert.match((await errors(`write 'x' to ./plain/hooks-pre-commit`))[0], /^A script cannot change hidden files/);
+    assert.match((await errors(`write 'x' to ./config-link`))[0], /^A script cannot change hidden files/);
+  } finally {
+    await fs.rm(path.join(root, 'plain'));
+    await fs.rm(path.join(root, 'config-link'));
+    await fs.rm(path.join(root, '.git'), { recursive: true });
+  }
+});
+
+test('reads of hidden files still work', async () => {
+  await fs.writeFile(path.join(root, '.hidden-note'), 'hi');
+  await ok(`read ./.hidden-note`);
+  await fs.rm(path.join(root, '.hidden-note'));
+});
+
+test('allow changes to lets scripts change some hidden paths', async () => {
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'allow changes to @/.github/, ./.gitignore');
+  try {
+    await ok(`write 'x' to ./.github/workflows/ci.yml\nwrite 'y' to ./.gitignore`);
+    assert.equal(await readProject('.github/workflows/ci.yml'), 'x');
+    assert.match((await errors(`write 'x' to ./.env`))[0], /^A script cannot change hidden files/);
+    assert.match((await errors(`write 'x' to ./.github-other`))[0], /^A script cannot change hidden files/);
+  } finally {
+    await fs.rm(path.join(root, 'AGENTS.talk'));
+    await fs.rm(path.join(root, '.github'), { recursive: true, force: true });
+    await fs.rm(path.join(root, '.gitignore'), { force: true });
+  }
+});
+
+test('allow changes to: rules', async () => {
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'allow changes to ../x\nallow changes 5');
+  try {
+    assert.deepEqual(await errors(`print 1`), ["Expected 'to'", 'Cannot allow changes to ../x: it must be inside the project root']);
+  } finally {
+    await fs.rm(path.join(root, 'AGENTS.talk'));
+  }
+});

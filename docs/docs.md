@@ -354,6 +354,12 @@ A few rules keep this safe:
 * `run` only works inside a tool, and never uses a shell
 * The program gets only the environment variables that `allow env` lists
 * Scripts can't change `.talk` files, so your agent can't change its own tools
+* Scripts can't change hidden files or folders, like `.env`, `.git/` or `.github/`. Those hold secrets, and config that runs code. If your agent needs one, allow it:
+
+```talk
+# AGENTS.talk
+allow changes to @/.github/, @/.gitignore
+```
 
 ## Hooks
 
