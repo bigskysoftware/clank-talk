@@ -168,3 +168,13 @@ test('fetch', () => {
   assert.equal(full.within.ms, 1000);
   assert.deepEqual(errors("fetch 'x' as html"), ['Expected json, response or text @1:14']);
 });
+
+test('wait, wait until, and fetch as a value', () => {
+  const [plain, until] = commands("wait 2 seconds\nwait until (fetch 'http://x' as response)'s status is 200 within 10 seconds");
+  assert.equal(plain.type, 'wait');
+  assert.equal(plain.duration.ms, 1000);
+  assert.equal(until.type, 'waitUntil');
+  assert.equal(until.condition.left.object.type, 'fetch');
+  assert.equal(until.condition.left.object.as, 'response');
+  assert.equal(until.within.ms, 1000);
+});

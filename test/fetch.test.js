@@ -117,3 +117,11 @@ test("hooks can watch and reject fetch", async () => {
     await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
   }
 });
+
+test("wait until, with fetch as a value", async () => {
+  assert.deepEqual(await output(`wait until (fetch '${base}/text' as response)'s status is 200 within 2 seconds\nprint 'up'`), ["up"]);
+  const [message] = await errors(`wait until (fetch 'http://127.0.0.1:1/' as response)'s status is 200 within 500ms`);
+  assert.match(message, /^wait until did not come true within 500ms\. The last error: fetch failed: /);
+  assert.deepEqual(await errors("wait until false within 300ms"), ["wait until did not come true within 300ms"]);
+  assert.deepEqual(await output(`set page to fetch '${base}/text'\nprint page`), ["hello"]);
+});

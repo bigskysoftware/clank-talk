@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { run } from "../src/js/clank-talk.js";
+import { run, start } from "../src/js/clank-talk.js";
 
 // run a script and give back its output, failing the test on any error
 async function output(source, options) {
@@ -221,4 +221,14 @@ test('a replace with no match is a warning, and the script goes on', async () =>
   assert.deepEqual(result.output, ['true']);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, [{ message: "No match in the variable for 'x'", line: 2, column: 1 }]);
+});
+
+test('wait waits, and cancel ends a wait', async () => {
+  const started = Date.now();
+  await output('wait 50ms');
+  assert.ok(Date.now() - started >= 45);
+  const execution = start('wait 10 seconds');
+  setTimeout(() => execution.cancel(), 20);
+  const result = await execution.done;
+  assert.equal(result.status, 'cancelled');
 });

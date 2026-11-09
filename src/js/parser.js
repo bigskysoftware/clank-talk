@@ -425,6 +425,12 @@ export function parse(source, options = {}) {
       }
     }
 
+    // fetch as a value, as read is: (fetch url as response)'s status
+    if (isWord("fetch")) {
+      const fetchToken = current();
+      i++;
+      return parseFetch(fetchToken);
+    }
     // process <name>: a background process, by name
     if (isWord("process")) {
       const after = tokens[i + 1];
@@ -1174,6 +1180,7 @@ export function parse(source, options = {}) {
     ask: parseAsk,
     fetch: parseFetch,
     start: parseStart,
+    wait: parseWait,
     put: parsePut,
     remove: parseRemove,
     run: parseRun,
@@ -1287,6 +1294,31 @@ export function parse(source, options = {}) {
       }
       i++;
     }
+  }
+
+  // wait <duration>, wait until <condition> [within <duration>], as in hyperscript
+  function parseWait(token) {
+    if (isWord("until")) {
+      i++;
+      const condition = parseBefore(["within"], parseExpression);
+      if (condition === null) {
+        return null;
+      }
+      let within = null;
+      if (isWord("within")) {
+        i++;
+        within = parseDuration();
+        if (within === null) {
+          return null;
+        }
+      }
+      return { type: "waitUntil", condition, within, line: token.line, column: token.column };
+    }
+    const duration = parseDuration();
+    if (duration === null) {
+      return null;
+    }
+    return { type: "wait", duration, line: token.line, column: token.column };
   }
 
   // fetch <url> [as json | as response | as text] [with name: value, ...] [within <duration>]

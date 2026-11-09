@@ -58,6 +58,7 @@ Files (paths: ./x and ../x from the current folder, @/x from the project root):
   ask 'question' [with 'yes' or 'no'] [within 5 minutes]   the human answers, not you; null means no answer
   fetch 'https://...' [as json | as response] [with method: 'POST', headers: {...}, body: x]   a new host asks the human first
   process 'name'   (the output of process 'site', the status of process 'site')   the processes   stop process 'name'   (tools start them)
+  wait 2 seconds    wait until <condition> [within 10 seconds]   (errors in the condition count as false)
 
 Git (hardened; the result is git's output as text):
   git status    git diff [<files>]    git log [<count>]    git show <commit>    git branches    git branch

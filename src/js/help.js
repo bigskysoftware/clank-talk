@@ -162,6 +162,12 @@ export const HELP = [
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
+    name: "wait", kind: "command",
+    syntax: "wait <duration> | wait until <condition> [within <duration>]",
+    description: "Wait for a time, or until a condition is true. 'wait until' checks every 200 ms; an error in the condition counts as false. With no 'within', it gives up after 30 seconds. Durations: 100ms, 2s, 5 seconds, 1 minute.",
+    examples: ["wait 2 seconds", "wait until (fetch 'http://localhost:4000/' as response)'s status is 200 within 10 seconds"],
+  },
+  {
     name: "start", kind: "command", where: "AGENTS.talk",
     syntax: "start <program> [with <arg>, ...] as <name>",
     description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends.",
@@ -175,7 +181,7 @@ export const HELP = [
   },
   {
     name: "fetch", kind: "command",
-    syntax: "fetch <url> [as json | as response | as text] [with method: ..., headers: ..., body: ...] [within <duration>]",
+    syntax: "fetch <url> [as json | as response | as text] [with method: ..., headers: ..., body: ...] [within <duration>]   (also a value: set page to fetch url)",
     description: "Get a URL over http or https. The result is the body as text, or parsed with 'as json'. 'as response' gives { status, headers, text }. A new host asks the human first, unless AGENTS.talk has 'allow fetch from'. Local and private addresses must be in AGENTS.talk. Limits: 30 seconds, 5 MB.",
     examples: ["fetch 'https://api.github.com/repos/bigskysoftware/htmx' as json\nprint it's stargazers_count", "fetch 'https://example.com/api' as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
   },

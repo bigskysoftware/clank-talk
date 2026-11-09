@@ -621,6 +621,14 @@ async function runCommand(command, state, tools, maxSteps) {
     await runFetch(command, state);
     return null;
   }
+  if (command.type === "wait") {
+    await sleep(await durationMs(command.duration, state), state, command);
+    return null;
+  }
+  if (command.type === "waitUntil") {
+    await waitUntil(command, state);
+    return null;
+  }
   if (command.type === "start") {
     state.result = await startProcess(command, state);
     return null;
@@ -882,6 +890,10 @@ if (type === "read") {
   }
   if (type === "undoList") {
     return undoList(state);
+  }
+  // fetch as a value: (fetch url as response)'s status
+  if (type === "fetch") {
+    return await runFetch(node, state);
   }
   if (type === "process") {
     const record = state.processes.get(toText(await evaluate(node.name, state)));
@@ -1298,6 +1310,63 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
       }
     });
   });
+}
+
+// ----- wait -----
+
+const WAIT_UNTIL_LIMIT = 30_000;
+const WAIT_UNTIL_EVERY = 200;
+
+// wait for a time; cancel ends the wait at once
+function sleep(ms, state, node) {
+  const signal = state.execution.signal;
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Cancelled("Cancelled", node));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Cancelled("Cancelled", node));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+// wait until <condition> [within <duration>]: check every 200 ms
+// an error in the condition counts as false, so a server that is not up yet is fine
+// each check is one step
+async function waitUntil(command, state) {
+  let limit = WAIT_UNTIL_LIMIT;
+  if (command.within !== null) {
+    limit = await durationMs(command.within, state);
+  }
+  limit = shorter(state.timeLimit, limit);
+  const started = Date.now();
+  let lastError = null;
+  while (true) {
+    takeStep(command, state, state.maxSteps);
+    try {
+      if (isTrue(await evaluate(command.condition, state))) {
+        return;
+      }
+      lastError = null;
+    } catch (err) {
+      if (err instanceof Cancelled || err instanceof StepBudget || !(err instanceof ScriptError)) {
+        throw err;
+      }
+      lastError = err.message;
+    }
+    if (Date.now() - started + WAIT_UNTIL_EVERY > limit) {
+      const last = lastError === null ? "" : ". The last error: " + lastError;
+      throw new ScriptError("wait until did not come true within " + limit + "ms" + last, command);
+    }
+    await sleep(WAIT_UNTIL_EVERY, state, command);
+  }
 }
 
 // ----- background processes -----

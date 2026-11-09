@@ -397,10 +397,11 @@ tool site_server
 end
 ```
 
-Your agent can then look at it, and stop it:
+Your agent can then wait for it, look at it, and stop it:
 
 ```talk
 site_server
+wait until (fetch 'http://localhost:4000/' as response)'s status is 200 within 10 seconds
 print the output of process 'site'
 stop process 'site'
 print the processes
