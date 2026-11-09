@@ -1,6 +1,26 @@
 # Runtime
 
-Code: `src/js/runtime.js`. `run(source, { tools, maxSteps, globals })` gives `{ output, errors, steps }`.
+Code: `src/js/runtime.js`.
+
+## Execution
+
+`start(source, options)` gives an execution object at once. The host uses it to watch, cancel and wait:
+
+```js
+const execution = start(source, { tools, maxSteps, globals, onStep, signal });
+execution.status      // "running", "done", "failed" or "cancelled"
+execution.steps       // steps so far
+execution.output      // output lines so far
+execution.cancel()    // stop at the next step
+execution.signal      // AbortSignal, also given to tools
+await execution.done  // { status, output, errors, steps }
+```
+
+`run(source, options)` is a short form of `start(source, options).done`.
+
+- The script starts one tick after `start()` returns, so the host has the object before the first `onStep` call.
+- Cancel takes effect at the next step. A tool gets `{ signal }`, so slow work can stop at once.
+- A tool that throws gives a script error: "Tool 'x' failed: ...".
 
 ## Decisions (not syntax)
 

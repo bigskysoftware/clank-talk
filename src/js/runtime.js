@@ -18,53 +18,121 @@ class ScriptError extends Error {
   }
 }
 
+// the host cancelled the script
+class Cancelled extends ScriptError {}
+
 /**
- * Parse and run a script.
+ * Start a script, and give back an execution object at once.
+ * The host can watch it, cancel it, and wait for it.
+ *
+ *   const execution = start(source, { onStep });
+ *   execution.status     "running", "done", "failed" or "cancelled"
+ *   execution.steps      steps so far
+ *   execution.output     output lines so far
+ *   execution.cancel()   stop the script at the next step
+ *   execution.signal     an AbortSignal for slow work, such as tools
+ *   await execution.done gives { status, output, errors, steps }
  *
  * @param {string} source
  * @param {Object} [options]
- * @param {Object<string, Function>} [options.tools]  AGENTS.talk tools: name to async function
+ * @param {Object<string, Function>} [options.tools]  AGENTS.talk tools: name to async function({ signal })
  * @param {number} [options.maxSteps]                 the step budget
  * @param {Object} [options.globals]                  $ variables; pass the same object to keep them for a session
- * @returns {Promise<{ output: string[], errors: Object[], steps: number }>}
+ * @param {Function} [options.onStep]                 called with { type, line, column, steps } before each step
+ * @param {AbortSignal} [options.signal]              a host signal that cancels the script
+ */
+export function start(source, options = {}) {
+  const controller = new AbortController();
+
+  const execution = {
+    status: "running",
+    steps: 0,
+    output: [],
+    errors: [],
+    signal: controller.signal,
+    cancel() {
+      controller.abort();
+    },
+    done: null,
+  };
+
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener("abort", () => controller.abort());
+    }
+  }
+
+  execution.done = execute(source, options, execution);
+  return execution;
+}
+
+/**
+ * Parse and run a script, and wait for the end. A short form of start(...).done.
  */
 export async function run(source, options = {}) {
+  return start(source, options).done;
+}
+
+async function execute(source, options, execution) {
+  // wait one tick, so start() returns before the first step,
+  // and the host has the execution object before onStep is called
+  await null;
+
   const tools = options.tools || {};
   const maxSteps = options.maxSteps || DEFAULT_MAX_STEPS;
 
   const { script, errors } = parse(source, { tools: Object.keys(tools) });
   if (errors.length > 0) {
-    return { output: [], errors, steps: 0 };
+    return finish(execution, "failed", errors);
   }
 
   const state = {
+    execution,
+    onStep: options.onStep || null,
     variables: Object.create(null),
     globals: options.globals || Object.create(null),
     result: null,
-    output: [],
-    steps: 0,
   };
 
   try {
     await runCommands(script.commands, state, tools, maxSteps);
   } catch (err) {
+    if (err instanceof Cancelled) {
+      return finish(execution, "cancelled", [{ message: "Cancelled", line: err.line, column: err.column }]);
+    }
     if (err instanceof ScriptError) {
-      return { output: state.output, errors: [{ message: err.message, line: err.line, column: err.column }], steps: state.steps };
+      return finish(execution, "failed", [{ message: err.message, line: err.line, column: err.column }]);
     }
     throw err;
   }
 
-  return { output: state.output, errors: [], steps: state.steps };
+  return finish(execution, "done", []);
+}
+
+function finish(execution, status, errors) {
+  execution.status = status;
+  execution.errors = errors;
+  return { status, output: execution.output, errors, steps: execution.steps };
 }
 
 // ----- commands -----
 
 // every command is one step, and so is every pass of a loop,
 // so a script that does not end stops at the budget
+// this is also where the host sees progress, and where cancel takes effect
 function takeStep(node, state, maxSteps) {
-  state.steps++;
-  if (state.steps > maxSteps) {
+  const execution = state.execution;
+  if (execution.signal.aborted) {
+    throw new Cancelled("Cancelled", node);
+  }
+  execution.steps++;
+  if (execution.steps > maxSteps) {
     throw new ScriptError("Step budget of " + maxSteps + " used up", node);
+  }
+  if (state.onStep !== null) {
+    state.onStep({ type: node.type, line: node.line, column: node.column, steps: execution.steps });
   }
 }
 
@@ -90,7 +158,7 @@ async function runLoopBody(node, state, tools, maxSteps) {
 async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
     const value = await evaluate(command.value, state);
-    state.output.push(toText(value));
+    state.execution.output.push(toText(value));
     return;
   }
 
@@ -168,7 +236,15 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "toolCall") {
-    state.result = await tools[command.name]();
+    const signal = state.execution.signal;
+    try {
+      state.result = await tools[command.name]({ signal });
+    } catch (err) {
+      if (signal.aborted) {
+        throw new Cancelled("Cancelled", command);
+      }
+      throw new ScriptError("Tool '" + command.name + "' failed: " + err.message, command);
+    }
     return;
   }
 
