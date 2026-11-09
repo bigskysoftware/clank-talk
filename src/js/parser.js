@@ -46,6 +46,9 @@ export function parse(source, options = {}) {
 
   let i = 0;
 
+  // the follows set: words that a command claims, so an expression stops before them
+  let follows = [];
+
   // how many loops the parser is inside, for break and continue
   let loopDepth = 0;
 
@@ -72,9 +75,26 @@ export function parse(source, options = {}) {
     return i >= tokens.length;
   }
 
+  // a claimed word is never taken by an expression; see parseBefore
   function isWord(value) {
     const token = current();
+    if (follows.includes(value)) {
+      return false;
+    }
     return token !== undefined && token.type === "word" && token.value === value;
+  }
+
+  // parse an expression that must stop before the claimed words, as in hyperscript:
+  // in "lines a to b of f", "b of f" is not a property, because "of" is claimed
+  // the command checks its own word after the claims are gone
+  function parseBefore(words, parse) {
+    const saved = follows;
+    follows = follows.concat(words);
+    try {
+      return parse();
+    } finally {
+      follows = saved;
+    }
   }
 
   // the position of the current token, or of the last token at the end of the source
@@ -90,6 +110,7 @@ export function parse(source, options = {}) {
 
   // after an error, skip tokens up to the start of the next command
   function skipToNextCommand() {
+    follows = [];
     while (!atEnd() && !isCommandStart()) {
       i++;
     }
@@ -399,10 +420,10 @@ export function parse(source, options = {}) {
       const savedIndex = i;
       const savedErrorCount = errors.length;
       i++;
-      const from = parseMath();
+      const from = parseBefore(["to"], parseMath);
       if (from !== null && isWord("to")) {
         i++;
-        const to = parseMath();
+        const to = parseBefore(["of"], parseMath);
         if (to === null) {
           return null;
         }
@@ -466,7 +487,11 @@ export function parse(source, options = {}) {
     }
     if (isOp("(")) {
       i++;
+      // inside ( ), claimed words are free again; after the ), the claims are back
+      const saved = follows;
+      follows = [];
       const inner = parseExpression();
+      follows = saved;
       if (inner === null || !expectOp(")")) {
         return null;
       }
@@ -810,7 +835,7 @@ export function parse(source, options = {}) {
   // write <expression> to <file>
   // append <expression> to <file>
   function parseWrite(token) {
-    const value = parseExpression();
+    const value = parseBefore(["to"], parseExpression);
     if (value === null) {
       return null;
     }
@@ -825,7 +850,7 @@ export function parse(source, options = {}) {
 
   // replace <expression> with <expression> in <file, variable or property>
   function parseReplace(token) {
-    const old = parseExpression();
+    const old = parseBefore(["with"], parseExpression);
     if (old === null) {
       return null;
     }
@@ -834,7 +859,7 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    const replacement = parseExpression();
+    const replacement = parseBefore(["in"], parseExpression);
     if (replacement === null) {
       return null;
     }
@@ -853,7 +878,7 @@ export function parse(source, options = {}) {
 
   // find <text> in <file, list of files, or text>
   function parseFind(token) {
-    const text = parseExpression();
+    const text = parseBefore(["in"], parseExpression);
     if (text === null) {
       return null;
     }
@@ -871,7 +896,7 @@ export function parse(source, options = {}) {
 
   // put <text> before|after line <n> of <file>
   function parsePut(token) {
-    const text = parseExpression();
+    const text = parseBefore(["before", "after"], parseExpression);
     if (text === null) {
       return null;
     }
@@ -886,7 +911,7 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    const number = parseMath();
+    const number = parseBefore(["of"], parseMath);
     if (number === null) {
       return null;
     }

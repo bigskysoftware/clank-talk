@@ -76,3 +76,48 @@ total
 ```
 
 prints `total`.
+
+## Follows set
+
+Approved. From hyperscript: `src/core/tokenizer.js` (`pushFollows`, `popFollows`, `clearFollows`, `restoreFollows`) and `ParenthesizedExpression` in `src/parsetree/expressions/expressions.js`.
+
+The problem: `lines n to n of ./a.txt` fails with "Expected 'of'". The parser reads `n of ./a.txt` as the property `n` of `./a.txt`, by the approved `<name> of <value>` rule. Thus the range has no `of`. `put x after line n of f` has the same trap.
+
+The rule:
+
+- Approved: a command can claim the words that come after an expression, for example `of` in `lines a to b of f`. While a word is claimed, the expression does not take it. Thus `b of f` is not a property there, and `b` is the end of the expression.
+- Approved: the claimed words are a stack (the follows set). A command pushes words before it parses an expression, and pops them after.
+- Approved: `(` clears the follows set. After the closing `)`, the set is back as it was. Thus `lines 1 to (count of f) of f` works: inside the parentheses, `of` is a property again.
+- Approved: only `( )` clears the set, as in hyperscript. `[ ]`, `{ }` and `${ }` do not.
+- Approved: after a parse error, the parser clears the set, as hyperscript does.
+
+Where commands claim words:
+
+| Command | Expression | Claimed words |
+|---|---|---|
+| `lines <a> to <b> of <x>` | `<a>` | `to` |
+| `lines <a> to <b> of <x>` | `<b>` | `of` |
+| `put <text> before\|after line <n> of <file>` | `<text>` | `before`, `after` |
+| `put ... line <n> of <file>` | `<n>` | `of` |
+| `replace <a> with <b> in <x>` | `<a>`, `<b>` | `with`, `in` |
+| `find <text> in <x>` | `<text>` | `in` |
+| `write`, `append <value> to <file>` | `<value>` | `to` |
+
+Only `of` is a real problem today, because the other words are not operators. Claims for them keep a later operator from breaking a command.
+
+Code (`src/js/parser.js`):
+
+```js
+// parse an expression that must stop before the claimed words
+function parseBefore(words, parse) {
+  const saved = follows;
+  follows = follows.concat(words);
+  try {
+    return parse();
+  } finally {
+    follows = saved;
+  }
+}
+```
+
+`isWord(value)` gives false for a claimed word, as `matchToken` does in hyperscript. A command checks its own word after the pop, so it still sees it.

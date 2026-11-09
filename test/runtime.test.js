@@ -209,3 +209,9 @@ test('an error shows only the start of a long value', async () => {
   const [message] = await errors(`set t to ''\nrepeat 100 times\n  set t to t + 'a'\nend\nprint t * 2`);
   assert.equal(message, "Expected a number, found '" + 'a'.repeat(80) + "'... (100 characters) @5:9");
 });
+
+test('a claimed word ends the expression: lines a to b of f', async () => {
+  assert.deepEqual(await output(`set a to 1\nset b to 2\nprint lines a to b of 'x\\ny\\nz'`), ['1: x\n2: y']);
+  assert.deepEqual(await output(`set t to 'x\\ny'\nprint lines 1 to (length of t's lines) of t`), ['1: x\n2: y']);
+  assert.deepEqual(await output(`set n to 1\nset t to 'abc'\nprint lines n to n of t`), ['1: abc']);
+});

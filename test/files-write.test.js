@@ -249,6 +249,11 @@ test('line edits cannot change .talk files', async () => {
 });
 
 test('find reads the files, so a line edit can follow', async () => {
-  await ok(`find 'var y' in ./a.txt\nset n to the result's first's number\nreplace lines n to (n) of ./a.txt with 'let y'`);
+  await ok(`find 'var y' in ./a.txt\nset n to the result's first's number\nreplace lines n to n of ./a.txt with 'let y'`);
   assert.equal(await readProject('a.txt'), 'var x\nlet y\n');
+});
+
+test('put after line n of f, with a variable', async () => {
+  await ok(`read ./a.txt\nset n to 1\nput 'mid' after line n of ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'var x\nmid\nvar y\n');
 });

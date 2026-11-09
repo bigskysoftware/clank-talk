@@ -48,6 +48,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - Possessive and dot access are the same: `line's number` and `line.number`.
 - Approved: `<name> of <value>` is the same as `<value>'s <name>`, as in hyperscript: `lines of the result's output`, `the name of the file`.
 - Approved: the value after `of` is a value with access, so `name of the file's parent` is the name of `the file's parent`, and `a of b of c` is `a of (b of c)`. A `$` global is never a property name.
+- Approved: a command claims the words that come after its expressions, so `lines a to b of f` and `put x after line n of f` work. Inside `( )`, `of` is a property again. See the follows set in [../infrastructure/parser.md](../infrastructure/parser.md).
 - Approved: text has `lines`, as a file does.
 - Approved: `first of <x>` and `last of <x>` give the first or last item of a list. For a file or text, the first or last line. An empty list gives null. An object field named `first` or `last` is still its own field.
 - A file gives `name`, `path`, `text`, `lines`, `size`, `modified`. A line gives `number`, and is its content as text.
