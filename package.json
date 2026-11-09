@@ -1,0 +1,13 @@
+{
+  "name": "clank-talk",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build-site": "node docs/build.js",
+    "serve-site": "node docs/build.js && npx --yes serve _site"
+  },
+  "devDependencies": {
+    "marked": "^18.1.3"
+  }
+}

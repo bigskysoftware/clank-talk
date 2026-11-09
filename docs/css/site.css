@@ -1,0 +1,111 @@
+/* clank-talk site, OS9 / HyperCard look after hyperscript.org */
+
+@font-face { font-family: "ChicagoFLF"; src: url("../fonts/ChicagoFLF.ttf") format("truetype"); font-display: block; }
+@font-face { font-family: "Sikago"; src: url("../fonts/Sikago.ttf") format("truetype"); font-display: block; }
+@font-face { font-family: "IBM Plex Sans"; src: url("../fonts/IBMPlexSans-Regular.woff2") format("woff2"); font-weight: 400; }
+@font-face { font-family: "IBM Plex Sans"; src: url("../fonts/IBMPlexSans-SemiBold.woff2") format("woff2"); font-weight: 600; }
+@font-face { font-family: "IBM Plex Mono"; src: url("../fonts/IBMPlexMono-Regular.woff2") format("woff2"); font-weight: 400; }
+
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f6f6f6;
+  --bg-chrome: #ebebeb;
+  --border: #d4d4d4;
+  --border-strong: #b0b0b0;
+  --text: #222222;
+  --text-muted: #666666;
+  --accent: #4a84c4;
+  --code-bg: #1e2228;
+  --code-text: #d8dee9;
+  --chrome-gradient: linear-gradient(180deg, #eaeaea 0%, #d6d6d6 100%);
+  --font-heading: "ChicagoFLF", "Chicago", system-ui, sans-serif;
+  --font: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono-font: "IBM Plex Mono", "SF Mono", Consolas, monospace;
+  --radius: 5px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+
+h1, h2, h3 { font-family: var(--font-heading); font-weight: normal; }
+
+/* menu bar */
+.navbar {
+  position: sticky;
+  top: 0;
+  height: 44px;
+  padding: 0 1rem;
+  background: var(--bg-chrome);
+  border-top: 2px solid var(--border-strong);
+  border-bottom: 2px solid var(--border-strong);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.navbar nav { max-width: 94ch; height: 100%; margin: 0 auto; display: flex; align-items: center; }
+.navbar a {
+  padding: 10px 14px;
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.navbar a:hover { background: var(--accent); color: white; }
+.nav-spacer { flex: 1; }
+
+.content { max-width: 960px; margin: 0 auto; padding: 0 16px 4rem; }
+
+/* hero */
+.hero { text-align: center; padding: 1.5rem 0 1rem; }
+.hero-title {
+  font-family: "Sikago", var(--font-heading);
+  font-size: clamp(3rem, 12vw, 7rem);
+  line-height: 1.1;
+}
+.hero-accent { color: #5b8fd4; }
+.hero h1 { margin-top: 0; font-size: 1.6rem; color: var(--text-muted); }
+.subtitle { margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--text-muted); }
+.hero-code { max-width: 680px; margin: 1.5rem auto 0; }
+.note { text-align: center; font-size: 0.85rem; color: var(--text-muted); }
+
+/* window chrome */
+.window {
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.window-title {
+  padding: 5px 10px;
+  font-family: var(--font-heading);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--chrome-gradient);
+  border-bottom: 1px solid var(--border);
+}
+.window pre { margin: 0; border-radius: 0; }
+
+/* code */
+code { font-family: var(--mono-font); font-size: 0.9em; }
+pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: var(--radius);
+}
+:not(pre) > code { padding: 1px 4px; background: var(--bg-subtle); border-radius: 3px; }
+
+/* features */
+.features { max-width: 680px; margin: 2rem auto; }
+.features h2 { margin: 2.5rem 0 0.4rem; font-size: 1.4rem; }
