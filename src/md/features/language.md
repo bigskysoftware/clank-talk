@@ -38,6 +38,29 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - A tool call gives back `code` and `output`. Arguments can be by position (`run_test 'UserTest'`) or by name (`run_test with name: 'UserTest', mode: 'fast'`), with commas between them.
 - Hooks: `before` and `after` for `read`, `write`, `fetch`, `run` and tool calls. Extensions can add more. An `after` hook sees `the result`.
 
+## Expressions
+
+Approved:
+
+- `the` is optional before any expression. It changes nothing. Agents are encouraged to use it where it makes code clearer.
+- `it` and `result` are special words. A command sets them. `the result` and `result` are the same.
+- Lists `[1, 2]` and objects `{name: 'x'}`, as in JavaScript.
+- No function calls in expressions for now.
+- Operators: the common ones, as in hyperscript where it makes sense.
+
+Approved (from hyperscript):
+
+- Values: `true`, `false`, `null`.
+- Access: `x's y`, `x.y`, `x[0]`.
+- Unary: `not x`, `-x`, `no x` (true if `x` is `null`, or an empty string or list).
+- Math: `+ - * /` and `mod`.
+- Comparison: `is`, `is not`, `is less than`, `is greater than`, `is less than or equal to`, `is greater than or equal to`. Symbols too: `== != < > <= >=`. Both forms stay.
+- Text and lists: `contains`, `does not contain`, `starts with`, `ends with`, `is in`, `is not in`, `is empty`, `is not empty`, `exists`, `does not exist`. These also work on files: on a file they use the file's text, so `the file contains 'TODO'` is the same as `the file's text contains 'TODO'`.
+- Logic: `and`, `or`.
+- Conversion: `as json`, `as number`, `as text`.
+- Order, highest first: access, unary, `as`, math, comparison, logic.
+- As in hyperscript, mixing different math operators, or `and` with `or`, without parentheses is an error. `1 + 2 * 3` is an error. Write `1 + (2 * 3)`. This makes the order clear to the reader.
+
 ## Tokens
 
 Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each token has a type, a value, a line and a column.

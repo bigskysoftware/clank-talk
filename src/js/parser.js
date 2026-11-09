@@ -3,11 +3,10 @@
 // The parser does not throw. Each problem becomes an error in the result,
 // next to the errors from the tokenizer, so all problems are reported together.
 //
-// This first version knows only:
-//   print <value>
-//   if <value> ... end
+// Commands so far:
+//   print <expression>
+//   if <expression> ... end
 //   <tool name>          a call to a tool from AGENTS.talk, with no arguments yet
-// and a <value> is only a string, number, path or variable.
 
 import { tokenize } from "./tokenizer.js";
 
@@ -81,43 +80,199 @@ export function parse(source, options = {}) {
     return COMMANDS[token.value] !== undefined || token.value === "end" || token.value === "then";
   }
 
-  // ----- values -----
+  function isOp(value) {
+    const token = current();
+    return token !== undefined && token.type === "op" && token.value === value;
+  }
 
-  function parseValue() {
+  // consume an op, or record an error
+  function expectOp(value) {
+    if (isOp(value)) {
+      i++;
+      return true;
+    }
+    error("Expected '" + value + "'");
+    return false;
+  }
+
+  // ----- expressions -----
+  //
+  // A simple recursive descent parser. Each level calls the level below it.
+  //
+  //   expression = access
+  //   access     = primary ( "'s" word | "." word | "[" expression "]" )*
+  //   primary    = "the"? ( literal | list | object | "(" expression ")" | it | result | variable )
+  //
+  // Operators come in a later branch.
+
+  function node(type, token, fields) {
+    return { type, ...fields, line: token.line, column: token.column };
+  }
+
+  function parseExpression() {
+    return parseAccess();
+  }
+
+  function parseAccess() {
+    let value = parsePrimary();
+    while (value !== null) {
+      const token = current();
+      if (token !== undefined && token.type === "possessive") {
+        i++;
+        value = parseProperty(value, token);
+      } else if (isOp(".")) {
+        i++;
+        value = parseProperty(value, token);
+      } else if (isOp("[")) {
+        i++;
+        const index = parseExpression();
+        if (index === null || !expectOp("]")) {
+          return null;
+        }
+        value = node("index", token, { object: value, index });
+      } else {
+        break;
+      }
+    }
+    return value;
+  }
+
+  // the word after 's or .
+  function parseProperty(object, token) {
+    const name = current();
+    if (name === undefined || name.type !== "word") {
+      error("Expected a property name");
+      return null;
+    }
+    i++;
+    return node("property", token, { object, name: name.value });
+  }
+
+  function parsePrimary() {
+    // "the" is optional noise
+    if (isWord("the")) {
+      i++;
+    }
+
     const token = current();
     if (token === undefined || isCommandStart()) {
       error("Expected a value");
       return null;
     }
+
     if (token.type === "string") {
       i++;
-      return { type: "string", value: token.value, line: token.line, column: token.column };
+      return node("string", token, { value: token.value });
     }
     if (token.type === "number") {
       i++;
-      return { type: "number", value: Number(token.value), line: token.line, column: token.column };
+      return node("number", token, { value: Number(token.value) });
     }
     if (token.type === "path") {
       i++;
-      return { type: "path", value: token.value, line: token.line, column: token.column };
+      return node("path", token, { value: token.value });
+    }
+    if (isOp("[")) {
+      i++;
+      return parseList(token);
+    }
+    if (isOp("{")) {
+      i++;
+      return parseObject(token);
+    }
+    if (isOp("(")) {
+      i++;
+      const inner = parseExpression();
+      if (inner === null || !expectOp(")")) {
+        return null;
+      }
+      return inner;
     }
     if (token.type === "word") {
       i++;
-      return { type: "variable", name: token.value, line: token.line, column: token.column };
+      if (token.value === "true") {
+        return node("boolean", token, { value: true });
+      }
+      if (token.value === "false") {
+        return node("boolean", token, { value: false });
+      }
+      if (token.value === "null") {
+        return node("null", token, {});
+      }
+      if (token.value === "it" || token.value === "result") {
+        return node("result", token, {});
+      }
+      return node("variable", token, { name: token.value });
     }
+
     error("Expected a value, found '" + token.value + "'");
     return null;
+  }
+
+  // [a, b, c], after the "["
+  function parseList(token) {
+    const items = [];
+    if (!isOp("]")) {
+      while (true) {
+        const item = parseExpression();
+        if (item === null) {
+          return null;
+        }
+        items.push(item);
+        if (isOp(",")) {
+          i++;
+          continue;
+        }
+        break;
+      }
+    }
+    if (!expectOp("]")) {
+      return null;
+    }
+    return node("list", token, { items });
+  }
+
+  // {name: value, "other name": value}, after the "{"
+  function parseObject(token) {
+    const fields = [];
+    if (!isOp("}")) {
+      while (true) {
+        const key = current();
+        if (key === undefined || (key.type !== "word" && key.type !== "string")) {
+          error("Expected a field name");
+          return null;
+        }
+        i++;
+        if (!expectOp(":")) {
+          return null;
+        }
+        const value = parseExpression();
+        if (value === null) {
+          return null;
+        }
+        fields.push({ name: key.value, value });
+        if (isOp(",")) {
+          i++;
+          continue;
+        }
+        break;
+      }
+    }
+    if (!expectOp("}")) {
+      return null;
+    }
+    return node("object", token, { fields });
   }
 
   // ----- commands -----
 
   function parsePrint(token) {
-    const value = parseValue();
+    const value = parseExpression();
     return { type: "print", value, line: token.line, column: token.column };
   }
 
   function parseIf(token) {
-    const condition = parseValue();
+    const condition = parseExpression();
     const body = parseCommands();
     if (isWord("end")) {
       i++;
@@ -147,7 +302,13 @@ export function parse(source, options = {}) {
     const parser = COMMANDS[token.value];
     if (parser !== undefined) {
       i++;
-      return parser(token);
+      const errorCount = errors.length;
+      const command = parser(token);
+      // if the command had an error, skip the rest of it, so one mistake gives one error
+      if (errors.length > errorCount) {
+        skipToNextCommand();
+      }
+      return command;
     }
 
     if (tools.includes(token.value)) {
