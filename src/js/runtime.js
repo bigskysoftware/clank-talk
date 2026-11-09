@@ -10,6 +10,7 @@ import fs from "node:fs/promises";
 import nodePath from "node:path";
 
 const DEFAULT_MAX_STEPS = 10_000;
+const AGENTS_TALK = "AGENTS.talk";
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -115,16 +116,23 @@ async function execute(source, options, execution) {
 
   const tools = options.tools || {};
   const maxSteps = options.maxSteps || DEFAULT_MAX_STEPS;
+  const root = nodePath.resolve(options.root || process.cwd());
 
-  const { script, errors } = parse(source, { tools: Object.keys(tools) });
+  const agents = await loadAgentsTalk(root, tools);
+  if (agents.errors.length > 0) {
+    return finish(execution, "failed", agents.errors);
+  }
+
+  const toolNames = Object.keys(tools).concat(Object.keys(agents.definitions));
+  const { script, errors } = parse(source, { tools: toolNames });
   if (errors.length > 0) {
     return finish(execution, "failed", errors);
   }
 
-  const root = nodePath.resolve(options.root || process.cwd());
   const state = {
     execution,
     root,
+    definitions: agents.definitions,
     cwd: nodePath.resolve(root, options.cwd || "."),
     onStep: options.onStep || null,
     variables: Object.create(null),
@@ -136,15 +144,62 @@ async function execute(source, options, execution) {
     await runCommands(script.commands, state, tools, maxSteps);
   } catch (err) {
     if (err instanceof Cancelled) {
-      return finish(execution, "cancelled", [{ message: "Cancelled", line: err.line, column: err.column }]);
+      return finish(execution, "cancelled", [errorFor(err)]);
     }
     if (err instanceof ScriptError) {
-      return finish(execution, "failed", [{ message: err.message, line: err.line, column: err.column }]);
+      return finish(execution, "failed", [errorFor(err)]);
     }
     throw err;
   }
 
   return finish(execution, "done", []);
+}
+
+// an error object for the host; "file" is there only for errors in AGENTS.talk
+function errorFor(err) {
+  const result = { message: err.message, line: err.line, column: err.column };
+  if (err.file) {
+    result.file = err.file;
+  }
+  return result;
+}
+
+// read and parse @/AGENTS.talk, if it exists
+// gives { definitions: name to tool node, errors }
+async function loadAgentsTalk(root, hostTools) {
+  let source;
+  try {
+    source = await fs.readFile(nodePath.join(root, AGENTS_TALK), "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return { definitions: Object.create(null), errors: [] };
+    }
+    throw err;
+  }
+
+  // parse two times: the first pass finds the tool names,
+  // so in the second pass one tool can call another
+  const firstPass = parse(source, { definitions: true });
+  const names = Object.keys(hostTools);
+  for (const definition of firstPass.script.definitions) {
+    names.push(definition.name);
+  }
+  const { script, errors } = parse(source, { definitions: true, tools: names });
+  const result = { definitions: Object.create(null), errors: [] };
+  for (const e of errors) {
+    result.errors.push({ ...e, file: AGENTS_TALK });
+  }
+  for (const definition of script.definitions) {
+    const where = { line: definition.line, column: definition.column, file: AGENTS_TALK };
+    if (Object.hasOwn(result.definitions, definition.name)) {
+      result.errors.push({ message: "Tool '" + definition.name + "' is defined twice", ...where });
+    } else if (Object.hasOwn(hostTools, definition.name)) {
+      result.errors.push({ message: "Tool '" + definition.name + "' is also a host tool", ...where });
+    } else {
+      result.definitions[definition.name] = definition;
+    }
+  }
+  return result;
 }
 
 function finish(execution, status, errors) {
@@ -311,9 +366,24 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "toolCall") {
+    const args = [];
+    for (const arg of command.args) {
+      args.push(await evaluate(arg, state));
+    }
+    const named = Object.create(null);
+    for (const arg of command.named) {
+      named[arg.name] = await evaluate(arg.value, state);
+    }
+
+    const definition = state.definitions[command.name];
+    if (definition !== undefined) {
+      state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
+      return null;
+    }
+
     const signal = state.execution.signal;
     try {
-      state.result = await tools[command.name]({ signal });
+      state.result = await tools[command.name]({ signal, args, named });
     } catch (err) {
       if (signal.aborted) {
         throw new Cancelled("Cancelled", command);
@@ -435,6 +505,43 @@ async function evaluate(node, state) {
   throw new ScriptError("Unknown expression type '" + type + "'", node);
 }
 
+// run a tool from AGENTS.talk, with its own local variables
+// gives back the tool's result at the end of the tool
+async function callTool(definition, args, named, command, state, tools, maxSteps) {
+  if (args.length > definition.params.length) {
+    throw new ScriptError("Tool '" + definition.name + "' takes " + definition.params.length + " arguments, found " + args.length, command);
+  }
+  const locals = Object.create(null);
+  for (let index = 0; index < definition.params.length; index++) {
+    const param = definition.params[index];
+    setOwn(locals, param, index < args.length ? args[index] : null);
+  }
+  for (const name of Object.keys(named)) {
+    if (!definition.params.includes(name)) {
+      throw new ScriptError("Tool '" + definition.name + "' has no argument named '" + name + "'", command);
+    }
+    setOwn(locals, name, named[name]);
+  }
+
+  const savedVariables = state.variables;
+  const savedResult = state.result;
+  state.variables = locals;
+  state.result = null;
+  try {
+    await runCommands(definition.body, state, tools, maxSteps);
+    return state.result;
+  } catch (err) {
+    // an error inside the tool points into AGENTS.talk
+    if (err instanceof ScriptError && !err.file) {
+      err.file = AGENTS_TALK;
+    }
+    throw err;
+  } finally {
+    state.variables = savedVariables;
+    state.result = savedResult;
+  }
+}
+
 // what a "for" loop goes over: a list; null gives no passes
 // later: the lines of a file
 function loopItems(value, node) {
@@ -457,6 +564,10 @@ function scopeFor(name, state) {
 
 // set a variable, a property or an index
 async function assign(target, value, state) {
+  if (target.type === "result") {
+    state.result = value;
+    return;
+  }
   if (target.type === "variable") {
     setOwn(scopeFor(target.name, state), target.name, value);
     return;
@@ -743,6 +854,9 @@ async function writeText(file, text, append, state, node) {
   if (!(file instanceof FileRef)) {
     throw new ScriptError("Expected a file, found " + describe(file), node);
   }
+  if (await isProtected(file, state, node)) {
+    throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
+  }
 
   let real = await realPath(file, state, node);
   let before = null;
@@ -763,6 +877,39 @@ async function writeText(file, text, append, state, node) {
   }
   await fs.writeFile(real, after, "utf8");
   state.execution.changes.push({ path: file.path, before, after });
+}
+
+// is this file AGENTS.talk, by name (any case) or by being the same file on disk (a link to it)?
+// a protected path, relative to the root: any .talk file, or anything in the talk folder
+// letter case does not matter, because some file systems ignore it
+function isProtectedPath(relative) {
+  const lower = relative.toLowerCase();
+  return lower.endsWith(".talk") || lower === "talk" || lower.startsWith("talk/");
+}
+
+// scripts cannot change .talk files or the @/talk folder, so an agent cannot change its own tools
+// the check uses the path as written, the path after symlinks, and for AGENTS.talk
+// also the file on disk, so a hard link to it is refused too
+async function isProtected(file, state, node) {
+  if (isProtectedPath(file.path)) {
+    return true;
+  }
+  const real = await realPath(file, state, node);
+  if (real === null) {
+    return false;
+  }
+  const realRoot = await fs.realpath(state.root);
+  const realRelative = nodePath.relative(realRoot, real).split(nodePath.sep).join("/");
+  if (isProtectedPath(realRelative)) {
+    return true;
+  }
+  try {
+    const target = await fs.stat(real);
+    const agents = await fs.stat(nodePath.join(state.root, AGENTS_TALK));
+    return target.dev === agents.dev && target.ino === agents.ino;
+  } catch (err) {
+    return false;
+  }
 }
 
 // make missing parent folders for a new file

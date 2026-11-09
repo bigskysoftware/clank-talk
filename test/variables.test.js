@@ -43,7 +43,11 @@ test("set a field that cannot change is an error", async () => {
 
 test("set needs a variable or property", async () => {
   assert.deepEqual(await errors("set 1 to 2"), ["Cannot set this, expected a variable or a property"]);
-  assert.deepEqual(await errors("set it to 2"), ["Cannot set this, expected a variable or a property"]);
+
+});
+
+test("set the result", async () => {
+  assert.deepEqual(await output("set the result to 2\nprint it\nset it to 3\nprint the result"), ["2", "3"]);
 });
 
 test("set needs 'to'", async () => {

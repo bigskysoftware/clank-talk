@@ -8,6 +8,7 @@ Decisions that we put off. Each one needs a human decision later.
 
 - Argument values from the agent are not checked. Later: refuse values that start with `-`, or typed parameters. See `run` below.
 - OS sandbox for `run` (later, as a plugin). See `run` below.
+- `.js` plugins in the protected `@/talk/` folder. Open. Scripts cannot write the folder, but programs that `run` starts can.
 
 ## Values
 
@@ -26,6 +27,16 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - Glob results are checked one by one.
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
 - Writes use the same checks. For a new file, the nearest folder that exists must be inside the root after symlinks, before any folder is made. Thus a symlinked folder cannot lead a new file outside the root.
+
+## .talk files and the talk folder
+
+Feature: [../features/agents-talk.md](../features/agents-talk.md).
+
+- A script cannot write, append to or replace in any `.talk` file, or anything in `@/talk/`, or make them. Thus an agent cannot change its own tools.
+- Scripts can read them.
+- The check uses the path as written and the path after symlinks, in any letter case. For AGENTS.talk it also compares the file on disk (device and inode), so a hard link to it is refused too.
+- Limit: a hard link with another name to another `.talk` file is not caught. Only the user or a `run` program can make one.
+- Limit: a program that `run` starts can still change these files. Only an OS sandbox closes this.
 
 ## `run`
 

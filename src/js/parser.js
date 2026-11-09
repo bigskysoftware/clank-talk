@@ -20,7 +20,8 @@ import { tokenize } from "./tokenizer.js";
 /**
  * @param {string} source
  * @param {Object} [options]
- * @param {string[]} [options.tools]  names of the tools in AGENTS.talk
+ * @param {string[]} [options.tools]        names of the tools in AGENTS.talk
+ * @param {boolean} [options.definitions]   true for AGENTS.talk: only definitions at the top level
  * @returns {{ script: Object, errors: ParseError[] }}
  */
 export function parse(source, options = {}) {
@@ -746,7 +747,7 @@ export function parse(source, options = {}) {
     if (target === null) {
       return null;
     }
-    if (target.type !== "variable" && target.type !== "property" && target.type !== "index") {
+    if (target.type !== "variable" && target.type !== "property" && target.type !== "index" && target.type !== "result") {
       errors.push({ message: "Cannot set this, expected a variable or a property", line: start.line, column: start.column });
       return null;
     }
@@ -795,7 +796,12 @@ export function parse(source, options = {}) {
 
     if (tools.includes(token.value)) {
       i++;
-      return { type: "toolCall", name: token.value, line: token.line, column: token.column };
+      const errorCount = errors.length;
+      const call = parseToolCall(token);
+      if (errors.length > errorCount) {
+        skipToNextCommand();
+      }
+      return call;
     }
 
     error("Unknown command '" + token.value + "'");
@@ -821,7 +827,120 @@ export function parse(source, options = {}) {
     return commands;
   }
 
+  // ----- tools -----
+
+  // can the current token start a value? used to find positional tool arguments
+  function canStartValue() {
+    const token = current();
+    if (token === undefined || isCommandStart() || isWord("with")) {
+      return false;
+    }
+    // a tool name starts the next call, not an argument
+    if (token.type === "word" && tools.includes(token.value)) {
+      return false;
+    }
+    if (token.type === "op") {
+      return token.value === "(" || token.value === "[" || token.value === "{" || token.value === "-";
+    }
+    return true;
+  }
+
+  // name 'a', 'b'   or   name with x: 'a', y: 'b'   or   name
+  function parseToolCall(token) {
+    const args = [];
+    const named = [];
+    if (isWord("with")) {
+      i++;
+      while (true) {
+        const name = current();
+        if (name === undefined || name.type !== "word") {
+          error("Expected an argument name");
+          return null;
+        }
+        i++;
+        if (!expectOp(":")) {
+          return null;
+        }
+        const value = parseExpression();
+        if (value === null) {
+          return null;
+        }
+        named.push({ name: name.value, value });
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+    } else if (canStartValue()) {
+      while (true) {
+        const value = parseExpression();
+        if (value === null) {
+          return null;
+        }
+        args.push(value);
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+    }
+    return { type: "toolCall", name: token.value, args, named, line: token.line, column: token.column };
+  }
+
+  // tool <name> [with <param>, <param>] ... end
+  function parseToolDefinition(token) {
+    const name = parseName();
+    if (name === null) {
+      return null;
+    }
+    const params = [];
+    if (isWord("with")) {
+      i++;
+      while (true) {
+        const param = parseName();
+        if (param === null) {
+          return null;
+        }
+        params.push(param);
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+    }
+    const body = parseBody(token);
+    return { type: "tool", name, params, body, line: token.line, column: token.column };
+  }
+
+  // AGENTS.talk: only definitions at the top level
+  function parseDefinitions() {
+    const definitions = [];
+    while (!atEnd()) {
+      if (isWord("tool")) {
+        const token = current();
+        i++;
+        const definition = parseToolDefinition(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        } else {
+          skipToNextCommand();
+        }
+        continue;
+      }
+      error("Only definitions are allowed here, such as 'tool'");
+      i++;
+      while (!atEnd() && !isWord("tool")) {
+        i++;
+      }
+    }
+    return definitions;
+  }
+
   // ----- script -----
+
+  if (options.definitions) {
+    return { script: { type: "definitions", definitions: parseDefinitions() }, errors };
+  }
 
   const commands = parseCommands();
   while (!atEnd()) {

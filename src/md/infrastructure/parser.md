@@ -26,7 +26,9 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "break" }
 { type: "continue" }
 { type: "increment" | "decrement", target, amount }   amount is 1 when there is no "by"
-{ type: "toolCall", name }
+{ type: "toolCall", name, args: [...], named: [{ name, value }] }
+{ type: "tool", name, params: [...], body: [...] }     AGENTS.talk only
+{ type: "definitions", definitions: [...] }            the top of AGENTS.talk
 { type: "string" | "number" | "path" | "boolean", value }
 { type: "null" }
 { type: "template", parts: [...] }      parts are text or expression nodes
