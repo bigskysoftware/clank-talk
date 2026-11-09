@@ -353,6 +353,29 @@ if (isListOfLines(value)) {
     return null;
   }
 
+  if (command.type === "replaceLines" || command.type === "removeLines") {
+    const range = command.range;
+    const file = await evaluate(range.target, state);
+    const from = toNumber(await evaluate(range.from, state), command);
+    const to = toNumber(await evaluate(range.to, state), command);
+    let newText = null;
+    if (command.type === "replaceLines") {
+      newText = toText(await asText(await evaluate(command.text, state), state, command));
+    }
+    state.result = await editLines(file, from, to, newText, state, command);
+    return null;
+  }
+
+  if (command.type === "put") {
+    const file = await evaluate(command.file, state);
+    const number = toNumber(await evaluate(command.number, state), command);
+    const newText = toText(await asText(await evaluate(command.text, state), state, command));
+    // an empty range: before line n puts the text just before it, after line n just after it
+    const at = command.where === "before" ? number : number + 1;
+    state.result = await editLines(file, at, at - 1, newText, state, command, number);
+    return null;
+  }
+
   if (command.type === "replace") {
     const old = toText(await asText(await evaluate(command.old, state), state, command));
     const replacement = toText(await asText(await evaluate(command.replacement, state), state, command));
@@ -1009,6 +1032,63 @@ async function readText(file, state, node) {
 }
 
 // write or append text to a file, and record the change
+// change lines from..to (from 1, both ends included) to newText; null removes them
+// an empty range (to is from - 1) puts the text in just before line "from"
+// putLine is the line that put names, for its range check
+// gives back the old lines
+async function editLines(file, from, to, newText, state, node, putLine) {
+  if (!(file instanceof FileRef)) {
+    throw new ScriptError("A line edit needs a file, found " + describe(file), node);
+  }
+  const real = await realPath(file, state, node);
+  if (real === null) {
+    throw new ScriptError("File not found: " + file.path, node);
+  }
+  // line numbers come from an earlier read, so a line edit needs one
+  if (!state.seen.has(real)) {
+    throw new ScriptError("Read " + file.path + " before a line edit, so the line numbers are known", node);
+  }
+  const text = await fs.readFile(real, "utf8");
+  if (text !== state.seen.get(real)) {
+    throw new ScriptError("File changed since it was read: " + file.path + ". Read it again", node);
+  }
+
+  const parts = text.split("\n");
+  const finalBreak = parts.length > 0 && parts[parts.length - 1] === "";
+  if (finalBreak) {
+    parts.pop();
+  }
+  const count = parts.length;
+  if (putLine !== undefined) {
+    if (!Number.isInteger(putLine) || putLine < 1 || putLine > count) {
+      throw new ScriptError("Line " + putLine + " is not in " + file.path + ", which has " + count + " lines", node);
+    }
+  } else if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > count || from > to) {
+    throw new ScriptError("Lines " + from + " to " + to + " are not in " + file.path + ", which has " + count + " lines", node);
+  }
+
+  let newParts = [];
+  if (newText !== null) {
+    newParts = newText.split("\n");
+    // a final line break in the new text does not make an extra empty line
+    if (newParts.length > 0 && newParts[newParts.length - 1] === "") {
+      newParts.pop();
+    }
+  }
+  const old = parts.splice(from - 1, to - from + 1, ...newParts);
+  let result = parts.join("\n");
+  if (finalBreak && parts.length > 0) {
+    result += "\n";
+  }
+  await writeText(file, result, false, state, node);
+
+  const oldLines = [];
+  for (let index = 0; index < old.length; index++) {
+    oldLines.push(new Line(from + index, old[index]));
+  }
+  return oldLines;
+}
+
 async function writeText(file, text, append, state, node) {
   if (Array.isArray(file)) {
     throw new ScriptError("Expected one file, found a list of " + file.length + ". Use a for loop", node);

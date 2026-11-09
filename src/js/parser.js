@@ -750,6 +750,10 @@ if (isWord("lines")) {
     if (replacement === null) {
       return null;
     }
+    // replace lines 5 to 7 of <file> with <text>: an edit by line number
+    if (old.type === "lines" && !isWord("in")) {
+      return { type: "replaceLines", range: old, text: replacement, line: token.line, column: token.column };
+    }
     if (!isWord("in")) {
       error("Expected 'in'");
       return null;
@@ -757,6 +761,52 @@ if (isWord("lines")) {
     i++;
     const target = parseExpression();
     return { type: "replace", old, replacement, target, line: token.line, column: token.column };
+  }
+
+  // put <text> before|after line <n> of <file>
+  function parsePut(token) {
+    const text = parseExpression();
+    if (text === null) {
+      return null;
+    }
+    if (!isWord("before") && !isWord("after")) {
+      error("Expected 'before' or 'after'");
+      return null;
+    }
+    const where = current().value;
+    i++;
+    if (!isWord("line")) {
+      error("Expected 'line'");
+      return null;
+    }
+    i++;
+    const number = parseMath();
+    if (number === null) {
+      return null;
+    }
+    if (!isWord("of")) {
+      error("Expected 'of'");
+      return null;
+    }
+    i++;
+    const file = parseAccess();
+    if (file === null) {
+      return null;
+    }
+    return { type: "put", text, where, number, file, line: token.line, column: token.column };
+  }
+
+  // remove lines <from> to <to> of <file>
+  function parseRemove(token) {
+    const range = parseExpression();
+    if (range === null) {
+      return null;
+    }
+    if (range.type !== "lines") {
+      errors.push({ message: "Expected lines <from> to <to> of <file>", line: range.line, column: range.column });
+      return null;
+    }
+    return { type: "removeLines", range, line: token.line, column: token.column };
   }
 
   // set <target> to <expression>
@@ -812,6 +862,8 @@ if (isWord("lines")) {
     write: parseWrite,
     append: parseWrite,
     replace: parseReplace,
+    put: parsePut,
+    remove: parseRemove,
     run: parseRun,
     set: parseSet,
     increment: parseIncrement,

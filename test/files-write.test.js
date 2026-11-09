@@ -195,3 +195,50 @@ test('the host can keep what was read between runs', async () => {
   const result = await run(`write 'agent edit' to ./a.txt`, { root, seen });
   assert.equal(result.errors[0].message, 'File changed since it was read: a.txt. Read it again');
 });
+
+test('replace lines by number', async () => {
+  const result = await ok(`read ./a.txt\nreplace lines 2 to 2 of ./a.txt with 'let y'\nprint the result`);
+  assert.equal(await readProject('a.txt'), 'var x\nlet y\n');
+  assert.deepEqual(result.output, ['2: var y']);
+});
+
+test('put before and after a line', async () => {
+  await ok(`read ./a.txt\nput 'top' before line 1 of ./a.txt\nput 'end' after line 3 of ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'top\nvar x\nvar y\nend\n');
+});
+
+test('remove lines', async () => {
+  await ok(`read ./a.txt\nremove lines 1 to 1 of ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'var y\n');
+});
+
+test('new text with many lines, and a final line break that does not count', async () => {
+  await ok(`read ./a.txt\nreplace lines 1 to 1 of ./a.txt with 'a\\nb\\n'`);
+  assert.equal(await readProject('a.txt'), 'a\nb\nvar y\n');
+});
+
+test('a line edit needs a read first', async () => {
+  assert.deepEqual(await errors(`remove lines 1 to 1 of ./a.txt`), ['Read a.txt before a line edit, so the line numbers are known']);
+});
+
+test('a line edit fails if the file changed since the read', async () => {
+  const tools = { touch: async () => fs.writeFile(path.join(root, 'a.txt'), 'human\nvar x\nvar y\n') };
+  const result = await run(`read ./a.txt\ntouch\nremove lines 1 to 1 of ./a.txt`, { root, tools });
+  assert.deepEqual(result.errors.map((e) => e.message), ['File changed since it was read: a.txt. Read it again']);
+});
+
+test('lines outside the file are an error', async () => {
+  assert.deepEqual(await errors(`read ./a.txt\nremove lines 2 to 3 of ./a.txt`), ['Lines 2 to 3 are not in a.txt, which has 2 lines']);
+  assert.deepEqual(await errors(`read ./a.txt\nput 'x' after line 5 of ./a.txt`), ['Line 5 is not in a.txt, which has 2 lines']);
+});
+
+test('a second line edit sees the new line numbers', async () => {
+  await ok(`read ./a.txt\nput 'top' before line 1 of ./a.txt\nremove lines 3 to 3 of ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'top\nvar x\n');
+});
+
+test('line edits cannot change .talk files', async () => {
+  await fs.writeFile(path.join(root, 'x.talk'), 'tool a\nend\n');
+  const [message] = await errors(`read ./x.talk\nremove lines 1 to 1 of ./x.talk`);
+  assert.match(message, /^A script cannot change .talk files/);
+});

@@ -32,6 +32,8 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `write <value> to <file>` and `append <value> to <file>`.
 - `as json` parses text to an object, and formats an object to text.
 - Approved: `lines <from> to <to> of <file or text>` gives a range of lines, by line number (from 1), with both ends included. `lines` alone is still a plain word.
+- Approved: edits by line number. `replace lines 5 to 7 of <file> with <text>`, `put <text> before line 5 of <file>`, `put <text> after line 5 of <file>`, `remove lines 5 to 7 of <file>`.
+- Approved: a line edit needs an earlier read of the file, and fails if the file changed since that read.
 - `if ... else if ... else ... end`. One `end` closes the whole chain. There is no `otherwise`.
 - Loops:
   - `for x in <list> ... end`. Later: also the lines of a file.

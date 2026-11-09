@@ -54,6 +54,10 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 - Approved: a range past the end of the file stops at the last line. A range that starts after its end is empty. Neither is an error.
 - Approved: `print` shows a list of lines with their numbers (`551: text`), one line each. As text (`as text`, `+`, `write`), a list of lines is its text, one line each, with no numbers.
 - Approved: `lines ... of` also works on text, so tool output can be split into lines.
+- Approved: line edits split the new text into lines, so a final line break in it does not add an empty line. The file keeps its own final line break.
+- Approved: a line edit outside the file (or with a number that is not whole) is an error, unlike a read range.
+- Approved: the result of a line edit is the old lines, so `print the result` shows what changed. For `put`, the result is empty.
+- Line numbers shift after an edit. A second edit in the same script sees the new numbers.
 - `write` and `append` make a missing file, and missing parent folders.
 - What goes in: text as it is; a file or line gives its text; lists and objects as compact JSON.
 - `replace` changes every match. The result is a list of replacements, `{ line, column, old, new }`, with the place of each match in the old text. With no match, nothing changes and the result is empty. `replace` of empty text is an error.

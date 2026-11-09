@@ -18,6 +18,9 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "print", value }
 { type: "if", condition, body: [...] }
 { type: "lines", from, to, target }      lines 1 to 5 of <file or text>
+{ type: "replaceLines", range, text }    range is a "lines" node
+{ type: "removeLines", range }
+{ type: "put", text, where, number, file }   where: "before" or "after"
 { type: "read", file }                  a command, and also an expression
 { type: "write" | "append", value, file }
 { type: "replace", old, replacement, target }
