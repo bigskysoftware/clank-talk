@@ -1,6 +1,6 @@
 # Runtime
 
-Code: `src/js/runtime.js`. `run(source, { tools, maxSteps })` gives `{ output, errors, steps }`.
+Code: `src/js/runtime.js`. `run(source, { tools, maxSteps, globals })` gives `{ output, errors, steps }`.
 
 ## Decisions (not syntax)
 
@@ -10,8 +10,11 @@ Code: `src/js/runtime.js`. `run(source, { tools, maxSteps })` gives `{ output, e
 - Everything is async, so later commands (`read`, `fetch`, `ask`) can wait without a change to how scripts are written.
 - Each command is one step. When the step count goes over `maxSteps` (default 10,000), the script stops.
 - `print` adds a line to `output`.
+- Local variables last for one run. `$` globals live in `options.globals`. A host keeps them for a session when it passes the same object to each run.
 
 ## Value rules (approved)
+
+- `increment` and `decrement` on a variable that is not set start at 0.
 
 These are semantics, not syntax. A human approved them.
 

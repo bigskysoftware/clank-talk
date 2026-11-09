@@ -11,6 +11,14 @@ test("words", () => {
   assert.deepEqual(simple("set config to x"), ["word:set", "word:config", "word:to", "word:x"]);
 });
 
+test("global variables", () => {
+  assert.deepEqual(simple("set $last to x"), ["word:set", "word:$last", "word:to", "word:x"]);
+});
+
+test("$ alone is an error", () => {
+  assert.deepEqual(simple("$ 1"), ["error:Unexpected character '$'", "number:1"]);
+});
+
 test("numbers", () => {
   assert.deepEqual(simple("2 3.5"), ["number:2", "number:3.5"]);
 });

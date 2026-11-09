@@ -17,6 +17,8 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "script", commands: [...] }
 { type: "print", value }
 { type: "if", condition, body: [...] }
+{ type: "set", target, value }          target: variable, property or index
+{ type: "increment" | "decrement", target, amount }   amount is 1 when there is no "by"
 { type: "toolCall", name }
 { type: "string" | "number" | "path" | "boolean", value }
 { type: "null" }

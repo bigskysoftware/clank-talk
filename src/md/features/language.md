@@ -30,7 +30,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `ask` asks the human, waits for the answer, and can time out. The answer goes in `the result`.
 - `replace a with b in <file>` changes the file itself.
 - `as json` parses text to an object, and formats an object to text.
-- `increment x by n`.
+- `increment x by n` and `decrement x by n`. With no `by`, the amount is 1, as in hyperscript.
 - Possessive and dot access are the same: `line's number` and `line.number`.
 - A file gives `name`, `path`, `text`, `lines`, `size`, `modified`. A line gives `number`, and is its content as text.
 - Variables without a prefix are local to the script or feature. `$` variables are global and stay for the session.
@@ -70,7 +70,7 @@ Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each tok
 
 | Type | Example | Note |
 |---|---|---|
-| word | `set`, `file` | Keywords are words. The parser decides what a word means. |
+| word | `set`, `file`, `$last` | Keywords are words. The parser decides what a word means. A word that starts with `$` is a global variable. |
 | string | `'var '`, `"let "` | The value has no quotes. Escapes: `\n`, `\t`, `\x` gives `x`. |
 | number | `2`, `3.5`, `1_000`, `-3` | `_` groups digits and is dropped. |
 | path | `./a.js`, `../x`, `@/src/a.js`, `./"my file.txt"` | See paths below. |

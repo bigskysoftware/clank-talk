@@ -191,9 +191,13 @@ export function tokenize(source) {
       continue;
     }
 
-    // word
-    if (isLetter(c)) {
+    // word, or a global variable: $name
+    if (isLetter(c) || (c === "$" && isLetter(source[i + 1] || ""))) {
       let value = "";
+      if (c === "$") {
+        value += "$";
+        advance();
+      }
       while (i < source.length && isWordChar(source[i])) {
         value += source[i];
         advance();

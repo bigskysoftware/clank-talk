@@ -25,6 +25,7 @@ class ScriptError extends Error {
  * @param {Object} [options]
  * @param {Object<string, Function>} [options.tools]  AGENTS.talk tools: name to async function
  * @param {number} [options.maxSteps]                 the step budget
+ * @param {Object} [options.globals]                  $ variables; pass the same object to keep them for a session
  * @returns {Promise<{ output: string[], errors: Object[], steps: number }>}
  */
 export async function run(source, options = {}) {
@@ -37,7 +38,8 @@ export async function run(source, options = {}) {
   }
 
   const state = {
-    variables: {},
+    variables: Object.create(null),
+    globals: options.globals || Object.create(null),
     result: null,
     output: [],
     steps: 0,
@@ -83,6 +85,24 @@ async function runCommand(command, state, tools, maxSteps) {
     return;
   }
 
+  if (command.type === "set") {
+    const value = await evaluate(command.value, state);
+    await assign(command.target, value, state);
+    return;
+  }
+
+  if (command.type === "increment" || command.type === "decrement") {
+    const current = await evaluate(command.target, state);
+    let amount = toNumber(await evaluate(command.amount, state), command);
+    if (command.type === "decrement") {
+      amount = -amount;
+    }
+    // a variable that is not set yet starts at 0
+    const start = current === null ? 0 : toNumber(current, command);
+    await assign(command.target, start + amount, state);
+    return;
+  }
+
   if (command.type === "toolCall") {
     state.result = await tools[command.name]();
     return;
@@ -106,8 +126,9 @@ async function evaluate(node, state) {
     return state.result;
   }
   if (type === "variable") {
-    if (node.name in state.variables) {
-      return state.variables[node.name];
+    const scope = scopeFor(node.name, state);
+    if (Object.hasOwn(scope, node.name)) {
+      return scope[node.name];
     }
     return null;
   }
@@ -158,6 +179,46 @@ async function evaluate(node, state) {
   }
 
   throw new ScriptError("Unknown expression type '" + type + "'", node);
+}
+
+// $name is a global, any other name is local to the script
+function scopeFor(name, state) {
+  if (name.startsWith("$")) {
+    return state.globals;
+  }
+  return state.variables;
+}
+
+// set a variable, a property or an index
+async function assign(target, value, state) {
+  if (target.type === "variable") {
+    setOwn(scopeFor(target.name, state), target.name, value);
+    return;
+  }
+
+  const object = await evaluate(target.object, state);
+  let name = target.name;
+  if (target.type === "index") {
+    name = await evaluate(target.index, state);
+  }
+
+  if (object === null || typeof object !== "object") {
+    throw new ScriptError("Cannot set '" + name + "' on " + describe(object), target);
+  }
+  if (typeof name !== "string" && typeof name !== "number") {
+    throw new ScriptError("A property name must be text or a number", target);
+  }
+  // some fields cannot change, for example the length of a list
+  try {
+    setOwn(object, name, value);
+  } catch (err) {
+    throw new ScriptError("Cannot set '" + name + "'", target);
+  }
+}
+
+// defineProperty always makes a plain own field, even for names like __proto__
+function setOwn(object, name, value) {
+  Object.defineProperty(object, name, { value, writable: true, enumerable: true, configurable: true });
 }
 
 // only plain data: no access to JavaScript internals such as constructor or __proto__

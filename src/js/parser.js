@@ -485,10 +485,58 @@ export function parse(source, options = {}) {
     return { type: "if", condition, body, line: token.line, column: token.column };
   }
 
+  // set <target> to <expression>
+  // the target is a variable, a property (x's y, x.y) or an index (x[0])
+  function parseSet(token) {
+    const target = parseTarget();
+    if (target === null) {
+      return null;
+    }
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const value = parseExpression();
+    return { type: "set", target, value, line: token.line, column: token.column };
+  }
+
+  // increment <target> [by <expression>]
+  // decrement <target> [by <expression>]
+  // with no "by", the amount is 1
+  function parseIncrement(token) {
+    const target = parseTarget();
+    if (target === null) {
+      return null;
+    }
+    let amount = { type: "number", value: 1, line: token.line, column: token.column };
+    if (isWord("by")) {
+      i++;
+      amount = parseExpression();
+    }
+    return { type: token.value, target, amount, line: token.line, column: token.column };
+  }
+
+  function parseTarget() {
+    const start = current() || { line: 0, column: 0 };
+    const target = parseAccess();
+    if (target === null) {
+      return null;
+    }
+    if (target.type !== "variable" && target.type !== "property" && target.type !== "index") {
+      errors.push({ message: "Cannot set this, expected a variable or a property", line: start.line, column: start.column });
+      return null;
+    }
+    return target;
+  }
+
   // each command parser gets the command token, after it is consumed
   const COMMANDS = {
     print: parsePrint,
     if: parseIf,
+    set: parseSet,
+    increment: parseIncrement,
+    decrement: parseIncrement,
   };
 
   // one command, or null if there is an error
