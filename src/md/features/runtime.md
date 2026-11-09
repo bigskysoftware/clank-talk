@@ -47,6 +47,10 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 - `read <file>` puts the text in the result. `read <file>` is also an expression. Its argument is only a value with access, so `read ./a.txt + '!'` reads `./a.txt` and then adds `'!'`.
 - A missing file is an error for `read`. `exists` is false for it.
 - All files are UTF-8.
+- Approved, stale-write check: the runtime remembers the text of each file when a script reads or writes it. If `write` or `replace` finds that the file on disk changed since then, it fails with "File changed since it was read". The agent reads the file again, and makes its edit again. Nothing is merged.
+- Approved: `append` is not checked, because it keeps what is in the file. A `write` to a file that the script did not read is not checked.
+- Approved: `options.seen` (a Map) holds what was read. A host passes the same Map to each run, so the check works across runs.
+- Later, if this fails too often: a three-way merge at `write`.
 - `write` and `append` make a missing file, and missing parent folders.
 - What goes in: text as it is; a file or line gives its text; lists and objects as compact JSON.
 - `replace` changes every match. The result is a list of replacements, `{ line, column, old, new }`, with the place of each match in the old text. With no match, nothing changes and the result is empty. `replace` of empty text is an error.

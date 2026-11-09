@@ -73,6 +73,7 @@ class Line {
  * @param {AbortSignal} [options.signal]              a host signal that cancels the script
  * @param {string} [options.root]                     the project root; files outside it are refused (default: process.cwd())
  * @param {string} [options.cwd]                      the directory for ./ and ../ paths (default: root)
+ * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  */
 export function start(source, options = {}) {
   const controller = new AbortController();
@@ -134,6 +135,8 @@ async function execute(source, options, execution) {
     execution,
     root,
     definitions: agents.definitions,
+    // real path to the text the script last read or wrote; a host can keep it between runs
+    seen: options.seen || new Map(),
     allowedEnv: agents.allowedEnv,
     // the time limit for "run", in ms, from "within" on a tool call; null for no limit
     timeLimit: null,
@@ -979,7 +982,10 @@ async function readText(file, state, node) {
   if (!stats.isFile()) {
     throw new ScriptError("Not a file: " + file.path, node);
   }
-  return await fs.readFile(real, "utf8");
+  const text = await fs.readFile(real, "utf8");
+  // remember what the script saw, for the stale-write check
+  state.seen.set(real, text);
+  return text;
 }
 
 // write or append text to a file, and record the change
@@ -1001,8 +1007,13 @@ async function writeText(file, text, append, state, node) {
     if (!stats.isFile()) {
       throw new ScriptError("Not a file: " + file.path, node);
     }
-    before = await fs.readFile(real, "utf8");
-  } else {
+  before = await fs.readFile(real, "utf8");
+  // stale-write check: the file changed after this script read it
+  // append is not checked, because it keeps what is in the file
+  if (!append && state.seen.has(real) && state.seen.get(real) !== before) {
+    throw new ScriptError("File changed since it was read: " + file.path + ". Read it again", node);
+  }
+} else {
     await makeParentFolders(file, state, node);
     real = file.absolute;
   }
@@ -1012,6 +1023,7 @@ async function writeText(file, text, append, state, node) {
     after = before + text;
   }
   await fs.writeFile(real, after, "utf8");
+  state.seen.set(await fs.realpath(real), after);
   state.execution.changes.push({ path: file.path, before, after });
 }
 

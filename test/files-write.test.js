@@ -155,3 +155,43 @@ test("the hook example still parses: the write's path", async () => {
   const result = await run("set the write to {path: 'a.env'}\nprint the write's path ends with '.env'", { root });
   assert.deepEqual(result.output, ["true"]);
 });
+
+test('a write fails if the file changed after the script read it', async () => {
+  const tools = { touch: async () => fs.writeFile(path.join(root, 'a.txt'), 'human edit\n') };
+  const result = await run(`set t to ./a.txt's text\ntouch\nwrite 'agent edit' to ./a.txt`, { root, tools });
+  assert.deepEqual(result.errors.map((e) => e.message), ['File changed since it was read: a.txt. Read it again']);
+  assert.equal(await readProject('a.txt'), 'human edit\n');
+});
+
+test('replace reads the file again, so it keeps a change made before it', async () => {
+  const tools = { touch: async () => fs.writeFile(path.join(root, 'a.txt'), 'var x\nhuman\n') };
+  const result = await run(`set t to ./a.txt's text\ntouch\nreplace 'var' with 'let' in ./a.txt`, { root, tools });
+  assert.deepEqual(result.errors, []);
+  assert.equal(await readProject('a.txt'), 'let x\nhuman\n');
+});
+
+test('a write with no read before it is not checked', async () => {
+  await fs.writeFile(path.join(root, 'a.txt'), 'changed\n');
+  await ok(`write 'new' to ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'new');
+});
+
+test('a script can write the same file two times', async () => {
+  await ok(`set t to ./a.txt's text\nwrite 'one' to ./a.txt\nwrite 'two' to ./a.txt`);
+  assert.equal(await readProject('a.txt'), 'two');
+});
+
+test('append keeps changes made by others', async () => {
+  const tools = { touch: async () => fs.writeFile(path.join(root, 'a.txt'), 'human\n') };
+  const result = await run(`set t to ./a.txt's text\ntouch\nappend 'agent' to ./a.txt`, { root, tools });
+  assert.deepEqual(result.errors, []);
+  assert.equal(await readProject('a.txt'), 'human\nagent');
+});
+
+test('the host can keep what was read between runs', async () => {
+  const seen = new Map();
+  await run(`set t to ./a.txt's text`, { root, seen });
+  await fs.writeFile(path.join(root, 'a.txt'), 'human edit\n');
+  const result = await run(`write 'agent edit' to ./a.txt`, { root, seen });
+  assert.equal(result.errors[0].message, 'File changed since it was read: a.txt. Read it again');
+});

@@ -17,6 +17,7 @@ Approved:
 - One tool, `clank_talk`, with input `{ script }`. It gives back text: the output lines, then the errors (`file line:column message`), then the changed files. A script that does not finish with status `done` sets `isError`.
 - The root is the folder where the server starts, or `--root`.
 - One `globals` object for the life of the server, so `$` variables stay between calls.
+- One `seen` Map for the life of the server, so the stale-write check works across calls.
 - The tool description teaches the language: a short syntax summary, then the tools from AGENTS.talk with their parameters. It is read at `tools/list`, so a change to AGENTS.talk shows when the client lists tools again.
 - Logs go to stderr. stdout is only for protocol messages.
 - `--log <file>` appends a readable log of each run: a header with the time, status and steps, the script as written, then the same text the agent gets. The host writes it, so the sandbox does not apply. Humans watch it with `tail -f`. This is the start of the audit feature.

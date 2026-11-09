@@ -143,7 +143,7 @@ export async function handleMessage(message, session) {
     if (typeof script !== "string") {
       return replyError(id, -32602, "The argument 'script' must be text");
     }
-    const result = await run(script, { root: session.root, globals: session.globals });
+    const result = await run(script, { root: session.root, globals: session.globals, seen: session.seen });
     if (session.log) {
       await writeLog(session.log, script, result);
     }
@@ -192,7 +192,7 @@ if (logIndex !== -1 && args[logIndex + 1]) {
 }
 
 // one session for the life of the server, so $ globals stay between calls
-const session = { root, globals: Object.create(null), log };
+const session = { root, globals: Object.create(null), seen: new Map(), log };
 
   const input = readline.createInterface({ input: process.stdin });
   input.on("line", async (line) => {
