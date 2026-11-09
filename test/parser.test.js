@@ -59,6 +59,7 @@ test("if block", () => {
         { type: "print", value: { type: "number", value: 1 } },
         { type: "print", value: { type: "number", value: 2 } },
       ],
+      elseBody: [],
     },
   ]);
 });

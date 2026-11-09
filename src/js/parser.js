@@ -90,7 +90,7 @@ export function parse(source, options = {}) {
     if (token === undefined || token.type !== "word") {
       return false;
     }
-    return COMMANDS[token.value] !== undefined || token.value === "end" || token.value === "then";
+    return COMMANDS[token.value] !== undefined || token.value === "end" || token.value === "else" || token.value === "then";
   }
 
   function isOp(value) {
@@ -550,8 +550,25 @@ export function parse(source, options = {}) {
 
   function parseIf(token) {
     const condition = parseExpression();
-    const body = parseBody(token);
-    return { type: "if", condition, body, line: token.line, column: token.column };
+    const body = parseCommands();
+    let elseBody = [];
+    if (isWord("else")) {
+      i++;
+      if (isWord("if")) {
+        // else if: the nested if takes the one "end" for the whole chain
+        const ifToken = current();
+        i++;
+        elseBody = [parseIf(ifToken)];
+        return { type: "if", condition, body, elseBody, line: token.line, column: token.column };
+      }
+      elseBody = parseCommands();
+    }
+    if (isWord("end")) {
+      i++;
+    } else {
+      error("Expected 'end' for the 'if' at line " + token.line);
+    }
+    return { type: "if", condition, body, elseBody, line: token.line, column: token.column };
   }
 
   // commands up to the "end" of a block, and the "end" itself
@@ -818,7 +835,7 @@ export function parse(source, options = {}) {
   // 'then' between commands is skipped
   function parseCommands() {
     const commands = [];
-    while (!atEnd() && !isWord("end")) {
+    while (!atEnd() && !isWord("end") && !isWord("else")) {
       if (isWord("then")) {
         i++;
         continue;
@@ -1057,8 +1074,8 @@ export function parse(source, options = {}) {
 
   const commands = parseCommands();
   while (!atEnd()) {
-    // only a stray 'end' can stop parseCommands before the end of the source
-    error("Unexpected 'end'");
+    // only a stray 'end' or 'else' can stop parseCommands before the end of the source
+    error("Unexpected '" + current().value + "'");
     i++;
     commands.push(...parseCommands());
   }

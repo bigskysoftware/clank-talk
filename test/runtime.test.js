@@ -121,3 +121,24 @@ test("steps are counted", async () => {
   const result = await run("print 1 if true print 2 end");
   assert.equal(result.steps, 3);
 });
+
+test('else runs when the condition is false', async () => {
+  assert.deepEqual(await output(`if 1 > 2\n  print 'a'\nelse\n  print 'b'\nend`), ['b']);
+  assert.deepEqual(await output(`if 1 < 2\n  print 'a'\nelse\n  print 'b'\nend`), ['a']);
+});
+
+test('else if chains need only one end', async () => {
+  const chain = (n) => 'set n to ' + n + `\nif n is 1\n  print 'one'\nelse if n is 2\n  print 'two'\nelse\n  print 'many'\nend`;
+  assert.deepEqual(await output(chain(1)), ['one']);
+  assert.deepEqual(await output(chain(2)), ['two']);
+  assert.deepEqual(await output(chain(3)), ['many']);
+});
+
+test('break in an else passes up to the loop', async () => {
+  assert.deepEqual(await output(`for x in [1, 2, 3]\n  if x < 2\n    print x\n  else\n    break\n  end\nend`), ['1']);
+});
+
+test('a stray else is an error', async () => {
+  assert.deepEqual(await errors('else'), [`Unexpected 'else' @1:1`]);
+  assert.deepEqual((await errors(`for x in [1]\nelse\nend`))[0], `Expected 'end' for the 'for' at line 1 @2:1`);
+});

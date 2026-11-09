@@ -31,6 +31,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `replace a with b in <file>` changes the file itself. `replace a with b in <variable>` changes the variable.
 - `write <value> to <file>` and `append <value> to <file>`.
 - `as json` parses text to an object, and formats an object to text.
+- `if ... else if ... else ... end`. One `end` closes the whole chain. There is no `otherwise`.
 - Loops:
   - `for x in <list> ... end`. Later: also the lines of a file.
   - `repeat <n> times ... end`, `repeat while <condition> ... end`, `repeat until <condition> ... end`.

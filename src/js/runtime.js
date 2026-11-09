@@ -283,7 +283,7 @@ async function runCommand(command, state, tools, maxSteps) {
       // pass break and continue up to the loop
       return await runCommands(command.body, state, tools, maxSteps);
     }
-    return null;
+    return await runCommands(command.elseBody, state, tools, maxSteps);
   }
 
   if (command.type === "break" || command.type === "continue") {
