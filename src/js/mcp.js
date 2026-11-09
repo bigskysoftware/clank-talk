@@ -81,7 +81,7 @@ async function describeTool(root) {
 }
 
 // turn a run result into text for the agent
-export function formatResult(result) {
+export function formatResult(result, script) {
   const sections = [];
   if (result.output.length > 0) {
     sections.push(result.output.join("\n"));
@@ -91,6 +91,13 @@ export function formatResult(result) {
     for (const e of result.errors) {
       const file = e.file ? e.file + " " : "";
       lines.push(file + e.line + ":" + e.column + " " + e.message);
+      // show the script line, with an arrow; errors in AGENTS.talk have a file, and no script line
+      if (!e.file && script !== undefined) {
+        const arrow = pointAt(script, e.line, e.column);
+        if (arrow !== null) {
+          lines.push(arrow);
+        }
+      }
     }
     sections.push("--- " + result.status + " ---\n" + lines.join("\n"));
   }
@@ -105,6 +112,21 @@ export function formatResult(result) {
     return "(no output)";
   }
   return sections.join("\n\n");
+}
+
+// the source line of an error, with an arrow under the column:
+//   5 | print t * 2
+//     |         ^
+function pointAt(source, line, column) {
+  const lines = source.split("\n");
+  if (line < 1 || line > lines.length) {
+    return null;
+  }
+  const text = lines[line - 1].replace(/\r$/, "");
+  const number = String(line);
+  // keep tabs, so the arrow lines up under the same column
+  const pad = text.slice(0, column - 1).replace(/[^\t]/g, " ");
+  return "  " + number + " | " + text + "\n  " + " ".repeat(number.length) + " | " + pad + "^";
 }
 
 /**
@@ -194,7 +216,7 @@ export async function handleMessage(message, session) {
       await writeLog(session.log, script, result);
     }
     return reply(id, {
-      content: [{ type: "text", text: formatResult(result) }],
+      content: [{ type: "text", text: formatResult(result, script) }],
       isError: result.status !== "done",
     });
   }
@@ -206,7 +228,7 @@ export async function handleMessage(message, session) {
 // the host writes it, not the script, so the sandbox does not apply
 async function writeLog(file, script, result) {
   const time = new Date().toISOString().replace("T", " ").slice(0, 19);
-  const entry = "\n=== " + time + "  " + result.status + "  " + result.steps + " steps ===\n" + script + "\n\n" + formatResult(result) + "\n";
+  const entry = "\n=== " + time + "  " + result.status + "  " + result.steps + " steps ===\n" + script + "\n\n" + formatResult(result, script) + "\n";
   await fs.mkdir(nodePath.dirname(file), { recursive: true });
   await fs.appendFile(file, entry);
 }

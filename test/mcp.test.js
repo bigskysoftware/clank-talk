@@ -51,7 +51,7 @@ test("tools/call runs the script", async () => {
 test("errors are listed, and set isError", async () => {
   const response = await call("print 1\nprint 1 / 0");
   assert.equal(response.result.isError, true);
-  assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:9 Division by zero");
+  assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:9 Division by zero\n  2 | print 1 / 0\n    |         ^");
 });
 
 test("changed files are listed", async () => {
@@ -131,4 +131,9 @@ test('no progress without a token', async () => {
   session.send = (message) => sent.push(message);
   await call('print 1');
   assert.deepEqual(sent, []);
+});
+
+test('an error shows the script line, with an arrow at the column', async () => {
+  const response = await call('print 1\n\tprint 2 * x');
+  assert.equal(response.result.content[0].text, '1\n\n--- failed ---\n2:10 Expected a number, found null\n  2 | \tprint 2 * x\n    | \t        ^');
 });

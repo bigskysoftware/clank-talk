@@ -204,3 +204,8 @@ test('a $ global before of is not a property', async () => {
 test('first and last of a list, and of text', async () => {
   assert.deepEqual(await output(`set x to [1, 2, 3]\nprint first of x\nprint x's last\nprint last of 'a\\nb\\n'\nprint first of []\nset y to {first: 9}\nprint y's first`), ['1', '3', 'b', 'null', '9']);
 });
+
+test('an error shows only the start of a long value', async () => {
+  const [message] = await errors(`set t to ''\nrepeat 100 times\n  set t to t + 'a'\nend\nprint t * 2`);
+  assert.equal(message, "Expected a number, found '" + 'a'.repeat(80) + "'... (100 characters) @5:9");
+});

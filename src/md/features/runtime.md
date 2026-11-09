@@ -32,6 +32,7 @@ await execution.done  // { status, output, errors, steps }
 - `break` and `continue` pass up from `runCommand` as a return value, until a loop takes them.
 - `print` adds a line to `output`.
 - Local variables last for one run. `$` globals live in `options.globals`. A host keeps them for a session when it passes the same object to each run.
+- An error message shows at most 80 characters of a value, then the full length: `'aaa...'... (100 characters)`. Thus a wrong value, such as the text of a whole file, does not flood the agent.
 
 ## Files
 

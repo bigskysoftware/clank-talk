@@ -14,6 +14,9 @@ import { spawn } from "node:child_process";
 const DEFAULT_MAX_STEPS = 10_000;
 const AGENTS_TALK = "AGENTS.talk";
 
+// error messages show at most this much of a value
+const DESCRIBE_LENGTH = 80;
+
 // the steps a hook can watch, apart from tool names
 const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "run"];
 
@@ -1656,9 +1659,16 @@ function toText(value) {
   return String(value);
 }
 
+// a value for an error message: text in quotes, and a long value cut short
 function describe(value) {
-  if (typeof value === "string") {
-    return "'" + value + "'";
+  let text = toText(value);
+  let more = "";
+  if (text.length > DESCRIBE_LENGTH) {
+    more = "... (" + text.length + " characters)";
+    text = text.slice(0, DESCRIBE_LENGTH);
   }
-  return toText(value);
+  if (typeof value === "string") {
+    return "'" + text + "'" + more;
+  }
+  return text + more;
 }
