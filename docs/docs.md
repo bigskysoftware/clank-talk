@@ -246,7 +246,10 @@ for line in lines of ./notes.txt
 end
 
 print lines 10 to 20 of ./notes.txt
+print the last of ./notes.txt
 ```
+
+`first` and `last` work on lists, files and text.
 
 ### Changing Files
 

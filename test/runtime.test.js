@@ -200,3 +200,7 @@ test('text has lines, as a file does', async () => {
 test('a $ global before of is not a property', async () => {
   assert.deepEqual((await errors(`set $x to 1\nprint $x of 2`))[0], `Unknown command 'of' @2:10`);
 });
+
+test('first and last of a list, and of text', async () => {
+  assert.deepEqual(await output(`set x to [1, 2, 3]\nprint first of x\nprint x's last\nprint last of 'a\\nb\\n'\nprint first of []\nset y to {first: 9}\nprint y's first`), ['1', '3', 'b', 'null', '9']);
+});

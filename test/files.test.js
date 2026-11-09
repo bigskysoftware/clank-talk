@@ -163,3 +163,7 @@ test('range errors', async () => {
   assert.deepEqual(await errors(`print lines 1 to 2 of 5`), ['Expected a file or text, found 5']);
   assert.deepEqual((await errors(`print lines 1 to 2 ./notes.txt`))[0], `Expected 'of'`);
 });
+
+test("first and last of a file are lines", async () => {
+  assert.deepEqual(await output("print first of ./notes.txt\nprint the number of the last of ./notes.txt\nprint ./notes.txt's last"), ["first", "2", "TODO: second"]);
+});

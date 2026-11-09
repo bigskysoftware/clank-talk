@@ -771,6 +771,15 @@ if (type === "read") {
     if (typeof object === "string" && node.name === "lines") {
       return splitLines(object);
     }
+    // first and last: of a list, or of the lines of text
+    if (node.name === "first" || node.name === "last") {
+      if (typeof object === "string") {
+        return firstOrLast(splitLines(object), node.name);
+      }
+      if (Array.isArray(object)) {
+        return firstOrLast(object, node.name);
+      }
+    }
     return getProperty(object, node.name, node);
   }
   if (type === "index") {
@@ -1119,6 +1128,17 @@ function getProperty(object, name, node) {
     return null;
   }
   return value;
+}
+
+// the first or last item of a list, or null when the list is empty
+function firstOrLast(list, name) {
+  if (list.length === 0) {
+    return null;
+  }
+  if (name === "first") {
+    return list[0];
+  }
+  return list[list.length - 1];
 }
 
 function evaluateUnary(node, value) {
@@ -1529,6 +1549,9 @@ async function fileProperty(file, name, state, node) {
   }
   if (name === "lines") {
     return splitLines(await readText(file, state, node));
+  }
+  if (name === "first" || name === "last") {
+    return firstOrLast(splitLines(await readText(file, state, node)), name);
   }
   if (name === "size" || name === "modified") {
     const real = await realPath(file, state, node);

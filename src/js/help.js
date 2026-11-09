@@ -206,6 +206,18 @@ export const HELP = [
     examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js"],
   },
   {
+    name: "first", kind: "expression",
+    syntax: "first of <list, file or text>",
+    description: "The first item of a list. For a file or text, the first line. An empty list gives null.",
+    examples: ["print first of ./src/*.js", "print the first of ./README.md"],
+  },
+  {
+    name: "last", kind: "expression",
+    syntax: "last of <list, file or text>",
+    description: "The last item of a list. For a file or text, the last line. An empty list gives null.",
+    examples: ["print last of lines of the result's output", "print the number of the last of ./a.js"],
+  },
+  {
     name: "operators", kind: "expression",
     syntax: "+ - * / mod   is  is not  <  >  <=  >=   and  or  not  no",
     description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. 'no x' is true for null and empty values.",

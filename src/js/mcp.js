@@ -38,8 +38,8 @@ Operators: + - * / mod (mixing needs parentheses), is, is not, < > <= >=, is les
   as json, as pretty json, as number, as text
 
 Files (paths: ./x and ../x from the current folder, @/x from the project root):
-  ./src/**/*.js gives a list of files. A file has name, path, text, lines, size, modified.
-  A line has number and text. Text has lines too. Text operators work on files and lines.
+  ./src/**/*.js gives a list of files. A file has name, path, text, lines, first, last, size, modified.
+  A line has number and text. Text has lines too. first of and last of: a list's items, or the lines of a file or text. Text operators work on files and lines.
   lines 10 to 20 of <file or text>: a range by line number. print shows each line with its number.
   replace lines 5 to 7 of <file> with <text>    put <text> before|after line 5 of <file>    remove lines 5 to 7 of <file>
   A line edit needs a read of the file first. The result is the old lines. Line numbers shift after an edit.
