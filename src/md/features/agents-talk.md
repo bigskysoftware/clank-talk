@@ -34,6 +34,19 @@ Approved:
 
 - The agent gets a built-in way to list its tools (names, parameters, descriptions), so it does not need to parse AGENTS.talk. Open: the syntax. This goes with [discoverability.md](discoverability.md).
 
+## run
+
+Approved:
+
+- `run` is allowed in every tool, in AGENTS.talk and in imported `.talk` files. It is not allowed in scripts.
+- `run 'mvn test'` splits one string on spaces. `run 'mvn' with 'test', '-Dtest=x'` passes each argument as it is.
+- `allow env PATH, HOME, JAVA_HOME` at the top level of AGENTS.talk lists the environment variables that `run` passes on, with the user's values. All others are left out.
+- No time limit by default. `run ... within 10 minutes` sets one in a tool. `run_tests within 5 minutes` sets one on a call, for any tool. When both are set, the shorter one wins.
+- Durations as in hyperscript: `100ms`, `2s`, `5 seconds`, `10 minutes`, `1 hour`.
+- `run` gives back `{ code, output }`. `output` is stdout and stderr together, in the order they came. A non-zero code is not an error: check `the result's code`.
+- `run` uses the current directory (`cwd`). A missing program is an error. A program that goes over its time limit is stopped, and that is an error. Cancel stops the program too.
+- Later (its own branch): `execution.running`, `execution.pause()` and `execution.resume()`, so the agent can pause a run and look at its output so far.
+
 ## Import
 
 - Approved: `import <path>` loads tools and more commands. Local paths only, for now.

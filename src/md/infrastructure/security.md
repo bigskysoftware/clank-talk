@@ -8,6 +8,8 @@ Decisions that we put off. Each one needs a human decision later.
 
 - Argument values from the agent are not checked. Later: refuse values that start with `-`, or typed parameters. See `run` below.
 - OS sandbox for `run` (later, as a plugin). See `run` below.
+- Ask the human before `run` when the agent changed files since the last approval. Deferred.
+- Resolve the `run` program to an absolute path when AGENTS.talk loads, and warn when it is inside the project. Deferred.
 - `.js` plugins in the protected `@/talk/` folder. Open. Scripts cannot write the folder, but programs that `run` starts can.
 
 ## Values
@@ -47,8 +49,9 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 - `run` takes a program and a list of arguments. It never uses a shell.
 - `run 'mvn test'` splits one string on spaces into a program and its arguments. No shell features (quotes, pipes, `$`).
 - Implementation: Node `child_process.spawn` or `execFile` with an argument array and no `shell` option. Never `exec`.
-- The child process starts with an empty environment, plus a list of allowed variables.
-- Before `run`, the runtime asks the human if the agent changed files since the last approval. Taint tracks the changes.
+- The child process starts with an empty environment, plus the variables that `allow env` in AGENTS.talk lists.
+- `run` is only allowed in tools, never in scripts.
+- Deferred: before `run`, the runtime asks the human if the agent changed files since the last approval. Taint tracks the changes.
 - An OS sandbox for `run` comes later, as a plugin.
 - `run` is where the ClankTalk sandbox ends. Document this for users.
 - For now, the runtime does not check argument values. The tool author must guard against argument injection, for example an agent value `--rulesdir=./evil` passed to `eslint`. Later: refuse values that start with `-`, or typed parameters (`with file as path`).

@@ -8,6 +8,7 @@
 import { parse } from "./parser.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
+import { spawn } from "node:child_process";
 
 const DEFAULT_MAX_STEPS = 10_000;
 const AGENTS_TALK = "AGENTS.talk";
@@ -133,6 +134,9 @@ async function execute(source, options, execution) {
     execution,
     root,
     definitions: agents.definitions,
+    allowedEnv: agents.allowedEnv,
+    // the time limit for "run", in ms, from "within" on a tool call; null for no limit
+    timeLimit: null,
     cwd: nodePath.resolve(root, options.cwd || "."),
     onStep: options.onStep || null,
     variables: Object.create(null),
@@ -172,7 +176,7 @@ async function loadAgentsTalk(root, hostTools) {
     source = await fs.readFile(nodePath.join(root, AGENTS_TALK), "utf8");
   } catch (err) {
     if (err.code === "ENOENT") {
-      return { definitions: Object.create(null), errors: [] };
+      return { definitions: Object.create(null), allowedEnv: [], errors: [] };
     }
     throw err;
   }
@@ -182,14 +186,20 @@ async function loadAgentsTalk(root, hostTools) {
   const firstPass = parse(source, { definitions: true });
   const names = Object.keys(hostTools);
   for (const definition of firstPass.script.definitions) {
-    names.push(definition.name);
+    if (definition.type === "tool") {
+      names.push(definition.name);
+    }
   }
   const { script, errors } = parse(source, { definitions: true, tools: names });
-  const result = { definitions: Object.create(null), errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], errors: [] };
   for (const e of errors) {
     result.errors.push({ ...e, file: AGENTS_TALK });
   }
   for (const definition of script.definitions) {
+    if (definition.type === "allowEnv") {
+      result.allowedEnv.push(...definition.names);
+      continue;
+    }
     const where = { line: definition.line, column: definition.column, file: AGENTS_TALK };
     if (Object.hasOwn(result.definitions, definition.name)) {
       result.errors.push({ message: "Tool '" + definition.name + "' is defined twice", ...where });
@@ -347,6 +357,11 @@ async function runCommand(command, state, tools, maxSteps) {
     throw new ScriptError("Expected a file, or a variable with text, found " + describe(target), command);
   }
 
+  if (command.type === "run") {
+    state.result = await runProgram(command, state);
+    return null;
+  }
+
   if (command.type === "set") {
     const value = await evaluate(command.value, state);
     await assign(command.target, value, state);
@@ -377,7 +392,16 @@ async function runCommand(command, state, tools, maxSteps) {
 
     const definition = state.definitions[command.name];
     if (definition !== undefined) {
-      state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
+      // "within" on the call limits every run inside the tool; the shorter limit wins
+      const savedLimit = state.timeLimit;
+      if (command.within !== null) {
+        state.timeLimit = shorter(state.timeLimit, await durationMs(command.within, state));
+      }
+      try {
+        state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
+      } finally {
+        state.timeLimit = savedLimit;
+      }
       return null;
     }
 
@@ -540,6 +564,104 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
     state.variables = savedVariables;
     state.result = savedResult;
   }
+}
+
+// ----- run -----
+
+// the smaller of two time limits; null means no limit
+function shorter(a, b) {
+  if (a === null) {
+    return b;
+  }
+  if (b === null) {
+    return a;
+  }
+  return Math.min(a, b);
+}
+
+async function durationMs(node, state) {
+  return toNumber(await evaluate(node.value, state), node) * node.ms;
+}
+
+// start a program with no shell, and wait for it
+// gives { code, output }: the exit code, and stdout and stderr together, in the order they came
+async function runProgram(command, state) {
+  const value = await evaluate(command.program, state);
+  let program;
+  let args = [];
+  if (command.args === null) {
+    // run 'mvn test': split on spaces
+    const parts = toText(value).split(/\s+/).filter((part) => part !== "");
+    program = parts[0];
+    args = parts.slice(1);
+  } else {
+    // run 'mvn' with 'test', name: each argument as it is
+    program = toText(value);
+    for (const arg of command.args) {
+      args.push(toText(await asText(await evaluate(arg, state), state, arg)));
+    }
+  }
+  if (!program) {
+    throw new ScriptError("Nothing to run", command);
+  }
+
+  // only the environment variables that AGENTS.talk allows
+  const env = {};
+  for (const name of state.allowedEnv) {
+    if (process.env[name] !== undefined) {
+      env[name] = process.env[name];
+    }
+  }
+
+  let limit = state.timeLimit;
+  if (command.within !== null) {
+    limit = shorter(limit, await durationMs(command.within, state));
+  }
+
+  const signal = state.execution.signal;
+  return await new Promise((resolve, reject) => {
+    let output = "";
+    let timedOut = false;
+    let timer = null;
+
+    const child = spawn(program, args, { cwd: state.cwd, env, signal, shell: false });
+
+    if (limit !== null) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, limit);
+    }
+
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      output += chunk;
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      if (signal.aborted) {
+        reject(new Cancelled("Cancelled", command));
+      } else if (err.code === "ENOENT") {
+        reject(new ScriptError("Cannot run '" + program + "': program not found", command));
+      } else {
+        reject(new ScriptError("Cannot run '" + program + "': " + err.message, command));
+      }
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (signal.aborted) {
+        reject(new Cancelled("Cancelled", command));
+      } else if (timedOut) {
+        reject(new ScriptError("'" + program + "' did not finish within " + limit + "ms", command));
+      } else {
+        resolve({ code: code === null ? -1 : code, output });
+      }
+    });
+  });
 }
 
 // what a "for" loop goes over: a list; null gives no passes

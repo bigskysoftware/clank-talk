@@ -79,7 +79,7 @@ test("stray end is an error", () => {
 
 test("a known tool is a tool call", () => {
   assert.deepEqual(commands("run_tests", { tools: ["run_tests"] }), [
-    { type: "toolCall", name: "run_tests", args: [], named: [] },
+    { type: "toolCall", name: "run_tests", args: [], named: [], within: null },
   ]);
 });
 

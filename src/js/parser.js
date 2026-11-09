@@ -49,6 +49,9 @@ export function parse(source, options = {}) {
   // how many loops the parser is inside, for break and continue
   let loopDepth = 0;
 
+  // true while the parser is inside a tool definition, where "run" is allowed
+  let inTool = false;
+
   // ----- token helpers -----
 
   function current() {
@@ -762,6 +765,7 @@ export function parse(source, options = {}) {
     write: parseWrite,
     append: parseWrite,
     replace: parseReplace,
+    run: parseRun,
     set: parseSet,
     increment: parseIncrement,
     decrement: parseIncrement,
@@ -832,7 +836,7 @@ export function parse(source, options = {}) {
   // can the current token start a value? used to find positional tool arguments
   function canStartValue() {
     const token = current();
-    if (token === undefined || isCommandStart() || isWord("with")) {
+    if (token === undefined || isCommandStart() || isWord("with") || isWord("within")) {
       return false;
     }
     // a tool name starts the next call, not an argument
@@ -884,7 +888,15 @@ export function parse(source, options = {}) {
         i++;
       }
     }
-    return { type: "toolCall", name: token.value, args, named, line: token.line, column: token.column };
+    let within = null;
+    if (isWord("within")) {
+      i++;
+      within = parseDuration();
+      if (within === null) {
+        return null;
+      }
+    }
+    return { type: "toolCall", name: token.value, args, named, within, line: token.line, column: token.column };
   }
 
   // tool <name> [with <param>, <param>] ... end
@@ -908,14 +920,115 @@ export function parse(source, options = {}) {
         i++;
       }
     }
+    inTool = true;
     const body = parseBody(token);
+    inTool = false;
     return { type: "tool", name, params, body, line: token.line, column: token.column };
+  }
+
+  // a duration: <expression> ms|s|second(s)|minute(s)|hour(s)
+  const DURATION_UNITS = {
+    ms: 1,
+    s: 1000,
+    second: 1000,
+    seconds: 1000,
+    minute: 60_000,
+    minutes: 60_000,
+    hour: 3_600_000,
+    hours: 3_600_000,
+  };
+
+  function parseDuration() {
+    const start = current() || { line: 0, column: 0 };
+    const value = parseUnary();
+    if (value === null) {
+      return null;
+    }
+    const unit = current();
+    if (unit === undefined || unit.type !== "word" || DURATION_UNITS[unit.value] === undefined) {
+      error("Expected a time unit: ms, s, seconds, minutes or hours");
+      return null;
+    }
+    i++;
+    return { type: "duration", value, ms: DURATION_UNITS[unit.value], line: start.line, column: start.column };
+  }
+
+  // run <program> [with <arg>, <arg>] [within <duration>], only inside a tool
+  function parseRun(token) {
+    if (!inTool) {
+      errors.push({ message: "'run' is only allowed in a tool", line: token.line, column: token.column });
+      return null;
+    }
+    const program = parseExpression();
+    if (program === null) {
+      return null;
+    }
+    let args = null;
+    if (isWord("with")) {
+      i++;
+      args = [];
+      while (true) {
+        const arg = parseExpression();
+        if (arg === null) {
+          return null;
+        }
+        args.push(arg);
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+    }
+    let within = null;
+    if (isWord("within")) {
+      i++;
+      within = parseDuration();
+      if (within === null) {
+        return null;
+      }
+    }
+    return { type: "run", program, args, within, line: token.line, column: token.column };
+  }
+
+  // allow env NAME, NAME at the top of AGENTS.talk
+  function parseAllowEnv(token) {
+    if (!isWord("env")) {
+      error("Expected 'env'");
+      return null;
+    }
+    i++;
+    const names = [];
+    while (true) {
+      const name = parseName();
+      if (name === null) {
+        return null;
+      }
+      names.push(name);
+      if (!isOp(",")) {
+        break;
+      }
+      i++;
+    }
+    return { type: "allowEnv", names, line: token.line, column: token.column };
   }
 
   // AGENTS.talk: only definitions at the top level
   function parseDefinitions() {
     const definitions = [];
     while (!atEnd()) {
+      if (isWord("allow")) {
+        const token = current();
+        i++;
+        const definition = parseAllowEnv(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        } else {
+          while (!atEnd() && !isWord("tool") && !isWord("allow")) {
+            i++;
+          }
+        }
+        continue;
+      }
       if (isWord("tool")) {
         const token = current();
         i++;
@@ -929,7 +1042,7 @@ export function parse(source, options = {}) {
       }
       error("Only definitions are allowed here, such as 'tool'");
       i++;
-      while (!atEnd() && !isWord("tool")) {
+      while (!atEnd() && !isWord("tool") && !isWord("allow")) {
         i++;
       }
     }
