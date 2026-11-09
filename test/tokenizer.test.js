@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tokenize } from "../src/tokenizer.js";
+import { tokenize } from "../src/js/tokenizer.js";
 
 // most tests only care about type and value
 function simple(source) {

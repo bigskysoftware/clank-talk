@@ -16,7 +16,8 @@ New parser. Syntax ideas come from hyperscript.
 
 ## Structure
 
-- Approved: commands follow each other with no separator, as in hyperscript. `then` can also separate commands, for example `set x to 1 then say x`.
+- Approved: commands follow each other with no separator, as in hyperscript. `then` can also separate commands, for example `set x to 1 then print x`.
+- Approved: a line end does not stop a value. Use `then` when a separator is needed. HyperTalk was line-based. ClankTalk follows hyperscript here.
 - Approved: every block ends with `end`. `end` is always required. Do not copy the flexible `end` rules of hyperscript.
 - Approved: a statement that starts with an unknown word is a call to a tool in AGENTS.talk. If AGENTS.talk has no tool with that name, it is an error.
 
@@ -39,7 +40,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 
 ## Tokens
 
-Code: `src/tokenizer.js`. The tokenizer makes a flat list of tokens. Each token has a type, a value, a line and a column.
+Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each token has a type, a value, a line and a column.
 
 | Type | Example | Note |
 |---|---|---|

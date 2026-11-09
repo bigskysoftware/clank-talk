@@ -9,5 +9,6 @@
 
 ## Layout
 
-- `src/clank-talk.js`: runtime entry point.
+- `src/md/`: intent and decisions (https://srcmd.org).
+- `src/js/`: runtime code. `src/js/clank-talk.js` is the entry point.
 - `test/*.test.js`: tests. Run with `npm test`.
