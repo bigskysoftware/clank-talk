@@ -92,7 +92,7 @@ export const HELP = [
   {
     name: "replace", kind: "command",
     syntax: "replace <old> with <new> in <file or variable> | replace lines <a> to <b> of <file> with <text>",
-    description: "Replace every match of the old text. The result lists each replacement, so 'if the result is empty' means no match. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
+    description: "Replace every match of the old text. The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
@@ -184,7 +184,7 @@ export const HELP = [
   {
     name: "paths", kind: "expression",
     syntax: "./x  ../x  @/x  ./src/**/*.js  ./\"my file.txt\"",
-    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files. A file has name, path, text, lines, size and modified. Paths outside the project are refused.",
+    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files, sorted by path, and skip node_modules and .git unless the pattern names them. A file has name, path, text, lines, size and modified. Paths outside the project are refused.",
     examples: ["print ./src/**/*.js", "print the size of @/README.md"],
   },
   {

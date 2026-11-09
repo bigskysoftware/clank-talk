@@ -219,7 +219,7 @@ Paths are part of the language:
 
 * `./notes.txt` and `../notes.txt` start from the current folder
 * `@/README.md` starts from the project root
-* `./src/**/*.js` gives a list of files
+* `./src/**/*.js` gives a list of files. Globs skip `node_modules` and `.git`, unless you name them in the pattern
 * `./"my notes.txt"` holds a path with spaces
 
 Anything outside the project root is refused.
@@ -278,7 +278,7 @@ append ' world' to ./out.txt
 replace 'var ' with 'let ' in ./src/app.js
 ```
 
-`replace` changes every match, and gives back a list of what it changed. If nothing matched, the result is empty.
+`replace` changes every match, and gives back a list of what it changed. If nothing matched, the result is empty, and you get a warning, since that is usually a typo.
 
 You can also edit by line number. Read the file first, so you know the numbers:
 

@@ -87,20 +87,11 @@ export function formatResult(result, script) {
   if (result.output.length > 0) {
     sections.push(result.output.join("\n"));
   }
+  if (result.warnings && result.warnings.length > 0) {
+    sections.push("--- warnings ---\n" + formatProblems(result.warnings, script));
+  }
   if (result.errors.length > 0) {
-    const lines = [];
-    for (const e of result.errors) {
-      const file = e.file ? e.file + " " : "";
-      lines.push(file + e.line + ":" + e.column + " " + e.message);
-      // show the script line, with an arrow; errors in AGENTS.talk have a file, and no script line
-      if (!e.file && script !== undefined) {
-        const arrow = pointAt(script, e.line, e.column);
-        if (arrow !== null) {
-          lines.push(arrow);
-        }
-      }
-    }
-    sections.push("--- " + result.status + " ---\n" + lines.join("\n"));
+    sections.push("--- " + result.status + " ---\n" + formatProblems(result.errors, script));
   }
   if (result.changes.length > 0) {
     const paths = [];
@@ -113,6 +104,23 @@ export function formatResult(result, script) {
     return "(no output)";
   }
   return sections.join("\n\n");
+}
+
+// errors or warnings: "file line:column message", then the script line with an arrow
+// a problem in AGENTS.talk has a file, and no script line
+function formatProblems(problems, script) {
+  const lines = [];
+  for (const p of problems) {
+    const file = p.file ? p.file + " " : "";
+    lines.push(file + p.line + ":" + p.column + " " + p.message);
+    if (!p.file && script !== undefined) {
+      const arrow = pointAt(script, p.line, p.column);
+      if (arrow !== null) {
+        lines.push(arrow);
+      }
+    }
+  }
+  return lines.join("\n");
 }
 
 // the source line of an error, with an arrow under the column:

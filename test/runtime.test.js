@@ -215,3 +215,10 @@ test('a claimed word ends the expression: lines a to b of f', async () => {
   assert.deepEqual(await output(`set t to 'x\\ny'\nprint lines 1 to (length of t's lines) of t`), ['1: x\n2: y']);
   assert.deepEqual(await output(`set n to 1\nset t to 'abc'\nprint lines n to n of t`), ['1: abc']);
 });
+
+test('a replace with no match is a warning, and the script goes on', async () => {
+  const result = await run(`set t to 'abc'\nreplace 'x' with 'y' in t\nprint the result is empty`);
+  assert.deepEqual(result.output, ['true']);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, [{ message: "No match in the variable for 'x'", line: 2, column: 1 }]);
+});

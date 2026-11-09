@@ -16,6 +16,7 @@ Approved:
 - `initialize` answers with the protocol version that the client asks for.
 - One tool, `clank_talk`, with input `{ script }`. It gives back text: the output lines, then the errors (`file line:column message`), then the changed files. A script that does not finish with status `done` sets `isError`.
 - Proposed: each error in the script shows its source line, with a `^` under the column. Errors in AGENTS.talk show only `file line:column message`.
+- Approved: warnings come in a `--- warnings ---` section, before the errors, in the same form, with the arrow. Warnings do not set `isError`.
 - The root is the folder where the server starts, or `--root`.
 - One `globals` object for the life of the server, so `$` variables stay between calls.
 - One `seen` Map for the life of the server, so the stale-write check works across calls.

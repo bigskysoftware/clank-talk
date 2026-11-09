@@ -85,7 +85,8 @@ function lineLabel(line) {
  *   execution.output     output lines so far
  *   execution.cancel()   stop the script at the next step
  *   execution.signal     an AbortSignal for slow work, such as tools
- *   await execution.done gives { status, output, errors, steps }
+ *   execution.warnings problems that do not stop the script, such as a replace with no match
+ *   await execution.done gives { status, output, errors, warnings, steps, changes }
  *
  * @param {string} source
  * @param {Object} [options]
@@ -108,6 +109,8 @@ export function start(source, options = {}) {
     // every file write: { path, before, after }; before is null for a new file
     changes: [],
     errors: [],
+    // problems that do not stop the script: { message, line, column, file }
+    warnings: [],
     signal: controller.signal,
     cancel() {
       controller.abort();
@@ -176,6 +179,8 @@ async function execute(source, options, execution) {
     variables: Object.create(null),
     globals: options.globals || Object.create(null),
     result: null,
+    // the .talk file of the tool or hook now running; null for the script
+    file: null,
   };
 
   try {
@@ -370,7 +375,7 @@ async function loadTalkFile(absolute, root, chain, files, errors) {
 function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
-  return { status, output: execution.output, errors, steps: execution.steps, changes: execution.changes };
+  return { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
 }
 
 // ----- commands -----
@@ -614,6 +619,7 @@ async function runCommand(command, state, tools, maxSteps) {
         await writeText(target, text, false, state, command);
       }
       state.result = replacements;
+      warnIfNoMatch(replacements, old, target.path, state, command);
       await changeHooks("after", step, state, command);
       return null;
     }
@@ -622,6 +628,7 @@ async function runCommand(command, state, tools, maxSteps) {
       const { text, replacements } = replaceAll(target, old, replacement);
       await assign(command.target, text, state);
       state.result = replacements;
+      warnIfNoMatch(replacements, old, "the variable", state, command);
       return null;
     }
     throw new ScriptError("Expected a file, or a variable with text, found " + describe(target), command);
@@ -880,6 +887,8 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   state.result = null;
   state.handler = findHandler(definition.body);
   state.handling = false;
+  const savedFile = state.file;
+  state.file = definition.file || AGENTS_TALK;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
     return state.result;
@@ -893,6 +902,7 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
     state.variables = savedVariables;
     state.result = savedResult;
     state.handler = savedHandler;
+    state.file = savedFile;
     state.handling = savedHandling;
   }
 }
@@ -1052,6 +1062,8 @@ async function runHook(hook, step, state, node) {
   state.handler = findHandler(hook.body);
   state.handling = false;
   state.inHook = true;
+  const savedFile = state.file;
+  state.file = hook.file;
   try {
     await runCommands(hook.body, state, state.tools, state.maxSteps);
   } catch (err) {
@@ -1069,6 +1081,7 @@ async function runHook(hook, step, state, node) {
     state.handler = savedHandler;
     state.handling = savedHandling;
     state.inHook = false;
+    state.file = savedFile;
   }
 }
 
@@ -1325,9 +1338,21 @@ async function resolvePath(text, state, node) {
   return new FileRef(absolute, state.root);
 }
 
+// a glob skips these folders, unless the pattern names them: ./node_modules/x/*.js still works
+const SKIPPED_FOLDERS = ["node_modules", ".git"];
+
 async function globFiles(base, pattern, state, node) {
+  const parts = pattern.split("/");
+  const skipped = [];
+  for (const name of SKIPPED_FOLDERS) {
+    if (!parts.includes(name)) {
+      skipped.push(name);
+    }
+  }
+  // fs.glob calls exclude for each file and folder, so a skipped folder is not walked
+  const exclude = (path) => skipped.includes(nodePath.basename(path));
   const files = [];
-  for await (const match of fs.glob(pattern, { cwd: base })) {
+  for await (const match of fs.glob(pattern, { cwd: base, exclude })) {
     const absolute = nodePath.resolve(base, match);
     checkInsideRoot(absolute, state, node, match);
     const stats = await fs.stat(absolute);
@@ -1545,6 +1570,19 @@ async function makeParentFolders(file, state, node) {
     throw new ScriptError("Path is outside the project root: " + file.path, node);
   }
   await fs.mkdir(parent, { recursive: true });
+}
+
+// a replace that finds nothing is often a mistake, such as a wrong line break or indent
+// it is a warning, not an error, so "if the result is empty" still works
+function warnIfNoMatch(replacements, old, where, state, node) {
+  if (replacements.length > 0) {
+    return;
+  }
+  const warning = { message: "No match in " + where + " for " + describe(old), line: node.line, column: node.column };
+  if (state.file) {
+    warning.file = state.file;
+  }
+  state.execution.warnings.push(warning);
 }
 
 // replace every match, and list where each one was in the old text

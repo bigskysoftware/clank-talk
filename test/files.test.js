@@ -184,3 +184,18 @@ test('find errors', async () => {
   assert.deepEqual(await errors(`find 'x' in 5`), ["'find' needs a file, a list of files, or text, found 5"]);
   assert.deepEqual((await errors(`find 'x' ./notes.txt`))[0], "Expected 'in'");
 });
+
+test('a glob skips node_modules and .git, unless the pattern names them', async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-skip-"));
+  await fs.mkdir(path.join(project, "node_modules", "lib"), { recursive: true });
+  await fs.mkdir(path.join(project, ".git"));
+  await fs.writeFile(path.join(project, "a.js"), "");
+  await fs.writeFile(path.join(project, "node_modules", "lib", "b.js"), "");
+  await fs.writeFile(path.join(project, ".git", "c.js"), "");
+  try {
+    assert.deepEqual(await output(`print ./**/*.js`, { root: project }), ['["a.js"]']);
+    assert.deepEqual(await output(`print ./node_modules/**/*.js`, { root: project }), ['["node_modules/lib/b.js"]']);
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
+});

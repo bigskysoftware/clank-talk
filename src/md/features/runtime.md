@@ -33,6 +33,7 @@ await execution.done  // { status, output, errors, steps }
 - `print` adds a line to `output`.
 - Local variables last for one run. `$` globals live in `options.globals`. A host keeps them for a session when it passes the same object to each run.
 - An error message shows at most 80 characters of a value, then the full length: `'aaa...'... (100 characters)`. Thus a wrong value, such as the text of a whole file, does not flood the agent.
+- Approved: warnings are problems that do not stop the script, in `execution.warnings`: `{ message, line, column, file }`. A `replace` with no match gives a warning, because it is often a mistake, such as a wrong line break or indent. It is not an error, so `if the result is empty` still works.
 
 ## Files
 
@@ -40,6 +41,7 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 
 - A path literal gives a file object. Nothing is read until a property is used.
 - A path with `*` or `?` is a glob. It gives a list of files (not folders), sorted by path.
+- Approved: a glob skips `node_modules` and `.git` folders, unless the pattern names them. Thus `./**/*.js` does not walk `node_modules`, and `./node_modules/lib/*.js` still works. Later, maybe: skip what `.gitignore` lists.
 - The host gives `root`. `@/` is relative to `root`. `./` and `../` are relative to `cwd` (default: `root`).
 - A file has `name`, `path` (relative to the root, with `/`), `text`, `lines`, `size` (bytes) and `modified` (ISO date).
 - A line has `number` (from 1) and `text`. As text, a line is its content. A final line break does not make an extra line. A `\r` at the end of a line is removed.

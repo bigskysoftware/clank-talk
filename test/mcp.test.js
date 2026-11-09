@@ -137,3 +137,9 @@ test('an error shows the script line, with an arrow at the column', async () => 
   const response = await call('print 1\n\tprint 2 * x');
   assert.equal(response.result.content[0].text, '1\n\n--- failed ---\n2:10 Expected a number, found null\n  2 | \tprint 2 * x\n    | \t        ^');
 });
+
+test('warnings show before errors, with an arrow', async () => {
+  const response = await call("set t to 'abc'\nreplace 'x' with 'y' in t");
+  assert.equal(response.result.isError, false);
+  assert.equal(response.result.content[0].text, "--- warnings ---\n2:1 No match in the variable for 'x'\n  2 | replace 'x' with 'y' in t\n    | ^");
+});
