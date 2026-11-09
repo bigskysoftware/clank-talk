@@ -1059,6 +1059,15 @@ async function gitArgs(command, state, step) {
     }
     return ["switch", name];
   }
+  // fast-forward only: a merge never makes a commit, so it needs no message and cannot conflict
+  if (op === "merge") {
+    const name = toText(await evaluate(command.value, state));
+    if (!isSafeBranchName(name)) {
+      throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
+    }
+    step.branch = name;
+    return ["merge", "--ff-only", name];
+  }
   if (op === "commit") {
     const value = await evaluate(command.value, state);
     const files = Array.isArray(value) ? value : [value];

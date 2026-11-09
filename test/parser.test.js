@@ -129,7 +129,7 @@ test('git commands', () => {
 });
 
 test('git errors', () => {
-  assert.deepEqual(errors('git push'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit @1:5']);
+  assert.deepEqual(errors('git push'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit, merge @1:5']);
   assert.deepEqual(errors('git show'), ['Expected a value @1:5']);
 });
 

@@ -12,7 +12,7 @@ Approved:
 - `reject <message>` in a `before` hook stops the step. The script gets an error with the message. `on error` can catch it.
 - `after` hooks see `the result`.
 
-- Step fields. File changes: `kind`, `path`, plus `text` (write, append), `old` and `new` (replace in a file), `from`, `to`, `text` (replace lines, remove), `line`, `where`, `text` (put). `read`: `path`, and `text` in an `after` hook. `run`: `program`, `args`. `git`: `operation` (such as `log`), and `args`, the full git argument list without the guards; `files` and `message` for commit, `branch` for switch. A tool: `args`, `named`.
+- Step fields. File changes: `kind`, `path`, plus `text` (write, append), `old` and `new` (replace in a file), `from`, `to`, `text` (replace lines, remove), `line`, `where`, `text` (put). `read`: `path`, and `text` in an `after` hook. `run`: `program`, `args`. `git`: `operation` (such as `log`), and `args`, the full git argument list without the guards; `files` and `message` for commit, `branch` for switch and merge. A tool: `args`, `named`.
 - Hooks run in the order they are defined, across all files.
 - Hooks run for commands inside tools. Commands inside a hook do not run hooks, so a hook cannot loop on itself.
 - `reject` is only allowed in a `before` hook.

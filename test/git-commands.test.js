@@ -120,3 +120,21 @@ test("git commit checks its values", async () => {
     await fs.rm(path.join(root, ".env"));
   }
 });
+
+test("git merge is fast-forward only", async () => {
+  await output("git switch to new branch 'ahead'");
+  await fs.writeFile(path.join(root, "c.txt"), "c\n");
+  await output("git commit ./c.txt with 'Add c'");
+  await output("git switch to 'main'");
+  await output("git merge 'ahead'");
+  assert.equal(git(["log", "-1", "--format=%s"]), "Add c\n");
+  // main and ahead both move on: not a fast-forward, so the merge fails
+  await output("git switch to 'ahead'");
+  await fs.writeFile(path.join(root, "d.txt"), "d\n");
+  await output("git commit ./d.txt with 'Add d'");
+  await output("git switch to 'main'");
+  await fs.writeFile(path.join(root, "e.txt"), "e\n");
+  await output("git commit ./e.txt with 'Add e'");
+  assert.match((await errors("git merge 'ahead'"))[0], /^git merge failed: /);
+  assert.deepEqual(await errors("git merge '-s'"), ["Not a safe branch name: '-s'. Use letters, digits, -, _, / and ."]);
+});

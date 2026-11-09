@@ -34,7 +34,7 @@ const DANGEROUS_SECTIONS = [
 
 // section.<subsection>.key: these keys run a program for any subsection
 const DANGEROUS_SUBSECTION_KEYS = [
-  "diff.command", "diff.textconv", "gpg.program", "credential.helper",
+  "diff.command", "diff.textconv", "merge.driver", "gpg.program", "credential.helper",
   "remote.uploadpack", "remote.receivepack", "remote.proxy", "url.insteadof", "url.pushinsteadof",
 ];
 

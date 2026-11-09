@@ -45,6 +45,8 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved: git is a set of built-in commands that start with `git`, not tools.
 - Approved: `git status`, `git diff <path>`, `git switch to <branch>`, `git commit <files> with <message>`.
 - Approved: no push in the first version. Push comes later, with the approval design.
+- Approved (built): `git merge <branch>` is `merge --ff-only <branch>`. It never makes a commit, so it needs no message and cannot conflict. If a fast-forward is not possible, it is an error.
+- Approved (built): repo config with `merge.<driver>.driver` is refused too: a merge driver runs a program.
 - Approved, for the rest of the first version:
   - `git diff` with no path: all changes
   - `git log`, and `git log 20` for the last 20 commits
