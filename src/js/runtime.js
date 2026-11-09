@@ -25,6 +25,9 @@ class ScriptError extends Error {
 // the host cancelled the script
 class Cancelled extends ScriptError {}
 
+// the step budget is used up; "on error" cannot handle this
+class StepBudget extends ScriptError {}
+
 // a file in the project; nothing is read until a property is used
 class FileRef {
   constructor(absolute, root) {
@@ -137,6 +140,9 @@ async function execute(source, options, execution) {
     definitions: agents.definitions,
     // real path to the text the script last read or wrote; a host can keep it between runs
     seen: options.seen || new Map(),
+    // "on error" for the script now running (a tool has its own), and true while it runs
+    handler: findHandler(script.commands),
+    handling: false,
     allowedEnv: agents.allowedEnv,
     // the time limit for "run", in ms, from "within" on a tool call; null for no limit
     timeLimit: null,
@@ -247,23 +253,88 @@ function takeStep(node, state, maxSteps) {
   }
   execution.steps++;
   if (execution.steps > maxSteps) {
-    throw new ScriptError("Step budget of " + maxSteps + " used up", node);
+    throw new StepBudget("Step budget of " + maxSteps + " used up", node);
   }
   if (state.onStep !== null) {
     state.onStep({ type: node.type, line: node.line, column: node.column, steps: execution.steps });
   }
 }
 
-// gives "break" or "continue" if a loop command ran, so the loop can see it
+// gives "break", "continue" or "stop" if one ran, so a loop or "on error" can see it
+// "on error" is not a step: it runs only when a command fails
 async function runCommands(commands, state, tools, maxSteps) {
   for (const command of commands) {
+    if (command.type === "onError") {
+      continue;
+    }
     takeStep(command, state, maxSteps);
-    const signal = await runCommand(command, state, tools, maxSteps);
-    if (signal === "break" || signal === "continue") {
+    let signal;
+    try {
+      signal = await runCommand(command, state, tools, maxSteps);
+    } catch (err) {
+      if (!canHandle(err, state)) {
+        throw err;
+      }
+      // continue: go on with the command after the one that failed
+      if (await runHandler(err, state, tools, maxSteps) === "continue") {
+        continue;
+      }
+      err.handledBy = state.handler;
+      throw err;
+    }
+    if (signal === "break" || signal === "continue" || signal === "stop") {
       return signal;
     }
   }
   return null;
+}
+
+// the "on error" block at the top level of a script or tool, or null
+function findHandler(commands) {
+  for (const command of commands) {
+    if (command.type === "onError") {
+      return command;
+    }
+  }
+  return null;
+}
+
+// can "on error" handle this error? not if there is no handler, the handler is running,
+// this handler handled the error before, the host cancelled, or the step budget is used up
+function canHandle(err, state) {
+  if (!(err instanceof ScriptError) || err instanceof Cancelled || err instanceof StepBudget) {
+    return false;
+  }
+  return state.handler !== null && !state.handling && err.handledBy !== state.handler;
+}
+
+// run "on error", with the error in a local variable named error
+// gives "continue" or "stop" (the default)
+async function runHandler(err, state, tools, maxSteps) {
+  const error = Object.create(null);
+  error.message = err.message;
+  error.line = err.line;
+  error.column = err.column;
+  if (err.file) {
+    error.file = err.file;
+  }
+  setOwn(state.variables, "error", error);
+  state.handling = true;
+  try {
+    const signal = await runCommands(state.handler.body, state, tools, maxSteps);
+    if (signal === "continue") {
+      return "continue";
+    }
+    return "stop";
+  } catch (inner) {
+    // an error in the handler is not handled by the same handler again
+    if (inner instanceof ScriptError) {
+      inner.handledBy = state.handler;
+    }
+    throw inner;
+  } finally {
+    state.handling = false;
+  }
 }
 
 // one pass of a loop body; gives true if the loop must stop
@@ -294,7 +365,7 @@ if (isListOfLines(value)) {
     return await runCommands(command.elseBody, state, tools, maxSteps);
   }
 
-  if (command.type === "break" || command.type === "continue") {
+  if (command.type === "break" || command.type === "continue" || command.type === "stop") {
     return command.type;
   }
 
@@ -609,8 +680,12 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
 
   const savedVariables = state.variables;
   const savedResult = state.result;
+  const savedHandler = state.handler;
+  const savedHandling = state.handling;
   state.variables = locals;
   state.result = null;
+  state.handler = findHandler(definition.body);
+  state.handling = false;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
     return state.result;
@@ -623,6 +698,8 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
+    state.handler = savedHandler;
+    state.handling = savedHandling;
   }
 }
 

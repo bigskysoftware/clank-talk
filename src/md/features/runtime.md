@@ -57,6 +57,11 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 - Approved: line edits split the new text into lines, so a final line break in it does not add an empty line. The file keeps its own final line break.
 - Approved: a line edit outside the file (or with a number that is not whole) is an error, unlike a read range.
 - Approved: the result of a line edit is the old lines, so `print the result` shows what changed. For `put`, the result is empty.
+- Approved, on error: the handler gets a local variable `error` with `message`, `line`, `column` and (for errors in AGENTS.talk) `file`.
+- Approved: `continue` goes on with the command after the failed one, in the same block. In a loop, that is the next command in the loop body.
+- Approved: with `stop`, the script ends with status `failed` and the original error. With `continue`, the error is gone and the status can be `done`.
+- Approved: a tool has its own `on error`. If a tool stops with an error, the caller's `on error` can still handle it.
+- Approved: these are never handled: an error inside `on error` itself, cancel, and the step budget.
 - Line numbers shift after an edit. A second edit in the same script sees the new numbers.
 - `write` and `append` make a missing file, and missing parent folders.
 - What goes in: text as it is; a file or line gives its text; lists and objects as compact JSON.

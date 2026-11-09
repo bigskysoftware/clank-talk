@@ -23,6 +23,7 @@ Basics:
   for item in <list> [index i] ... end
   repeat 3 times ... end    repeat while <condition> ... end    repeat until <condition> ... end
   break    continue    then (separates commands on one line)
+  on error ... end   anywhere in a script or tool; the error's message; continue goes on after the failed command, stop (the default) ends with the error
   # a comment
 
 Values: 'text', "text", 'Hi \${name}' (\\\${ for a plain \${), 12, 3.5, true, false, null, [1, 2], {a: 1}

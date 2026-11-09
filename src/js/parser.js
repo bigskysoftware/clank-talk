@@ -52,6 +52,13 @@ export function parse(source, options = {}) {
   // true while the parser is inside a tool definition, where "run" is allowed
   let inTool = false;
 
+  // blocks the parser is inside (if, loops, tool bodies), to keep "on error" at the top level
+  let blockDepth = 0;
+
+  // "on error": seen once in this script or tool, and inside one now
+  let handlerSeen = false;
+  let inHandler = false;
+
   // ----- token helpers -----
 
   function current() {
@@ -580,6 +587,7 @@ if (isWord("lines")) {
 
   function parseIf(token) {
     const condition = parseExpression();
+    blockDepth++;
     const body = parseCommands();
     let elseBody = [];
     if (isWord("else")) {
@@ -589,6 +597,7 @@ if (isWord("lines")) {
         const ifToken = current();
         i++;
         elseBody = [parseIf(ifToken)];
+        blockDepth--;
         return { type: "if", condition, body, elseBody, line: token.line, column: token.column };
       }
       elseBody = parseCommands();
@@ -598,12 +607,15 @@ if (isWord("lines")) {
     } else {
       error("Expected 'end' for the 'if' at line " + token.line);
     }
+    blockDepth--;
     return { type: "if", condition, body, elseBody, line: token.line, column: token.column };
   }
 
   // commands up to the "end" of a block, and the "end" itself
   function parseBody(token) {
+    blockDepth++;
     const body = parseCommands();
+    blockDepth--;
     if (isWord("end")) {
       i++;
     } else {
@@ -705,12 +717,49 @@ if (isWord("lines")) {
   }
 
   // break and continue, only inside a loop
+  // in "on error" (and not in a loop there), continue goes on after the failed command
   function parseLoopControl(token) {
+    if (token.value === "continue" && inHandler && loopDepth === 0) {
+      return { type: "continue", line: token.line, column: token.column };
+    }
     if (loopDepth === 0) {
       errors.push({ message: "'" + token.value + "' is only allowed in a loop", line: token.line, column: token.column });
       return null;
     }
     return { type: token.value, line: token.line, column: token.column };
+  }
+
+  // stop, only in "on error" (and not in a loop there): end with the error
+  function parseStop(token) {
+    if (!inHandler || loopDepth !== 0) {
+      errors.push({ message: "'stop' is only allowed in 'on error'", line: token.line, column: token.column });
+      return null;
+    }
+    return { type: "stop", line: token.line, column: token.column };
+  }
+
+  // on error ... end: handles errors in the whole script or tool
+  function parseOn(token) {
+    if (!isWord("error")) {
+      error("Expected 'error'");
+      return null;
+    }
+    i++;
+    let problem = null;
+    if (blockDepth !== (inTool ? 1 : 0)) {
+      problem = "'on error' must be at the top level of a script or tool";
+    } else if (handlerSeen) {
+      problem = "Only one 'on error' is allowed in a script or tool";
+    }
+    handlerSeen = true;
+    inHandler = true;
+    const body = parseBody(token);
+    inHandler = false;
+    if (problem !== null) {
+      errors.push({ message: problem, line: token.line, column: token.column });
+      return null;
+    }
+    return { type: "onError", body, line: token.line, column: token.column };
   }
 
   // read <expression>: puts the text of a file in the result
@@ -872,6 +921,8 @@ if (isWord("lines")) {
     repeat: parseRepeat,
     break: parseLoopControl,
     continue: parseLoopControl,
+    stop: parseStop,
+    on: parseOn,
   };
 
   // one command, or null if there is an error
@@ -1020,7 +1071,10 @@ if (isWord("lines")) {
       }
     }
     inTool = true;
+    const savedHandlerSeen = handlerSeen;
+    handlerSeen = false;
     const body = parseBody(token);
+    handlerSeen = savedHandlerSeen;
     inTool = false;
     return { type: "tool", name, params, body, line: token.line, column: token.column };
   }

@@ -187,3 +187,8 @@ test("a script can still read .talk files and the talk folder", async () => {
   await fs.writeFile(path.join(root, "talk", "plugin.js"), "hello");
   assert.deepEqual(await output("print read @/talk/plugin.js"), ["hello"]);
 });
+
+test('on error in a tool covers the tool, and the caller can handle a tool that stops', async () => {
+  await agentsTalk(`tool bad\n  print 1 / 0\n  on error\n    print 'tool saw it'\n  end\nend`);
+  assert.deepEqual(await output(`bad\nprint 'after'\non error\n  print 'caller saw it'\n  continue\nend`), ['tool saw it', 'caller saw it', 'after']);
+});

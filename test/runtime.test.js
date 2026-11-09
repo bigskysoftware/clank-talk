@@ -142,3 +142,49 @@ test('a stray else is an error', async () => {
   assert.deepEqual(await errors('else'), [`Unexpected 'else' @1:1`]);
   assert.deepEqual((await errors(`for x in [1]\nelse\nend`))[0], `Expected 'end' for the 'for' at line 1 @2:1`);
 });
+
+test('on error with continue goes on after the failed command', async () => {
+  assert.deepEqual(await output(`print 1\nprint 1 / 0\nprint 2\non error\n  print 'oops: ' + the error's message\n  continue\nend`), ['1', 'oops: Division by zero', '2']);
+});
+
+test('on error can be anywhere, and covers the whole script', async () => {
+  assert.deepEqual(await output(`on error\n  continue\nend\nprint 1 / 0\nprint 'after'`), ['after']);
+});
+
+test('on error stops by default, with the error', async () => {
+  const result = await run(`print 1 / 0\nprint 'never'\non error\n  print 'cleanup'\nend`);
+  assert.deepEqual(result.output, ['cleanup']);
+  assert.deepEqual(result.errors.map((e) => e.message), ['Division by zero']);
+  assert.equal(result.status, 'failed');
+});
+
+test('stop ends the script with the error', async () => {
+  const result = await run(`print 1 / 0\non error\n  stop\nend`);
+  assert.equal(result.status, 'failed');
+});
+
+test('the error knows its line', async () => {
+  assert.deepEqual(await output(`print 1\nprint 1 / 0\non error\n  print the error's line\n  continue\nend`), ['1', '2']);
+});
+
+test('continue in a loop goes on with the next command in the loop', async () => {
+  assert.deepEqual(await output(`for x in [1, 0, 2]\n  print 6 / x\nend\non error\n  continue\nend`), ['6', '3']);
+});
+
+test('an error in on error is not handled again', async () => {
+  const result = await run(`print 1 / 0\non error\n  print 2 / 0\n  continue\nend`);
+  assert.deepEqual(result.errors.map((e) => e.message), ['Division by zero']);
+  assert.equal(result.errors[0].line, 3);
+});
+
+test('the step budget is not handled', async () => {
+  const result = await run(`repeat while true\nend\non error\n  continue\nend`, { maxSteps: 20 });
+  assert.equal(result.errors[0].message, 'Step budget of 20 used up');
+});
+
+test('on error rules', async () => {
+  assert.deepEqual(await errors(`if true\n  on error\n  end\nend`), [`'on error' must be at the top level of a script or tool @2:3`]);
+  assert.deepEqual(await errors(`on error\nend\non error\nend`), [`Only one 'on error' is allowed in a script or tool @3:1`]);
+  assert.deepEqual(await errors(`stop`), [`'stop' is only allowed in 'on error' @1:1`]);
+  assert.deepEqual(await errors(`on error\n  for x in [1]\n    stop\n  end\nend`), [`'stop' is only allowed in 'on error' @3:5`]);
+});
