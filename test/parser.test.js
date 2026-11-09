@@ -93,8 +93,10 @@ test("print with no value is an error", () => {
 });
 
 test("tokenizer errors are reported with parse errors", () => {
-  assert.deepEqual(errors("print 'oops\nprint 1"), [
-    "Unterminated string @1:7",
+  assert.deepEqual(errors("print ~\nprint 'oops"), [
+    "Unexpected character '~' @1:7",
+    "Unterminated string @2:7",
+    "Expected a value @2:1",
     "Expected a value @2:1",
   ]);
 });

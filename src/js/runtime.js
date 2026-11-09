@@ -262,6 +262,17 @@ async function evaluate(node, state) {
   if (type === "null") {
     return null;
   }
+  if (type === "template") {
+    let text = "";
+    for (const part of node.parts) {
+      if (typeof part === "string") {
+        text += part;
+      } else {
+        text += toText(await evaluate(part, state));
+      }
+    }
+    return text;
+  }
   if (type === "result") {
     return state.result;
   }

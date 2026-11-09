@@ -41,8 +41,8 @@ test("unterminated string is an error token", () => {
 });
 
 test("tokenizing goes on after an error", () => {
-  assert.deepEqual(simple("say 'oops\nsay ~ 2"), [
-    "word:say", "error:Unterminated string", "word:say", "error:Unexpected character '~'", "number:2",
+  assert.deepEqual(simple("say ~ 2 'oops\nsay 3"), [
+    "word:say", "error:Unexpected character '~'", "number:2", "error:Unterminated string",
   ]);
 });
 

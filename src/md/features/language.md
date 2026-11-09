@@ -77,6 +77,7 @@ Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each tok
 |---|---|---|
 | word | `set`, `file`, `$last` | Keywords are words. The parser decides what a word means. A word that starts with `$` is a global variable. |
 | string | `'var '`, `"let "` | The value has no quotes. Escapes: `\n`, `\t`, `\x` gives `x`. |
+| template | `'Hi ${name}'` | A string with `${...}` in it. The value is a list of parts: text, or a token list. |
 | number | `2`, `3.5`, `1_000`, `-3` | `_` groups digits and is dropped. |
 | path | `./a.js`, `../x`, `@/src/a.js`, `./"my file.txt"` | See paths below. |
 | possessive | `'s` | Only when it touches a word and no word character follows. |
@@ -91,6 +92,11 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: the tokenizer does not make newline tokens. The parser uses `end` and command words to find structure. Tokens keep the line number if the parser needs it later.
 - Approved: `'` after a word character is a possessive only before a non-word character. Thus `file's` is a possessive, and `say 'sun'` is a string. `'s` does not work after `)`, `]` or `}`. Use `.` there: `(x as json).a`.
 - Approved: both `'` and `"` make strings.
+- Approved: a string can span lines. A missing quote takes the rest of the source.
+- Approved: `${...}` works in both kinds of string. Any expression can go inside, with quotes too.
+- Approved: in a string with line breaks, the indent that all non-blank lines share is removed, so the string can be indented with the script.
+- Approved: `\${` gives a plain `${`. This follows the escape rule.
+- Approved: indent details, as in Java text blocks. A line break right after the opening quote is dropped. If the closing quote is on its own line, the text ends with a line break. Blank lines become empty.
 - Approved: string escapes `\n`, `\t`, and `\x` for any other `x`.
 - Approved: numbers have no commas. `_` groups digits: `1_000`.
 - Approved: negative numbers.
@@ -108,7 +114,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 
 ### Not yet
 
-- Approved: template strings, with `${...}` only. `$name` in a template is not interpolation, because `$` marks a global.
+- Approved: `$name` in a string is plain text. Only `${...}` is interpolation, because `$` marks a global.
 - Approved: URLs. A URL starts with `<word>://` and otherwise follows the path rules.
 - Approved for later: `/.../` is a regex. Pending: how to tell a regex from division.
 - Wanted: absolute paths (`/etc/hosts`). They also start with `/`, so they wait for the same regex and division decision.

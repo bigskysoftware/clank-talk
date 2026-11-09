@@ -8,8 +8,9 @@
 
 /**
  * @typedef {Object} Token
- * @property {string} type    word, string, number, path, possessive, op or error
- * @property {string} value   the text of the token (strings without quotes), or the error message
+ * @property {string} type    word, string, template, number, path, possessive, op or error
+ * @property {string|Array} value   the text of the token (strings without quotes), the error message,
+ *                                  or for a template: parts that are text or token lists
  * @property {number} line    1-based line of the first character
  * @property {number} column  1-based column of the first character
  */
@@ -30,6 +31,123 @@ function isDigit(c) {
 
 function isSpace(c) {
   return c === " " || c === "\t" || c === "\r" || c === "\n";
+}
+
+// true if the ' at index j is the 's of a possessive: it touches a word, and no word character follows the s
+function isPossessive(text, j) {
+  const prev = text[j - 1];
+  return text[j + 1] === "s" && prev !== undefined && isWordChar(prev) && !isWordChar(text[j + 2] || " ");
+}
+
+// index of the "}" that closes a "${", or -1
+// start is the index just after the "${"
+// braces inside the expression nest, and quoted text inside it is skipped
+function findTemplateEnd(text, start) {
+  let depth = 0;
+  let j = start;
+  while (j < text.length) {
+    const ch = text[j];
+    // the 's in x's is a possessive, not a quote
+    if (ch === "'" && isPossessive(text, j)) {
+      j += 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      j++;
+      while (j < text.length && text[j] !== ch) {
+        if (text[j] === "\\") {
+          j++;
+        }
+        j++;
+      }
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      if (depth === 0) {
+        return j;
+      }
+      depth--;
+    }
+    j++;
+  }
+  return -1;
+}
+
+// for text with line breaks: drop a line break right after the opening quote,
+// make a last line of only spaces empty, and remove the indent that all
+// non-blank lines share
+function removeIndent(raw) {
+  if (!raw.includes("\n")) {
+    return raw;
+  }
+  const lines = raw.split("\n");
+  if (lines[0].trim() === "") {
+    lines.shift();
+  }
+  if (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+    lines[lines.length - 1] = "";
+  }
+
+  let indent = null;
+  for (const line of lines) {
+    if (line.trim() === "") {
+      continue;
+    }
+    const spaces = line.length - line.trimStart().length;
+    if (indent === null || spaces < indent) {
+      indent = spaces;
+    }
+  }
+
+  const result = [];
+  for (const line of lines) {
+    if (line.trim() === "") {
+      result.push("");
+    } else {
+      result.push(line.slice(indent));
+    }
+  }
+  return result.join("\n");
+}
+
+// turn raw string text into parts: plain text, and token lists for each ${...}
+// escapes: \n, \t, and \x gives x, so \${ gives a plain ${
+function splitTemplate(raw, line, column) {
+  const parts = [];
+  let text = "";
+  let j = 0;
+  while (j < raw.length) {
+    if (raw[j] === "\\" && j + 1 < raw.length) {
+      const escaped = raw[j + 1];
+      if (escaped === "n") {
+        text += "\n";
+      } else if (escaped === "t") {
+        text += "\t";
+      } else {
+        text += escaped;
+      }
+      j += 2;
+      continue;
+    }
+    if (raw.startsWith("${", j)) {
+      const end = findTemplateEnd(raw, j + 2);
+      if (text !== "") {
+        parts.push(text);
+        text = "";
+      }
+      // errors in the expression point at the start of the string
+      const tokens = tokenize(raw.slice(j + 2, end)).map((t) => ({ ...t, line, column }));
+      parts.push(tokens);
+      j = end + 1;
+      continue;
+    }
+    text += raw[j];
+    j++;
+  }
+  if (text !== "") {
+    parts.push(text);
+  }
+  return parts;
 }
 
 /**
@@ -91,7 +209,7 @@ export function tokenize(source) {
     // possessive: the 's in file's
     // it must touch the word before it, and must not be followed by a word character
     const prev = source[i - 1];
-    if (c === "'" && source[i + 1] === "s" && prev !== undefined && isWordChar(prev) && !isWordChar(source[i + 2] || " ")) {
+    if (c === "'" && isPossessive(source, i)) {
       advance();
       advance();
       push("possessive", "'s", startLine, startColumn);
@@ -99,40 +217,57 @@ export function tokenize(source) {
     }
 
     // string: '...' or "..."
+    // a string can span lines, and ${...} in it is a template expression
     if (c === "'" || c === '"') {
       const quote = c;
-      let value = "";
+      let raw = "";
       let closed = false;
       advance();
-      while (true) {
-        if (i >= source.length || source[i] === "\n") {
-          break;
-        }
+      while (i < source.length) {
         if (source[i] === quote) {
           closed = true;
           advance();
           break;
         }
-        if (source[i] === "\\") {
+        // keep escapes as they are for now, so an escaped quote does not end the string
+        if (source[i] === "\\" && i + 1 < source.length) {
+          raw += source[i];
           advance();
-          const escaped = source[i];
-          if (escaped === "n") {
-            value += "\n";
-          } else if (escaped === "t") {
-            value += "\t";
-          } else {
-            value += escaped;
-          }
+          raw += source[i];
           advance();
           continue;
         }
-        value += source[i];
+        // copy a whole ${...}, so quotes inside it do not end the string
+        if (source.startsWith("${", i)) {
+          const end = findTemplateEnd(source, i + 2);
+          if (end === -1) {
+            break;
+          }
+          while (i <= end) {
+            raw += source[i];
+            advance();
+          }
+          continue;
+        }
+        raw += source[i];
         advance();
       }
-      if (closed) {
-        push("string", value, startLine, startColumn);
-      } else {
+      // a string with no closing quote takes the rest of the source
+      if (!closed) {
+        while (i < source.length) {
+          advance();
+        }
         push("error", "Unterminated string", startLine, startColumn);
+        continue;
+      }
+
+      const parts = splitTemplate(removeIndent(raw), startLine, startColumn);
+      if (parts.length === 1 && typeof parts[0] === "string") {
+        push("string", parts[0], startLine, startColumn);
+      } else if (parts.length === 0) {
+        push("string", "", startLine, startColumn);
+      } else {
+        push("template", parts, startLine, startColumn);
       }
       continue;
     }

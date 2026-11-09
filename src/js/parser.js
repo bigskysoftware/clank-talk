@@ -28,14 +28,20 @@ export function parse(source, options = {}) {
   const errors = [];
 
   // tokenizer errors are reported, and then left out of the token list
-  const tokens = [];
-  for (const token of tokenize(source)) {
-    if (token.type === "error") {
-      errors.push({ message: token.value, line: token.line, column: token.column });
-    } else {
-      tokens.push(token);
+  function withoutErrors(list) {
+    const result = [];
+    for (const token of list) {
+      if (token.type === "error") {
+        errors.push({ message: token.value, line: token.line, column: token.column });
+      } else {
+        result.push(token);
+      }
     }
+    return result;
   }
+
+  // "let", because a template expression parses its own token list for a moment
+  let tokens = withoutErrors(tokenize(source));
 
   let i = 0;
 
@@ -370,6 +376,10 @@ export function parse(source, options = {}) {
       i++;
       return node("string", token, { value: token.value });
     }
+    if (token.type === "template") {
+      i++;
+      return parseTemplate(token);
+    }
     if (token.type === "number") {
       i++;
       return node("number", token, { value: Number(token.value) });
@@ -413,6 +423,39 @@ export function parse(source, options = {}) {
 
     error("Expected a value, found '" + token.value + "'");
     return null;
+  }
+
+  // 'Hi ${name}': the parts are text, or token lists from the tokenizer
+  // each token list is parsed as an expression, with the parser pointed at it for a moment
+  function parseTemplate(token) {
+    const parts = [];
+    for (const part of token.value) {
+      if (typeof part === "string") {
+        parts.push(part);
+        continue;
+      }
+      const savedTokens = tokens;
+      const savedIndex = i;
+      tokens = withoutErrors(part);
+      i = 0;
+      let expression = null;
+      if (tokens.length === 0) {
+        errors.push({ message: "Empty ${} in a string", line: token.line, column: token.column });
+      } else {
+        expression = parseExpression();
+        if (expression !== null && !atEnd()) {
+          error("Unexpected '" + current().value + "' in ${}");
+          expression = null;
+        }
+      }
+      tokens = savedTokens;
+      i = savedIndex;
+      if (expression === null) {
+        return null;
+      }
+      parts.push(expression);
+    }
+    return node("template", token, { parts });
   }
 
   // [a, b, c], after the "["

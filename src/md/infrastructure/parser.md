@@ -26,6 +26,7 @@ Code: `src/js/parser.js`. `parse(source, { tools })` gives `{ script, errors }`.
 { type: "toolCall", name }
 { type: "string" | "number" | "path" | "boolean", value }
 { type: "null" }
+{ type: "template", parts: [...] }      parts are text or expression nodes
 { type: "result" }                      it, result
 { type: "variable", name }
 { type: "property", object, name }      x's name, x.name
