@@ -20,6 +20,14 @@ Approved:
 - The tool description teaches the language: a short syntax summary, then the tools from AGENTS.talk with their parameters. It is read at `tools/list`, so a change to AGENTS.talk shows when the client lists tools again.
 - Logs go to stderr. stdout is only for protocol messages.
 
+## Dogfood
+
+This repo has an `AGENTS.talk` (`run_tests`, `git_status`, `git_diff`, `git_log`) and a `.mcp.json` that starts the MCP host. There is no `git_commit` tool: commits stay with the human.
+
+- Hard start, ClankTalk only: `claude --tools "" --strict-mcp-config --mcp-config .mcp.json`
+- Soft start, all edits through ClankTalk: `claude --disallowedTools Edit Write NotebookEdit`
+- `.mcp.json` runs `node bin/clank-talk-mcp.js` from the folder where Claude Code starts. Start Claude Code in the repo root.
+
 ## Claude Code
 
 Claude Code can limit the model to clank-talk tools only.

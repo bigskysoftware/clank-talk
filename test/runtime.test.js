@@ -95,8 +95,8 @@ test("if", async () => {
 });
 
 test("tool calls set the result", async () => {
-  const tools = { run_tests: async () => ({ code: 0, output: "ok" }) };
-  assert.deepEqual(await output("run_tests print the result's code", { tools }), ["0"]);
+  const tools = { host_tool: async () => ({ code: 0, output: "ok" }) };
+  assert.deepEqual(await output("host_tool print the result's code", { tools }), ["0"]);
 });
 
 test("parse errors stop the script before it runs", async () => {

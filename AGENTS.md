@@ -16,6 +16,10 @@ Keep code simple and direct. Prefer plodding if/then code. See https://grugbrain
 - Write user docs in docs/ as features land, in the tone of https://hyperscript.org.
 - End each reply with a list of uncommitted files to review, if any.
 
+## Dogfood
+
+When the `clank_talk` tool is there, use it for file work and the tools in AGENTS.talk. Note what is hard to do in ClankTalk in tmp/dogfood.md.
+
 ## Syntax
 
 - Humans approve all syntax. Agents only propose.
