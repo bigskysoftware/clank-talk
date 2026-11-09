@@ -609,6 +609,10 @@ if (type === "read") {
     if (object instanceof FileRef) {
       return await fileProperty(object, node.name, state, node);
     }
+    // text has lines, as a file does
+    if (typeof object === "string" && node.name === "lines") {
+      return splitLines(object);
+    }
     return getProperty(object, node.name, node);
   }
   if (type === "index") {

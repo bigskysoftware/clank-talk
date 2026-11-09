@@ -44,6 +44,9 @@ Approved from [examples.md](examples.md). Each rule has an example there.
   - `break` and `continue` in loops. Outside a loop they are errors.
 - `increment x by n` and `decrement x by n`. With no `by`, the amount is 1, as in hyperscript.
 - Possessive and dot access are the same: `line's number` and `line.number`.
+- Approved: `<name> of <value>` is the same as `<value>'s <name>`, as in hyperscript: `lines of the result's output`, `the name of the file`.
+- Approved: the value after `of` is a value with access, so `name of the file's parent` is the name of `the file's parent`, and `a of b of c` is `a of (b of c)`. A `$` global is never a property name.
+- Approved: text has `lines`, as a file does.
 - A file gives `name`, `path`, `text`, `lines`, `size`, `modified`. A line gives `number`, and is its content as text.
 - Variables without a prefix are local to the script or feature. `$` variables are global and stay for the session.
 - `on error ... end` handles errors. It can go anywhere in a script or feature, and covers all of that script or feature. It can use `stop`, or `continue` to go on with the line after the one that failed. The default is `stop`.

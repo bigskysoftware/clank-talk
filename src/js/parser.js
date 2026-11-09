@@ -483,6 +483,15 @@ if (isWord("lines")) {
       if (token.value === "it" || token.value === "result") {
         return node("result", token, {});
       }
+      // <name> of <value> is the same as <value>'s <name>, as in hyperscript
+      if (isWord("of") && !token.value.startsWith("$")) {
+        i++;
+        const object = parseAccess();
+        if (object === null) {
+          return null;
+        }
+        return node("property", token, { object, name: token.value });
+      }
       return node("variable", token, { name: token.value });
     }
 

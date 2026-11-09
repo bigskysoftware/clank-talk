@@ -188,3 +188,15 @@ test('on error rules', async () => {
   assert.deepEqual(await errors(`stop`), [`'stop' is only allowed in 'on error' @1:1`]);
   assert.deepEqual(await errors(`on error\n  for x in [1]\n    stop\n  end\nend`), [`'stop' is only allowed in 'on error' @3:5`]);
 });
+
+test('<name> of <value> is the same as <value>\'s <name>', async () => {
+  assert.deepEqual(await output(`print length of 'abc'\nset x to {a: {b: 2}}\nprint b of a of x\nprint the b of x's a`), ['3', '2', '2']);
+});
+
+test('text has lines, as a file does', async () => {
+  assert.deepEqual(await output(`for line in lines of 'a\\nb'\n  print line.number + ': ' + line\nend\nset t to 'x\\ny\\n'\nprint the length of t's lines`), ['1: a', '2: b', '2']);
+});
+
+test('a $ global before of is not a property', async () => {
+  assert.deepEqual((await errors(`set $x to 1\nprint $x of 2`))[0], `Unknown command 'of' @2:10`);
+});

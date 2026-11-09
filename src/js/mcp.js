@@ -29,7 +29,7 @@ Basics:
 Values: 'text', "text", 'Hi \${name}' (\\\${ for a plain \${), 12, 3.5, true, false, null, [1, 2], {a: 1}
   Strings can span lines. Common indent is removed.
   """raw text""": no escapes, no \${}, and the indent is kept exactly. Use it for code edits.
-  x's y and x.y are the same.  "the" is optional: the file's text
+  x's y, x.y and y of x are the same: lines of the result's output.  "the" is optional: the file's text
   it / the result: the value from the last command
   $name: a global that stays between calls
 
@@ -39,7 +39,7 @@ Operators: + - * / mod (mixing needs parentheses), is, is not, < > <= >=, is les
 
 Files (paths: ./x and ../x from the current folder, @/x from the project root):
   ./src/**/*.js gives a list of files. A file has name, path, text, lines, size, modified.
-  A line has number and text. Text operators work on files and lines.
+  A line has number and text. Text has lines too. Text operators work on files and lines.
   lines 10 to 20 of <file or text>: a range by line number. print shows each line with its number.
   replace lines 5 to 7 of <file> with <text>    put <text> before|after line 5 of <file>    remove lines 5 to 7 of <file>
   A line edit needs a read of the file first. The result is the old lines. Line numbers shift after an edit.
