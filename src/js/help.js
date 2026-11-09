@@ -133,8 +133,8 @@ export const HELP = [
   },
   {
     name: "run", kind: "command", where: "AGENTS.talk",
-    syntax: "run <program and args> | run <program> with <arg>, ... [in a sandbox [with network, writes to <path>, reads of <path>]] [within <duration>]",
-    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on. 'in a sandbox' runs it in an OS sandbox: it can write only the project (not .git, .talk or hidden files), read only system folders, its own install folder and tool caches, and use no network. On an OS with no sandbox, it is an error, and nothing runs.",
+    syntax: "run <program and args> | run <program> with <arg>, ... [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>]",
+    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on. 'in a sandbox' runs it in an OS sandbox: it can write only the project (not .git, .talk or hidden files), read only system folders, its own install folder and tool caches, and use no network ('with local network' allows localhost only). On an OS with no sandbox, it is an error, and nothing runs.",
     examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend"],
   },
   {

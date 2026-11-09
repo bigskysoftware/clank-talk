@@ -435,7 +435,7 @@ Your agent can write code, and `npm test` runs code. So a tool that runs your te
 ```talk
 # AGENTS.talk
 tool run_tests
-  run 'npm test' in a sandbox
+  run 'npm test' in a sandbox with local network
 end
 
 tool install
@@ -443,7 +443,7 @@ tool install
 end
 ```
 
-In a sandbox, a program can write only your project (but not `.git`, `.talk` files or hidden files), read only system folders, its own install folder and tool caches, and has no network. Loosen it with `with network`, `writes to <path>` and `reads of <path>`.
+In a sandbox, a program can write only your project (but not `.git`, `.talk` files or hidden files), read only system folders, its own install folder and tool caches, and has no network. Loosen it with `with network`, `with local network` (localhost only, for tests that start their own servers), `writes to <path>` and `reads of <path>`.
 
 It works on macOS (`sandbox-exec`) and Linux (`bubblewrap`). Anywhere else, a sandboxed `run` is an error. It never quietly runs without the sandbox. Before the first sandboxed run, ClankTalk tests that the sandbox really holds.
 

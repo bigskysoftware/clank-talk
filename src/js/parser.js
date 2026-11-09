@@ -1490,7 +1490,7 @@ export function parse(source, options = {}) {
     return { type: "run", program, args, sandbox, within, line: token.line, column: token.column };
   }
 
-  // in a sandbox [with network, writes to <path>, reads of <path>], after run or start
+  // in a sandbox [with network, local network, writes to <path>, reads of <path>], after run or start
   // see src/md/features/sandbox-run.md
   function parseSandbox() {
     i++;
@@ -1504,7 +1504,7 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    const sandbox = { network: false, writes: [], reads: [] };
+    const sandbox = { network: false, localNetwork: false, writes: [], reads: [] };
     if (!isWord("with")) {
       return sandbox;
     }
@@ -1513,6 +1513,15 @@ export function parse(source, options = {}) {
       if (isWord("network")) {
         i++;
         sandbox.network = true;
+      } else if (isWord("local")) {
+        // with local network: localhost only
+        i++;
+        if (!isWord("network")) {
+          error("Expected 'network'");
+          return null;
+        }
+        i++;
+        sandbox.localNetwork = true;
       } else if (isWord("writes")) {
         i++;
         if (!isWord("to")) {
@@ -1538,7 +1547,7 @@ export function parse(source, options = {}) {
         }
         sandbox.reads.push(path);
       } else {
-        error("Expected network, writes to <path>, or reads of <path>");
+        error("Expected network, local network, writes to <path>, or reads of <path>");
         return null;
       }
       if (!isOp(",")) {

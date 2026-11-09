@@ -11,13 +11,14 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 ## Syntax
 
 - Approved: on each `run` and `start`: `run 'npm test' in a sandbox`, `start 'npm run dev' as 'site' in a sandbox`.
-- Approved: options after `with`: `network`, `writes to <path>`, `reads of <path>`. For example: `run 'npm install' in a sandbox with network`, `run 'mvn test' in a sandbox with writes to '~/.m2'`, `run 'gh pr list' in a sandbox with network, reads of '~/.config/gh'`.
+- Approved: options after `with`: `network`, `local network`, `writes to <path>`, `reads of <path>`.
+- Approved (built): `with local network` allows connections to and from localhost only. On macOS, the program can reach servers on the host's localhost. On Linux, it gets its own loopback: it can use servers that it starts, but not servers on the host. For example: `run 'npm install' in a sandbox with network`, `run 'mvn test' in a sandbox with writes to '~/.m2'`, `run 'gh pr list' in a sandbox with network, reads of '~/.config/gh'`.
 - Approved (built): `in a sandbox` comes after the arguments, and before `within`: `run 'npm' with 'test' in a sandbox within 10 minutes`. `in` is claimed while the arguments parse (the follows set).
 - Approved (built): a `run` with no `in a sandbox` works as now. A hook can require a sandbox: the step's `sandbox` is null without one.
 - Approved (built): each sandboxed run gets its own temp folder (`TMPDIR`), removed after the run, or when a process ends.
 - Proposed (built): `HOME` is a fresh folder in that temp folder. The allowed parts of the real home (the caches, `reads of`, `writes to`) are linked into it. Why: many programs look for config in the home folder. A missing file is fine for them, but a blocked file is a fatal error (git: `unable to access '~/.gitconfig'`). Thus secrets such as `~/.npmrc` are not even visible.
 - Proposed (built): a sandboxed program gets `CLANK_TALK_SANDBOXED=1`. A sandbox cannot start inside another, so a ClankTalk inside the sandbox fails at once with a clear reason.
-- Tested: this repo's `npm test` passes in a sandbox `with network` (the fetch tests need local servers). The real-sandbox tests skip there.
+- Tested: this repo's `npm test` passes in a sandbox `with local network` (the fetch tests need local servers). The real-sandbox tests skip there.
 
 ## What the sandbox allows
 

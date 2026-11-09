@@ -95,6 +95,7 @@ export async function installDirs(program, pathText) {
  * @param {string[]} [options.writes]      more paths to write ("with writes to")
  * @param {string[]} [options.allowedChanges]  hidden paths that AGENTS.talk allows, relative to the root
  * @param {boolean} [options.network]      "with network"
+ * @param {boolean} [options.localNetwork] "with local network": localhost only
  * @param {boolean} [options.listen]       a server may listen on localhost (start)
  */
 export async function sandboxPlan(options) {
@@ -108,6 +109,7 @@ export async function sandboxPlan(options) {
     secrets: [],
     allowedChanges: options.allowedChanges || [],
     network: Boolean(options.network),
+    localNetwork: Boolean(options.localNetwork),
     listen: Boolean(options.listen),
   };
   for (const path of SYSTEM_READS) {
@@ -238,9 +240,13 @@ export function macosProfile(plan) {
 
   if (plan.network) {
     lines.push("(allow network*)");
-  } else if (plan.listen) {
+  } else if (plan.listen || plan.localNetwork) {
     lines.push("(allow network-bind (local ip \"localhost:*\"))");
     lines.push("(allow network-inbound (local ip \"localhost:*\"))");
+  }
+  // with local network: also connect to localhost, and nothing else
+  if (!plan.network && plan.localNetwork) {
+    lines.push("(allow network-outbound (remote ip \"localhost:*\"))");
   }
   return lines.join("\n") + "\n";
 }
@@ -249,6 +255,8 @@ export function macosProfile(plan) {
  * The bubblewrap arguments for Linux, before the program and its arguments.
  * Limit: hidden files and .talk files are protected only if they exist when the program starts,
  * and only at the top of the project. See src/md/features/sandbox-run.md.
+ * "with local network" on Linux: the program gets its own loopback, so it can use servers that it starts,
+ * but not servers on the host.
  */
 export async function bwrapArgs(plan, cwd) {
   const args = ["--die-with-parent", "--new-session", "--unshare-all"];

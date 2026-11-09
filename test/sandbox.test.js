@@ -37,6 +37,10 @@ test("the macOS profile: deny by default, the project, no secrets, network only 
   assert.doesNotMatch(profile, /network/);
   assert.match(macosProfile({ ...plan, network: true }), /\(allow network\*\)/);
   assert.match(macosProfile({ ...plan, listen: true }), /network-bind \(local ip "localhost:\*"\)/);
+  assert.doesNotMatch(macosProfile({ ...plan, listen: true }), /network-outbound/);
+  const local = macosProfile({ ...plan, localNetwork: true });
+  assert.match(local, /\(allow network-outbound \(remote ip "localhost:\*"\)\)/);
+  assert.doesNotMatch(local, /\(allow network\*\)/);
   await assert.rejects(sandboxPlan({ root: '/p/a"b', tmp: "/t" }), /cannot hold a quote/);
 });
 

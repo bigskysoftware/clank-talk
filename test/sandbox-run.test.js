@@ -52,6 +52,12 @@ before(async () => {
     "tool connect_allowed",
     "  " + node("require('net').connect(" + port + ", '127.0.0.1').on('data', (d) => console.log(String(d))).on('error', (e) => { console.log(e.code); process.exit(1) })") + " in a sandbox with network",
     "end",
+    "tool connect_local",
+    "  " + node("require('net').connect(" + port + ", '127.0.0.1').on('data', (d) => console.log(String(d))).on('error', (e) => { console.log(e.code); process.exit(1) })") + " in a sandbox with local network",
+    "end",
+    "tool internet_local",
+    "  " + node("require('net').connect(443, '1.1.1.1').on('connect', () => { console.log('connected'); process.exit(0) }).on('error', (e) => { console.log(e.code); process.exit(1) })") + " in a sandbox with local network",
+    "end",
     "tool serve",
     "  start 'node' with '-e', \"console.log('up'); setInterval(() => {}, 1000)\" as 'srv' in a sandbox",
     "end",
@@ -76,6 +82,7 @@ async function call(source) {
 }
 
 test("the sandbox clause parses on run and start", () => {
+  assert.equal(parse("tool t\n  run 'x' in a sandbox with local network\nend", { definitions: true }).script.definitions[0].body[0].sandbox.localNetwork, true);
   const { script, errors } = parse("tool t\n  run 'npm' with 'test' in a sandbox with network, writes to '~/.m2', reads of '~/.x' within 5 minutes\n  start 'npm run dev' as 'site' in a sandbox\nend", { definitions: true });
   assert.deepEqual(errors, []);
   const [runNode, startNode] = script.definitions[0].body;
@@ -107,6 +114,10 @@ test("in a sandbox: no network, unless 'with network'", { skip: !onMac }, async 
   assert.deepEqual(await call("connect_allowed\nprint the result's output"), ["hi\n"]);
 });
 
+test("in a sandbox with local network: localhost yes, the internet no", { skip: !onMac }, async () => {
+  assert.deepEqual(await call("connect_local\nprint the result's output"), ["hi\n"]);
+  assert.notDeepEqual(await call("internet_local\nprint the result's code"), ["0"]);
+});
 test("start in a sandbox", { skip: !onMac }, async () => {
   await call("serve");
   await call("wait until the output of process 'srv' contains 'up' within 5 seconds");

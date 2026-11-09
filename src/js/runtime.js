@@ -1337,7 +1337,7 @@ async function sandboxValues(command, state) {
   if (command.sandbox === null || command.sandbox === undefined) {
     return null;
   }
-  const values = { network: command.sandbox.network, reads: [], writes: [] };
+  const values = { network: command.sandbox.network, localNetwork: command.sandbox.localNetwork, reads: [], writes: [] };
   for (const path of command.sandbox.reads) {
     values.reads.push(toText(await evaluate(path, state)));
   }
@@ -1372,6 +1372,7 @@ async function sandboxCommand(program, args, sandbox, env, listen, state, node) 
     writes: sandbox.writes,
     allowedChanges: state.allowedChanges,
     network: sandbox.network,
+    localNetwork: sandbox.localNetwork,
     listen,
   });
   const wrapped = await wrapCommand(support.kind, plan, program, args, state.cwd);
