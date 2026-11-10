@@ -37,6 +37,8 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - Approved (built): `move <file> to <file>` moves or renames one file. It has the checks of a write for both paths, and it never replaces a file. It makes the folder of the new path. undo takes it back: the change list has the old path (text to nothing) and the new path (nothing to text). Hooks: `before move` and `after move`, with `the move's path` and `the move's to`.
 - Approved: edits by line number. `replace lines 5 to 7 of <file> with <text>`, `put <text> before line 5 of <file>`, `put <text> after line 5 of <file>`, `remove lines 5 to 7 of <file>`.
 - Approved (built): `replace lines ... with <text>` is always a line edit, and never takes an `in`: `of` names the file. Thus an `in` after it starts a new command, such as an `in ... do` block on the next line.
+- Approved (built): `replace <old> with <new> in <files>` takes a file, a list of files, or a glob, as `find` does. Every file is checked first, so one file that cannot change (a hidden file, a `.talk` file) stops it before any write. Each file changes only if it has a match. The result is all the replacements; one warning if there is no match in any file. One undo takes back all the files. A glob with no files is an error.
+- Approved (built): `first <n> of <x>` and `last <n> of <x>` give a list of up to n items; a file or text gives lines. A shorter list gives all of it. `first of x` stays one item. The count must be a whole number, 0 or more. `first` is this form only when a value and `of` follow it, so a variable named `first` still works.
 - Approved: `find <text> in <file, list of files, or text>`. The result is the lines that contain the text, as plain text with letter case. A line from a file has `file`. `print` shows `path:number: text`. `find` reads each file, so read hooks run and line edits can follow. Later, maybe: no letter case.
 - Approved (built): patterns. `pattern '<regexp>'` is a value: a JavaScript regexp with the `u` flag. `find pattern ... in <target>` gives the lines that match. `replace pattern ... with <new> in <file or variable>` replaces each match, and the new text can use the back references `$1`, `$<name>`, `$&` and `$$`. `<text> matches pattern ...` is a check. A bad pattern is an error. `pattern` alone stays a plain word: it is a pattern only with a string after it on the same line. Why `pattern` and not `/.../`: `/` starts paths and means division. Use raw strings for backslashes.
 - Approved (built): a runaway pattern, such as `(a+)+$`, can run for minutes, and a JS regexp cannot be stopped. So pattern work runs in a worker thread, one for each run, with a 2-second limit for each job. On a timeout, the worker is stopped and the job is an error; the next pattern starts a new worker. Code: `src/js/patterns.js`. Later, maybe: `ignoring case`, and the groups as a value.
@@ -129,6 +131,16 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: raw strings, `"""..."""`. No escapes, no `${}`, and no indent removal: the text is exactly what is between the quotes. Only a line break right after the opening quotes is dropped. Approved: the help, the MCP rules and the docs say this, and say to leave one empty line after the opening quotes to start with a blank line. A raw string ends at the first `"""`.
 - Approved (built): a raw string can open with more than three quotes, and then ends at the same count: `""""...""""` can hold `"""`. In a run of quotes, the last ones close the string, so the text can end with a quote.
 - Approved: no warning for a backslash followed by n, r or t in a raw string. In code edits, it is often correct, such as `"\n"` in JS. The changed-lines diff after an edit shows a wrong escape. Use raw strings for code edits.
+- Approved (built): text blocks: lines that start with `|`. A block can stand wherever a value goes, when the value starts on the next line. Spaces before the `|` are ignored, and one space after it is dropped; the rest of the line is the text, exactly as typed: no escapes, no `${}`, and quotes, backticks and three double quotes are plain text. A line with only `|` is an empty line. The lines join with line breaks; the text has no final line break, and an empty `|` line at the end adds one. The block ends at the first line that does not start with `|`. Why: raw strings fail when the text starts with a quote or holds three double quotes, and backticks clash with Markdown and JavaScript. `|` has no other use in ClankTalk; `>` is "greater than". Recommended for code and for any text with quotes.
+
+```talk
+replace
+| "a" b
+with
+| "c"
+in ./src/app.js
+```
+
 - Approved: indent details, as in Java text blocks. A line break right after the opening quote is dropped. If the closing quote is on its own line, the text ends with a line break. Blank lines become empty.
 - Approved: string escapes `\n`, `\t`, and `\x` for any other `x`.
 - Approved: numbers have no commas. `_` groups digits: `1_000`.

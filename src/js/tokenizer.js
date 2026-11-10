@@ -33,6 +33,15 @@ function isSpace(c) {
   return c === " " || c === "\t" || c === "\r" || c === "\n";
 }
 
+// only spaces or tabs come before position j on its line
+function atLineStart(text, j) {
+  let k = j - 1;
+  while (k >= 0 && (text[k] === " " || text[k] === "\t")) {
+    k--;
+  }
+  return k < 0 || text[k] === "\n";
+}
+
 // true if the ' at index j is the 's of a possessive: it touches a word, "]", "}" or ")", and no word character follows the s
 function isPossessive(text, j) {
   const prev = text[j - 1];
@@ -236,6 +245,38 @@ export function tokenize(source) {
       while (i < source.length && source[i] !== "\n") {
         advance();
       }
+      continue;
+    }
+
+    // text block: lines that start with |; see src/md/features/language.md
+    // spaces before the | are ignored, and one space after it is dropped; the rest of the line is the text,
+    // exactly as typed; the lines join with line breaks, and the block ends at a line that does not start with |
+    if (c === "|" && atLineStart(source, i)) {
+      const lines = [];
+      while (true) {
+        advance();
+        if (source[i] === " ") {
+          advance();
+        }
+        let text = "";
+        while (i < source.length && source[i] !== "\n") {
+          text += source[i];
+          advance();
+        }
+        lines.push(text.endsWith("\r") ? text.slice(0, -1) : text);
+        // the next line: spaces, then a | to go on
+        let next = i + 1;
+        while (next < source.length && (source[next] === " " || source[next] === "\t")) {
+          next++;
+        }
+        if (i >= source.length || source[next] !== "|") {
+          break;
+        }
+        while (i < next) {
+          advance();
+        }
+      }
+      push("string", lines.join("\n"), startLine, startColumn);
       continue;
     }
 

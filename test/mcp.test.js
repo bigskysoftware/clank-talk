@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { handleMessage, toolsChanged } from "../src/js/harnesses/mcp.js";
+import { staleCodeWarning } from "../src/js/host.js";
 
 let root;
 let session;
@@ -249,4 +250,19 @@ test('a bad agent name is an error', async () => {
 test("the MCP server names the session after the client, for the audit", async () => {
   await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', clientInfo: { name: 'Claude Code' } } }, session);
   assert.match(session.name, /^claude-code-[0-9a-f]{4}$/);
+});
+
+test("a warning when the code changed after the server started", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-stale-"));
+  try {
+    await fs.mkdir(path.join(dir, "harnesses"));
+    await fs.writeFile(path.join(dir, "harnesses", "mcp.js"), "// code");
+    await fs.writeFile(path.join(dir, "notes.txt"), "not code");
+    assert.equal(staleCodeWarning(dir, Date.now() + 60_000), null);
+    const warning = staleCodeWarning(dir, 0);
+    assert.match(warning.message, /^The ClankTalk server is older than its code \(harnesses\/mcp\.js changed at \d\d:\d\d\)\. Ask the human to reconnect it/);
+    assert.equal(warning.line, undefined);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

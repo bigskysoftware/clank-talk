@@ -1,7 +1,8 @@
 // what the hosts share: the tool description, the result text for the agent, and agent scopes
 // the hosts are in harnesses/: the MCP server (mcp.js) and the pi extension (pi.js, pi-host.js)
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import nodePath from "node:path";
 import { listTools } from "./clank-talk.js";
@@ -94,7 +95,7 @@ const Q3 = '"'.repeat(3);
 // the hand-written part of the tool description: what ClankTalk is, and what the summary cannot say
 const INTRO = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
 Each block ends with 'end'. A new line or 'then' separates commands. # starts a comment.
-Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactly, with no escapes and no \${}: use it for code edits. A line break right after the opening ${Q3} is not part of the text. To hold ${Q3}, open and close with four quotes. To start the text with a quote, start it on the next line.
+Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactly, with no escapes and no \${}: use it for code edits. A line break right after the opening ${Q3} is not part of the text. To hold ${Q3}, open and close with four quotes. To start the text with a quote, start it on the next line. For code, and for any text with quotes, use a text block: the lines that start with |, one space after the | dropped, exactly as typed, with no escapes.
 x's y, x.y and y of x are the same. 'the' is optional. it, or the result, is the value from the last command.`;
 
 const RULES = `Rules:
@@ -141,8 +142,13 @@ export function formatResult(result, script, root) {
   if (result.output.length > 0) {
     sections.push(cutOutput(result.output.join("\n"), result.outputLimit || null));
   }
-  if (result.warnings && result.warnings.length > 0) {
-    sections.push("--- warnings ---\n" + formatProblems(result.warnings, script, root));
+  const warnings = [...(result.warnings || [])];
+  const stale = staleCodeWarning();
+  if (stale !== null) {
+    warnings.push(stale);
+  }
+  if (warnings.length > 0) {
+    sections.push("--- warnings ---\n" + formatProblems(warnings, script, root));
   }
   if (result.errors.length > 0) {
     sections.push("--- " + result.status + " ---\n" + formatProblems(result.errors, script, root));
@@ -162,6 +168,11 @@ function formatProblems(problems, script, root) {
   const lines = [];
   for (const p of problems) {
     const file = p.file ? p.file + " " : "";
+    // a problem with no place, such as a stale server, is only its message
+    if (p.line === undefined) {
+      lines.push(file + p.message);
+      continue;
+    }
     lines.push(file + p.line + ":" + p.column + " " + p.message);
     let source = script;
     if (p.file) {
@@ -235,4 +246,35 @@ export function keptOutput(result) {
   }
   const half = PREVIOUS_MAX_CHARACTERS / 2;
   return text.slice(0, half) + "\n... (cut: the output was more than 5 MB) ...\n" + text.slice(-half);
+}
+
+// ----- a stale server -----
+// the server keeps the code it started with; if a .js file in src/js changed after that,
+// each result gets a warning, so the agent can ask the human to reconnect
+// see src/md/infrastructure/host.md
+
+const CODE_DIR = nodePath.dirname(fileURLToPath(import.meta.url));
+const STARTED = Date.now();
+
+export function staleCodeWarning(dir = CODE_DIR, since = STARTED) {
+  let newest = null;
+  for (const name of readdirSync(dir, { recursive: true })) {
+    if (!String(name).endsWith(".js")) {
+      continue;
+    }
+    let time;
+    try {
+      time = statSync(nodePath.join(dir, String(name))).mtimeMs;
+    } catch (err) {
+      continue;
+    }
+    if (time > since && (newest === null || time > newest.time)) {
+      newest = { name: String(name).split(nodePath.sep).join("/"), time };
+    }
+  }
+  if (newest === null) {
+    return null;
+  }
+  const at = new Date(newest.time).toTimeString().slice(0, 5);
+  return { message: "The ClankTalk server is older than its code (" + newest.name + " changed at " + at + "). Ask the human to reconnect it (/mcp in Claude Code)." };
 }

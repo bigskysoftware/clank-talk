@@ -1603,17 +1603,26 @@ async function runCommand(command, state, tools, maxSteps) {
     }
     const target = await evaluate(command.target, state);
     if (target instanceof FileRef) {
-      // hooks see the pattern's text as old
-      const step = changeStep("replace", target, { old: old instanceof Pattern ? old.source : old, new: replacement });
-      await changeHooks("before", step, state, command);
-      const before = await readText(target, state, command);
-      const { text, replacements } = await replaceIn(before, old, replacement, state, command);
-      if (replacements.length > 0) {
-        await writeText(target, text, false, state, command);
-      }
+      const replacements = await replaceInFile(target, old, replacement, state, command);
       state.result = replacements;
       warnIfNoMatch(replacements, old, target.path, state, command);
-      await changeHooks("after", step, state, command);
+      return null;
+    }
+    // a list of files or a glob: every file is checked first, so one bad file writes nothing
+    const files = flatFiles(target);
+    if (Array.isArray(files) && files.every((file) => file instanceof FileRef)) {
+      if (files.length === 0) {
+        throw new ScriptError("replace found no files in " + describe(target), command.target);
+      }
+      for (const file of files) {
+        await checkWritable(file, state, command);
+      }
+      const all = [];
+      for (const file of files) {
+        all.push(...(await replaceInFile(file, old, replacement, state, command)));
+      }
+      state.result = all;
+      warnIfNoMatch(all, old, files.length + " files", state, command);
       return null;
     }
     const isAssignable = command.target.type === "variable" || command.target.type === "property" || command.target.type === "index";
@@ -1817,6 +1826,26 @@ async function evaluateNode(node, state) {
     }
     const target = await evaluate(node.target, state);
     return await findLines(text, target, state, node);
+  }
+  // first <n> of <x>, last <n> of <x>: up to n items; text and files give lines
+  if (type === "take") {
+    const count = toNumber(await evaluate(node.count, state), node.count);
+    if (!Number.isInteger(count) || count < 0) {
+      throw new ScriptError("'" + node.which + "' needs a whole number of items, found " + describe(count), node.count);
+    }
+    const target = await evaluate(node.target, state);
+    let list;
+    if (target instanceof FileRef || typeof target === "string") {
+      list = await linesOf(target, state, node);
+    } else if (Array.isArray(target)) {
+      list = target;
+    } else {
+      throw new ScriptError("'" + node.which + "' needs a list, a file or text, found " + describe(target), node.target);
+    }
+    if (node.which === "first") {
+      return list.slice(0, count);
+    }
+    return count === 0 ? [] : list.slice(-count);
   }
   // sorted <list>, unique <list>: a new list, and the old one stays as it was
   if (type === "listOp") {
@@ -4443,6 +4472,20 @@ async function realTarget(file, state, node) {
     throw new ScriptError("Path is outside the project root: " + file.path, node);
   }
   return { real, relative: nodePath.relative(realRoot, real).split(nodePath.sep).join("/") };
+}
+
+// replace in one file, with the change hooks; gives the replacements
+async function replaceInFile(file, old, replacement, state, command) {
+  // hooks see the pattern's text as old
+  const step = changeStep("replace", file, { old: old instanceof Pattern ? old.source : old, new: replacement });
+  await changeHooks("before", step, state, command);
+  const before = await readText(file, state, command);
+  const { text, replacements } = await replaceIn(before, old, replacement, state, command);
+  if (replacements.length > 0) {
+    await writeText(file, text, false, state, command);
+  }
+  await changeHooks("after", step, state, command);
+  return replacements;
 }
 
 // a replace that finds nothing is often a mistake, such as a wrong line break or indent

@@ -420,3 +420,28 @@ test("delete removes a link itself, not the file it points to", async () => {
   await assert.rejects(fs.lstat(path.join(root, "link.txt")));
   assert.equal(await readProject("a.txt"), "var x\nvar y\n");
 });
+
+test("replace in a list of files, or a glob", async () => {
+  await fs.writeFile(path.join(root, "b.txt"), "var z\n");
+  await fs.writeFile(path.join(root, "c.md"), "no match\n");
+  const result = await ok("replace 'var' with 'let' in [./a.txt, ./b.txt]\nprint the result's length");
+  assert.deepEqual(result.output, ["3"]);
+  assert.equal(await readProject("a.txt"), "let x\nlet y\n");
+  assert.equal(await readProject("b.txt"), "let z\n");
+  // a glob; a file with no match does not change
+  await ok("replace 'let' with 'const' in ./*.txt");
+  assert.equal(await readProject("b.txt"), "const z\n");
+  // undo takes back all the files of one replace
+  const undo = [];
+  await run("replace 'const' with 'var' in ./*.txt", { root, undo });
+  await run("undo", { root, undo });
+  assert.equal(await readProject("a.txt"), "const x\nconst y\n");
+  assert.equal(await readProject("b.txt"), "const z\n");
+});
+
+test("replace in a list stops before any write if one file cannot change", async () => {
+  await fs.writeFile(path.join(root, ".hidden"), "var h\n");
+  assert.match((await errors("replace 'var' with 'let' in [./a.txt, ./.hidden]"))[0], /hidden/);
+  assert.equal(await readProject("a.txt"), "var x\nvar y\n");
+  assert.deepEqual(await errors("replace 'a' with 'b' in ./*.nothing"), ["replace found no files in []"]);
+});

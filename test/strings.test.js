@@ -112,3 +112,53 @@ test('a raw string with more quotes ends at the same count, so it can hold three
   assert.deepEqual(await output('print ' + q4 + '\n  x\n' + q4), ['  x\n']);
   assert.deepEqual(await errors('print ' + q4 + 'oops' + q3), ['Unterminated raw string: it opens with 4 quotes, so it ends at 4 quotes', 'Expected a value']);
 });
+
+// ----- text blocks: lines that start with | -----
+
+test("a text block holds any text, exactly as typed", async () => {
+  const script = [
+    "set code to",
+    '| "a" b',
+    "| `tick` and ''' and \"\"\" and ${x} and \\n",
+    "print code",
+  ].join("\n");
+  assert.deepEqual(await output(script), ['"a" b\n`tick` and \'\'\' and """ and ${x} and \\n']);
+});
+
+test("one space after the | is dropped, spaces before it are ignored, and | alone is an empty line", async () => {
+  const script = [
+    "if true",
+    "  set code to",
+    "  |   indented",
+    "  |",
+    "  |last",
+    "  print code",
+    "end",
+  ].join("\n");
+  assert.deepEqual(await output(script), ["  indented\n\nlast"]);
+});
+
+test("an empty | line at the end gives a final line break", async () => {
+  assert.deepEqual(await output("set text to\n| one\n|\nprint text's length"), ["4"]);
+});
+
+test("a text block can be each side of replace", async () => {
+  const tokens = tokenize("replace\n| \"a\" b\nwith\n| \"c\"\nin x");
+  assert.deepEqual(tokens.map((t) => [t.type, t.value]), [["word", "replace"], ["string", '"a" b'], ["word", "with"], ["string", '"c"'], ["word", "in"], ["word", "x"]]);
+  assert.deepEqual(await output("set x to 'say \"a\" b'\nreplace\n| \"a\" b\nwith\n| \"c\"\nin x\nprint x"), ['say "c"']);
+});
+
+test("a | that is not at the start of a line is not a text block", async () => {
+  assert.match((await errors("print 1 | 2"))[0], /Unexpected character '\|'/);
+});
+
+test("first <n> of and last <n> of give up to n items", async () => {
+  assert.deepEqual(await output("print first 2 of [1, 2, 3]\nprint last 2 of [1, 2, 3]"), ["[1,2]", "[2,3]"]);
+  assert.deepEqual(await output("print first 5 of [1, 2]\nprint last 0 of [1, 2]"), ["[1,2]", "[]"]);
+  // text gives lines; a list of lines prints with their numbers
+  assert.deepEqual(await output("set t to 'a\nb\nc'\nprint last 2 of t"), ["2: b\n3: c"]);
+  // first of x is still one item, and a variable named first still works
+  assert.deepEqual(await output("print first of [1, 2]\nset first to 3\nprint first + 1"), ["1", "4"]);
+  assert.match((await errors("print first 1.5 of [1]"))[0], /needs a whole number of items/);
+  assert.match((await errors("print first 2 of 7"))[0], /needs a list, a file or text/);
+});

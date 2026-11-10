@@ -41,7 +41,7 @@ test("help lists commands, expressions and tools", async () => {
 
 test("help <word> shows syntax, description and examples", async () => {
   const text = (await run("help replace", { root })).output[0];
-  assert.match(text, /^replace <old> with <new> in <file or variable>/);
+  assert.match(text, /^replace <old> with <new> in <file, files, glob or variable>/);
   assert.match(text, /Examples:\n\n  replace 'var ' with 'let ' in \.\/src\/app\.js/);
 });
 

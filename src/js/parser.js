@@ -602,6 +602,30 @@ export function parse(source, options = {}) {
       }
     }
 
+    // first <n> of <x>, last <n> of <x>: up to n items, or lines of text or a file
+    // only with a value and "of" after it, so "first of x" and a variable named first still work
+    if (isWord("first") || isWord("last")) {
+      const wordToken = current();
+      const after = tokens[i + 1];
+      if (after !== undefined && !(after.type === "word" && (after.value === "of" || LINK_WORDS.includes(after.value)))) {
+        const savedIndex = i;
+        const savedErrorCount = errors.length;
+        i++;
+        const count = parseBefore(["of"], parseMath);
+        if (count !== null && isWord("of")) {
+          i++;
+          const target = parseAccess();
+          if (target === null) {
+            return null;
+          }
+          return node("take", wordToken, { which: wordToken.value, count, target });
+        }
+        // not a count: go back, and forget errors from the try
+        i = savedIndex;
+        errors.length = savedErrorCount;
+      }
+    }
+
     // read as an expression: set readme to read @/README.md
     if (isWord("read")) {
       const readToken = current();

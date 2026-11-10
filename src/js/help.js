@@ -91,9 +91,9 @@ export const HELP = [
   },
   {
     name: "replace", kind: "command",
-    syntax: "replace <old> with <new> in <file or variable> | replace lines <a> to <b> of <file> with <text>",
-    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
-    examples: ["replace 'var ' with 'let ' in ./src/app.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
+    syntax: "replace <old> with <new> in <file, files, glob or variable> | replace lines <a> to <b> of <file> with <text>",
+    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. In a list of files or a glob, every file is checked first, so one file that cannot change stops it before any write. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
+    examples: ["replace 'var ' with 'let ' in ./src/app.js", "replace 'getTotal(' with 'cartTotal(' in ./src/**/*.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
     name: "in", kind: "command",
@@ -261,8 +261,8 @@ export const HELP = [
   },
   {
     name: "strings", kind: "expression",
-    syntax: "'text'  \"text\"  'Hi ${name}'  \"\"\" raw \"\"\"",
-    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code. The line break right after the opening quotes is not part of the text. To start with a blank line, leave one empty line after the opening quotes. To hold three quotes, open with four and close with four. The text cannot start with a quote, since that makes one more opening quote: start the text on the next line.",
+    syntax: "'text'  \"text\"  'Hi ${name}'  \"\"\" raw \"\"\"  | text block",
+    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code. The line break right after the opening quotes is not part of the text. To start with a blank line, leave one empty line after the opening quotes. To hold three quotes, open with four and close with four. The text cannot start with a quote, since that makes one more opening quote: start the text on the next line. For code, and for any text with quotes, use a text block: lines that start with |. One space after the | is dropped; the rest is the text, exactly as typed, with no escapes and no ${}. A line with only | is an empty line.",
     examples: ["print 'Hi ${name}'", "set code to \"\"\"\n  const x = `${y}`\n\"\"\""],
   },
   {
@@ -297,14 +297,14 @@ export const HELP = [
   },
   {
     name: "first", kind: "expression",
-    syntax: "first of <list, file or text>",
-    description: "The first item of a list. For a file or text, the first line. An empty list gives null.",
-    examples: ["print first of ./src/*.js", "print the first of ./README.md"],
+    syntax: "first of <list, file or text> | first <n> of <list, file or text>",
+    description: "The first item of a list. For a file or text, the first line. An empty list gives null. 'first 10 of x' gives a list of up to 10 items (lines, for a file or text).",
+    examples: ["print first of ./src/*.js", "print the first of ./README.md", "print first 40 of the result"],
   },
   {
     name: "last", kind: "expression",
-    syntax: "last of <list, file or text>",
-    description: "The last item of a list. For a file or text, the last line. An empty list gives null.",
+    syntax: "last of <list, file or text> | last <n> of <list, file or text>",
+    description: "The last item of a list. For a file or text, the last line. An empty list gives null. 'last 10 of x' gives a list of up to 10 items (lines, for a file or text).",
     examples: ["print last of lines of the result's output", "print the number of the last of ./a.js"],
   },
   {
@@ -429,8 +429,8 @@ export function helpIndex(tools, only) {
 export const RECIPES = [
   {
     name: "Look before you edit",
-    description: "Read the lines you will change, edit by line number, then look again. Use a raw string for code, so the indent stays exact.",
-    example: 'print lines 40 to 52 of ./src/cart.js\nreplace lines 48 to 49 of ./src/cart.js with """\n  const total = items.reduce((sum, item) => sum + item.price, 0);\n  return total;\n"""\nprint lines 46 to 52 of ./src/cart.js',
+    description: "Read the lines you will change, edit by line number, then look again. Use a text block (lines that start with |) for code, so the text and its indent stay exact.",
+    example: "print lines 40 to 52 of ./src/cart.js\nreplace lines 48 to 49 of ./src/cart.js with\n|   const total = items.reduce((sum, item) => sum + item.price, 0);\n|   return total;\nprint lines 46 to 52 of ./src/cart.js",
   },
   {
     name: "Change, test, undo",

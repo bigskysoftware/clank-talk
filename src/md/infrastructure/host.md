@@ -32,6 +32,7 @@ Approved:
 - Approved (built): `limit output to <n> lines [or <n> KB]` at the top of AGENTS.talk, or in a policy, makes the limit smaller. It can never make it larger than the host's. The smallest of the host, AGENTS.talk and the policy wins. One line only; a number must be a whole number above 0. Not in imported .talk files.
 - Approved (built): `the previous output` is all the print output of the last script, as text, kept in memory by the host for each agent name (at most 5 MB; above it, the start and the end). Each script replaces it. It is null before the first script, and lost when the host restarts.
 - Approved: no `--log` option. The audit in `talk/audit/` replaces it: humans watch it with `tail -f`.
+- Approved (built): a stale server. A host keeps the code it started with. If a `.js` file in `src/js` changed after the host started, each result gets a warning: `The ClankTalk server is older than its code (runtime.js changed at 14:02). Ask the human to reconnect it (/mcp in Claude Code).` It never stops a script. Users who install from npm never see it; it helps when someone works on ClankTalk. Code: `staleCodeWarning` in `src/js/host.js`.
 
 ## Dogfood
 
