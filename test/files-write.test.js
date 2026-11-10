@@ -316,3 +316,23 @@ test('the hidden file error tells the human the line to add', async () => {
   assert.match((await errors(`write 'x' to ./src/.cache/a`))[0], /\n  allow changes to @\/src\/.cache\/$/);
   assert.match((await errors(`write 'x' to ./.gitignore`))[0], /\n  allow changes to @\/.gitignore$/);
 });
+
+test('in <file> replace, and in <files> find', async () => {
+  await ok("in ./a.txt\n  replace 'var x' with 'let x'");
+  assert.equal(await readProject('a.txt'), 'let x\nvar y\n');
+  const result = await ok("in ./a.txt find 'var'\nprint the result");
+  assert.deepEqual(result.output, ['a.txt:2: var y']);
+});
+
+test('in <file> do ... end: replace and find in the block use the file', async () => {
+  const result = await ok("in ./a.txt do\n  replace 'var x' with 'let x'\n  if true\n    replace 'var y' with 'let y'\n  end\n  find 'let'\n  print the result\nend");
+  assert.equal(await readProject('a.txt'), 'let x\nlet y\n');
+  assert.deepEqual(result.output, ['a.txt:1: let x\na.txt:2: let y']);
+});
+
+test('in a do block, an in on the next line starts a new command', async () => {
+  await fs.writeFile(path.join(root, 'b.txt'), 'b\n');
+  await ok("in ./a.txt do\n  replace 'var x' with 'X'\n  in ./b.txt replace 'b' with 'B'\nend");
+  assert.equal(await readProject('a.txt'), 'X\nvar y\n');
+  assert.equal(await readProject('b.txt'), 'B\n');
+});

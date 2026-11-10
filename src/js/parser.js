@@ -51,6 +51,9 @@ export function parse(source, options = {}) {
   // the follows set: words that a command claims, so an expression stops before them
   let follows = [];
 
+  // the target of an "in <target> do ... end" block, for replace and find with no "in" of their own
+  let inTarget = null;
+
   // how many loops the parser is inside, for break and continue
   let loopDepth = 0;
 
@@ -1048,6 +1051,10 @@ export function parse(source, options = {}) {
     if (old.type === "lines" && !isWord("in")) {
       return { type: "replaceLines", range: old, text: replacement, line: token.line, column: token.column };
     }
+    // in an "in <target> do ... end" block, the block names the target, and an "in" here starts a new command
+    if (inTarget !== null && old.type !== "lines") {
+      return { type: "replace", old, replacement, target: inTarget, line: token.line, column: token.column };
+    }
     if (!isWord("in")) {
       error("Expected 'in'");
       return null;
@@ -1057,11 +1064,67 @@ export function parse(source, options = {}) {
     return { type: "replace", old, replacement, target, line: token.line, column: token.column };
   }
 
+  // in <target> replace <old> with <new>, in <target> find <text>:
+  // the target first, for one command; the same as "replace ... in <target>" and "find ... in <target>"
+  function parseIn(token) {
+    const target = parseBefore(["replace", "find", "do"], parseExpression);
+    if (target === null) {
+      return null;
+    }
+    // in <target> do ... end: replace and find with no "in" of their own use the target
+    if (isWord("do")) {
+      i++;
+      const savedTarget = inTarget;
+      inTarget = target;
+      const body = parseBody(token);
+      inTarget = savedTarget;
+      return { type: "do", body, line: token.line, column: token.column };
+    }
+    if (isWord("replace")) {
+      const replaceToken = current();
+      i++;
+      const old = parseBefore(["with"], parseExpression);
+      if (old === null) {
+        return null;
+      }
+      if (old.type === "lines") {
+        error("Use 'replace lines ... of <file> with <text>' for a line edit");
+        return null;
+      }
+      if (!isWord("with")) {
+        error("Expected 'with'");
+        return null;
+      }
+      i++;
+      // an "in" after this starts a new command, as in a block
+      const replacement = parseBefore(["in"], parseExpression);
+      if (replacement === null) {
+        return null;
+      }
+      return { type: "replace", old, replacement, target, line: replaceToken.line, column: replaceToken.column };
+    }
+    if (isWord("find")) {
+      const findToken = current();
+      i++;
+      const text = parseBefore(["in"], parseExpression);
+      if (text === null) {
+        return null;
+      }
+      return { type: "find", text, target, line: findToken.line, column: findToken.column };
+    }
+    error("Expected replace, find or do after 'in " + "<file>'");
+    return null;
+  }
+
   // find <text> in <file, list of files, or text>
   function parseFind(token) {
     const text = parseBefore(["in"], parseExpression);
     if (text === null) {
       return null;
+    }
+    // in an "in <target> do ... end" block, the block names the target
+    if (inTarget !== null) {
+      return { type: "find", text, target: inTarget, line: token.line, column: token.column };
     }
     if (!isWord("in")) {
       error("Expected 'in'");
@@ -1175,6 +1238,7 @@ export function parse(source, options = {}) {
     append: parseWrite,
     replace: parseReplace,
     find: parseFind,
+    in: parseIn,
     git: parseGit,
     undo: parseUndo,
     ask: parseAsk,

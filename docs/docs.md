@@ -11,9 +11,8 @@ ClankTalk is a scripting language for AI agents. You give your agent ClankTalk, 
 Here is a script an agent might write:
 
 ```talk
-replace 'retries: 3'
-   with 'retries: 5'
-   in @/src/config.js
+in @/src/config.js
+  replace 'retries: 3' with 'retries: 5'
 
 run_tests
 
@@ -247,6 +246,19 @@ print the result
 write 'hello' to ./out.txt
 append ' world' to ./out.txt
 replace 'retries: 3' with 'retries: 5' in ./src/config.js
+```
+
+You can name the file first, too. That reads well when you change several things in one file:
+
+```talk
+in ./src/config.js
+  replace 'retries: 3' with 'retries: 5'
+
+in ./src/app.js do
+  replace 'var ' with 'let '
+  find 'TODO'
+  print the result
+end
 ```
 
 `replace` changes every match, and gives back a list of what it changed. If nothing matched, you get a warning, since that is usually a typo.

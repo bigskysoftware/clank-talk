@@ -96,6 +96,12 @@ export const HELP = [
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
+    name: "in", kind: "command",
+    syntax: "in <file or text> replace <old> with <new> | in <file or text> find <text> | in <file or text> do ... end",
+    description: "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'. In a 'do ... end' block, every replace and find with no target uses X, and an 'in' inside the block starts a new command.",
+    examples: ["in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'", "in ./src/app.js do\n  replace 'var ' with 'let '\n  find 'TODO'\n  print the result\nend"],
+  },
+  {
     name: "find", kind: "command",
     syntax: "find <text> in <file, list of files, or text>",
     description: "Put the lines that contain the text in the result. Each line has number and text, and file when it comes from a file. print shows path:number: text. The match is plain text, and letter case counts.",

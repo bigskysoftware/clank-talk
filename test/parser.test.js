@@ -178,3 +178,24 @@ test('wait, wait until, and fetch as a value', () => {
   assert.equal(until.condition.left.object.as, 'response');
   assert.equal(until.within.ms, 1000);
 });
+
+test('in <target> replace and find mean the same as the target last', () => {
+  assert.deepEqual(commands("in ./a.js\n  replace 'x' with 'y'"), commands("replace 'x' with 'y' in ./a.js"));
+  assert.deepEqual(commands("in ./src/*.js find 'TODO'"), commands("find 'TODO' in ./src/*.js"));
+  assert.deepEqual(errors("in ./a.js print 1"), ["Expected replace, find or do after 'in <file>' @1:11"]);
+  assert.deepEqual(errors("in ./a.js replace 'x' with 'y' in ./b.js"), ["Expected replace, find or do after 'in <file>' @1:35"]);
+  assert.equal(commands("in ./a.js replace 'x' with 'y'\nin ./b.js find 'z'").length, 2);
+  assert.match(errors("in ./a.js replace lines 1 to 2 of ./a.js with 'x'")[0], /^Use 'replace lines/);
+});
+
+test("'in' as a command does not change other uses of in", () => {
+  assert.equal(commands("for x in [1]\nend")[0].type, 'for');
+  assert.equal(commands("print 1 is in [1]")[0].value.type, 'binary');
+});
+
+test('in <target> do ... end', () => {
+  const [block] = commands("in ./a.js do\n  replace 'x' with 'y'\n  find 'z'\nend");
+  assert.equal(block.type, 'do');
+  assert.deepEqual(block.body.map((c) => c.target), [{ type: 'path', value: './a.js' }, { type: 'path', value: './a.js' }]);
+  assert.match(errors("in ./a.js do\n  replace 'x' with 'y'")[0], /Expected 'end'/);
+});

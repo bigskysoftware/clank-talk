@@ -574,6 +574,12 @@ async function runCommand(command, state, tools, maxSteps) {
     return command.type;
   }
 
+  // in <target> do ... end: the body runs as is; the parser already gave its replace and find the target
+  // break and continue pass up to a loop around it
+  if (command.type === "do") {
+    return await runCommands(command.body, state, tools, maxSteps);
+  }
+
   if (command.type === "for") {
     const list = await evaluate(command.list, state);
     const items = loopItems(list, command);

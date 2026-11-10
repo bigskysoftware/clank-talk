@@ -5,9 +5,8 @@
 <div class="hero-bubble">
 
 ```talk
-replace 'retries: 3'
-   with 'retries: 5'
-   in @/src/config.js
+in @/src/config.js
+  replace 'retries: 3' with 'retries: 5'
 
 run_tests
 
