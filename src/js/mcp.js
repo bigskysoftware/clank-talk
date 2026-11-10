@@ -7,7 +7,6 @@
 //
 // Logs go to stderr. stdout is only for protocol messages.
 
-import readline from "node:readline";
 import fs from "node:fs/promises";
 import { readFileSync, watch } from "node:fs";
 import { createHash } from "node:crypto";
@@ -453,28 +452,42 @@ export function main(args) {
   };
   watchTalkFiles(session);
 
-  const input = readline.createInterface({ input: process.stdin });
-  input.on("line", async (line) => {
-    if (line.trim() === "") {
-      return;
-    }
-    let message;
-    try {
-      message = JSON.parse(line);
-    } catch (err) {
-      process.stdout.write(JSON.stringify(replyError(null, -32700, "Parse error")) + "\n");
-      return;
-    }
-    try {
-      const response = await handleMessage(message, session);
-      if (response !== null) {
-        process.stdout.write(JSON.stringify(response) + "\n");
-      }
-    } catch (err) {
-      process.stderr.write("clank-talk: " + err.stack + "\n");
-      if (message.id !== undefined && message.id !== null) {
-        process.stdout.write(JSON.stringify(replyError(message.id, -32603, err.message)) + "\n");
-      }
+  // one message on each line; split on \n only: readline also splits on U+2028 and U+2029,
+  // which JSON allows in a string, and then the request gets no answer
+  let buffer = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    let index = buffer.indexOf("\n");
+    while (index !== -1) {
+      handleLine(buffer.slice(0, index), session);
+      buffer = buffer.slice(index + 1);
+      index = buffer.indexOf("\n");
     }
   });
+}
+
+// one line from stdin: a JSON-RPC message; the answer, if any, goes to stdout
+async function handleLine(line, session) {
+  if (line.trim() === "") {
+    return;
+  }
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch (err) {
+    process.stdout.write(JSON.stringify(replyError(null, -32700, "Parse error")) + "\n");
+    return;
+  }
+  try {
+    const response = await handleMessage(message, session);
+    if (response !== null) {
+      process.stdout.write(JSON.stringify(response) + "\n");
+    }
+  } catch (err) {
+    process.stderr.write("clank-talk: " + err.stack + "\n");
+    if (message.id !== undefined && message.id !== null) {
+      process.stdout.write(JSON.stringify(replyError(message.id, -32603, err.message)) + "\n");
+    }
+  }
 }

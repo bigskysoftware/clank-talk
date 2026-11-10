@@ -92,12 +92,16 @@ test("the server speaks JSON-RPC over stdio", async () => {
   send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
   send({ jsonrpc: "2.0", method: "notifications/initialized" });
   send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "clank_talk", arguments: { script: "print 'hello'" } } });
-  while (lines.length < 2) {
+  // U+2028 and U+2029 are allowed in a JSON string, so they do not end a line
+  const separators = String.fromCharCode(0x2028) + String.fromCharCode(0x2029);
+  send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "clank_talk", arguments: { script: "print 'a" + separators + "b'" } } });
+  while (lines.length < 3) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   child.kill();
   assert.equal(lines[0].id, 1);
   assert.equal(lines[1].result.content[0].text, "hello");
+  assert.equal(lines[2].result.content[0].text, "a" + separators + "b");
 });
 
 test('the log has each script as written, and what happened', async () => {
