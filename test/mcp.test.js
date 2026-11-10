@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { handleMessage, toolsChanged } from "../src/js/harnesses/mcp.js";
-import { staleCodeWarning } from "../src/js/host.js";
+import { staleCodeWarning, codeHashes } from "../src/js/host.js";
 
 let root;
 let session;
@@ -258,10 +258,20 @@ test("a warning when the code changed after the server started", async () => {
     await fs.mkdir(path.join(dir, "harnesses"));
     await fs.writeFile(path.join(dir, "harnesses", "mcp.js"), "// code");
     await fs.writeFile(path.join(dir, "notes.txt"), "not code");
-    assert.equal(staleCodeWarning(dir, Date.now() + 60_000), null);
-    const warning = staleCodeWarning(dir, 0);
+    const baseline = codeHashes(dir);
+    assert.equal(staleCodeWarning(dir, Date.now() + 60_000, baseline), null);
+    // a newer change time with the same text, as after git switch: no warning
+    await fs.writeFile(path.join(dir, "harnesses", "mcp.js"), "// code");
+    assert.equal(staleCodeWarning(dir, 0, baseline), null);
+    // new text: a warning
+    await fs.writeFile(path.join(dir, "harnesses", "mcp.js"), "// new code");
+    const warning = staleCodeWarning(dir, 0, baseline);
     assert.match(warning.message, /^The ClankTalk server is older than its code \(harnesses\/mcp\.js changed at \d\d:\d\d\)\. Ask the human to reconnect it/);
     assert.equal(warning.line, undefined);
+    // a new .js file is new code too
+    await fs.writeFile(path.join(dir, "harnesses", "mcp.js"), "// code");
+    await fs.writeFile(path.join(dir, "extra.js"), "// extra");
+    assert.match(staleCodeWarning(dir, 0, baseline).message, /extra\.js changed/);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

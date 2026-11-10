@@ -249,27 +249,59 @@ export function keptOutput(result) {
 }
 
 // ----- a stale server -----
-// the server keeps the code it started with; if a .js file in src/js changed after that,
+// the server keeps the code it started with; if the text of a .js file in src/js changed after that,
 // each result gets a warning, so the agent can ask the human to reconnect
 // see src/md/infrastructure/host.md
 
 const CODE_DIR = nodePath.dirname(fileURLToPath(import.meta.url));
 const STARTED = Date.now();
 
-export function staleCodeWarning(dir = CODE_DIR, since = STARTED) {
+// the .js files under a folder, by path, with a hash of each file's text
+export function codeHashes(dir) {
+  const hashes = new Map();
+  for (const name of readdirSync(dir, { recursive: true })) {
+    const path = String(name);
+    if (!path.endsWith(".js")) {
+      continue;
+    }
+    try {
+      hashes.set(path.split(nodePath.sep).join("/"), createHash("sha256").update(readFileSync(nodePath.join(dir, path))).digest("hex"));
+    } catch (err) {
+      // a file that went away while the folder was read
+    }
+  }
+  return hashes;
+}
+
+// the code as it was when the server started
+const START_HASHES = codeHashes(CODE_DIR);
+
+// a file counts only if its text changed: git switch and git merge rewrite files with the same text
+// the change time is a quick first check, so most calls read no file
+export function staleCodeWarning(dir = CODE_DIR, since = STARTED, baseline = START_HASHES) {
   let newest = null;
   for (const name of readdirSync(dir, { recursive: true })) {
-    if (!String(name).endsWith(".js")) {
+    const path = String(name);
+    if (!path.endsWith(".js")) {
       continue;
     }
     let time;
+    let hash;
     try {
-      time = statSync(nodePath.join(dir, String(name))).mtimeMs;
+      time = statSync(nodePath.join(dir, path)).mtimeMs;
+      if (time <= since) {
+        continue;
+      }
+      hash = createHash("sha256").update(readFileSync(nodePath.join(dir, path))).digest("hex");
     } catch (err) {
       continue;
     }
-    if (time > since && (newest === null || time > newest.time)) {
-      newest = { name: String(name).split(nodePath.sep).join("/"), time };
+    const key = path.split(nodePath.sep).join("/");
+    if (baseline.get(key) === hash) {
+      continue;
+    }
+    if (newest === null || time > newest.time) {
+      newest = { name: key, time };
     }
   }
   if (newest === null) {

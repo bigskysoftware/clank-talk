@@ -44,7 +44,6 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 ## Runtime and hosts
 
-- **Stale-server warning by content.** The warning compares change times, so `git switch` and `git merge` give a false warning: they rewrite files with the same text. Compare a hash of the code instead.
 - **Progress for long scripts.** MCP progress notifications with the current line, step and time. Proposed in `infrastructure/host.md`.
 - **Pause and resume a run:** `execution.running`, `pause()` and `resume()`, so the agent can look at a program's output so far.
 - **A memory limit** for scripts. An in-process runtime cannot enforce one well. See `features/sandbox.md`.
