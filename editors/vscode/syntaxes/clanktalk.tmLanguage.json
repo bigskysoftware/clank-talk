@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ClankTalk",
+  "scopeName": "source.clanktalk",
+  "comment": "Follows src/js/tokenizer.js. Paths and urls are close, not exact: a glob with [ ] can end early here.",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#raw-string" },
+    { "include": "#string-single" },
+    { "include": "#string-double" },
+    { "include": "#url" },
+    { "include": "#path" },
+    { "include": "#number" },
+    { "include": "#possessive" },
+    { "include": "#tool-definition" },
+    { "include": "#keywords" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.clanktalk",
+      "match": "#.*$"
+    },
+    "raw-string": {
+      "name": "string.quoted.triple.clanktalk",
+      "begin": "\"\"\"",
+      "end": "\"\"\""
+    },
+    "string-single": {
+      "name": "string.quoted.single.clanktalk",
+      "begin": "(?<![\\w\\]\\}\\)])'|(?<=[\\w\\]\\}\\)])'(?!s\\b)",
+      "end": "'",
+      "patterns": [{ "include": "#escape" }, { "include": "#template" }]
+    },
+    "string-double": {
+      "name": "string.quoted.double.clanktalk",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "include": "#escape" }, { "include": "#template" }]
+    },
+    "escape": {
+      "name": "constant.character.escape.clanktalk",
+      "match": "\\\\."
+    },
+    "template": {
+      "name": "meta.embedded.expression.clanktalk",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.clanktalk" } },
+      "endCaptures": { "0": { "name": "punctuation.section.embedded.end.clanktalk" } },
+      "patterns": [{ "include": "$self" }]
+    },
+    "url": {
+      "name": "markup.underline.link.clanktalk",
+      "match": "\\b[A-Za-z][A-Za-z0-9+.-]*://[^\\s),]*"
+    },
+    "path": {
+      "name": "string.unquoted.path.clanktalk",
+      "match": "(?:\\.\\.?/|@/)(?:\"[^\"\\n]*\"|(?:[^\\s),'\\]\\}]|'(?!s\\b))*)"
+    },
+    "number": {
+      "name": "constant.numeric.clanktalk",
+      "match": "(?<![\\w.])-?\\d[\\d_]*(?:\\.\\d+)?\\b"
+    },
+    "possessive": {
+      "name": "keyword.operator.possessive.clanktalk",
+      "match": "(?<=[\\w\\]\\}\\)])'s\\b"
+    },
+    "tool-definition": {
+      "match": "\\b(tool)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.tool.clanktalk" },
+        "2": { "name": "entity.name.function.clanktalk" }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.clanktalk",
+          "match": "\\b(if|else|end|then|do|for|in|index|repeat|times|while|until|break|continue|on|error|stop|wait|reject)\\b"
+        },
+        {
+          "name": "keyword.other.command.clanktalk",
+          "match": "\\b(print|set|increment|decrement|read|write|append|replace|find|put|remove|run|start|fetch|ask|undo|help|tool|import|before|after|allow|git|audit)\\b"
+        },
+        {
+          "name": "constant.language.clanktalk",
+          "match": "\\b(true|false|null)\\b"
+        },
+        {
+          "name": "variable.language.clanktalk",
+          "match": "\\b(the|it|result)\\b"
+        },
+        {
+          "name": "variable.other.global.clanktalk",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "keyword.operator.word.clanktalk",
+          "match": "\\b(and|or|not|no|is|mod|less|greater|than|equal|contains|does|contain|starts|ends|exists|exist|empty|as|of|with|to|by|within|sandbox|network|local|writes|reads|changes|env)\\b"
+        }
+      ]
+    }
+  }
+}

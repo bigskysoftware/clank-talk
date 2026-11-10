@@ -1,0 +1,28 @@
+{
+  "name": "clanktalk",
+  "displayName": "ClankTalk",
+  "description": "Syntax highlighting for ClankTalk (.talk files and AGENTS.talk)",
+  "version": "0.2.0",
+  "publisher": "bigskysoftware",
+  "license": "BSD-3-Clause",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "clanktalk",
+        "aliases": ["ClankTalk", "clanktalk"],
+        "extensions": [".talk"],
+        "filenames": ["AGENTS.talk"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "clanktalk",
+        "scopeName": "source.clanktalk",
+        "path": "./syntaxes/clanktalk.tmLanguage.json"
+      }
+    ]
+  }
+}
