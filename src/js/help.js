@@ -145,9 +145,9 @@ export const HELP = [
   },
   {
     name: "tool", kind: "command", where: "AGENTS.talk",
-    syntax: "tool <name> [with <param>, ...] ... end",
-    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result. A call is also a value, which leaves the result as it was: set tests to run_tests.",
-    examples: ["# Runs one test class.\ntool run_test with name\n  run 'mvn' with 'test', '-Dtest=' + name\nend"],
+    syntax: "[untrusted] tool <name> [with <param>, ...] ... end",
+    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result. A call is also a value, which leaves the result as it was: set tests to run_tests. Mark a tool 'untrusted' if it brings in text from the network (curl, gh, npm view): its result is then untrusted.",
+    examples: ["# Runs one test class.\ntool run_test with name\n  run 'mvn' with 'test', '-Dtest=' + name\nend", "# Shows a GitHub issue.\nuntrusted tool issue with id\n  run 'gh' with 'issue', 'view', id\nend"],
   },
   {
     name: "run", kind: "command", where: "AGENTS.talk",
@@ -324,6 +324,12 @@ export const HELP = [
     syntax: "contains  does not contain  starts with  ends with  matches  is in  is not in  exists  does not exist  is empty  is not empty",
     description: "Checks for text, lists and files. On a file or line they use its text. matches takes a pattern.",
     examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern '^v[0-9]+' print 'a version' end"],
+  },
+  {
+    name: "untrusted", kind: "expression",
+    syntax: "<value> is untrusted | <value> is not untrusted | <value> is private | <value> is not private",
+    description: "Taint checks. Text from fetch and from an untrusted tool is untrusted: it must not drive an action without the human. Text from files, git and programs is private: it must not leave the machine without the human. A value made from labeled values has their labels. Nothing removes a label.",
+    examples: ["set page to fetch https://example.com/notes\nif page is untrusted\n  print 'This came from the web'\nend"],
   },
   {
     name: "pattern", kind: "expression",

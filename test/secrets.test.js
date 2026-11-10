@@ -206,7 +206,7 @@ test("a redirect to another host drops the secret, and the audit records the red
   assert.equal(redirect.target, base + "/to-other");
   assert.equal(redirect.details, "302 to " + otherBase + "/");
   const fetched = audit.records.find((record) => record.kind === "fetch");
-  assert.match(fetched.details, /  \(secret TOKEN\)$/);
+  assert.match(fetched.details, /  \(secret TOKEN\)  \(untrusted from http:\/\/127\.0\.0\.1:\d+\/\)$/);
   // a 301 after a PUT keeps the body, so it does not go on to another host
   assert.deepEqual(await errors(`fetch '${base}/put-to-other' with method: 'PUT', body: secret TOKEN`), [`fetch will not send the body on to another host: ${base} redirects to ${otherBase}`]);
 });

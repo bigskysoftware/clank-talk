@@ -258,12 +258,21 @@ export function parse(source, options = {}) {
       i++;
       return operator + " empty";
     }
+    // is private, is untrusted: taint checks; see src/md/features/taint.md
+    if (isWord("private") || isWord("untrusted")) {
+      const word = current().value;
+      i++;
+      return operator + " " + word;
+    }
     if (isWord("in")) {
       i++;
       return operator + " in";
     }
     return operator;
   }
+
+  // operators with no right side
+  const CHECKS = ["exists", "does not exist", "is empty", "is not empty", "is private", "is not private", "is untrusted", "is not untrusted"];
 
   function parseComparison() {
     const left = parseMath();
@@ -325,7 +334,7 @@ export function parse(source, options = {}) {
     }
 
     // checks have no right side
-    if (operator === "exists" || operator === "does not exist" || operator === "is empty" || operator === "is not empty") {
+    if (CHECKS.includes(operator)) {
       return node("check", token, { operator, value: left });
     }
 
@@ -2304,11 +2313,17 @@ export function parse(source, options = {}) {
         }
         continue;
       }
+      // untrusted tool <name>: the tool's result is untrusted; see src/md/features/taint.md
+      const untrusted = isWord("untrusted") && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "tool";
+      if (untrusted) {
+        i++;
+      }
       if (isWord("tool")) {
         const token = current();
         i++;
         const definition = parseToolDefinition(token);
         if (definition !== null) {
+          definition.untrusted = untrusted;
           definitions.push(definition);
         } else {
           skipToNextCommand();

@@ -10,6 +10,7 @@ import { helpIndex, helpFor } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
+import * as taint from "./taint.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
 import os from "node:os";
@@ -306,6 +307,9 @@ async function execute(source, options, execution) {
     variables: Object.create(null),
     globals: options.globals || Object.create(null),
     result: null,
+    // taint: the open frames, and the labels of the result; see src/js/taint.js
+    taintFrames: [],
+    resultLabels: taint.none(),
     // the .talk file of the tool or hook now running; null for the script
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
@@ -1091,8 +1095,20 @@ async function runCommands(commands, state, tools, maxSteps) {
     }
     takeStep(command, state, maxSteps);
     let signal;
+    // each command has a root taint frame; a new result takes its labels
     try {
-      signal = await runCommand(command, state, tools, maxSteps);
+      taint.begin(state, true);
+      const resultBefore = state.result;
+      try {
+        signal = await runCommand(command, state, tools, maxSteps);
+        if (state.result !== resultBefore) {
+          state.resultLabels = taint.current(state);
+        } else {
+          state.resultLabels = taint.union(state.resultLabels, taint.current(state));
+        }
+      } finally {
+        taint.end(state);
+      }
     } catch (caught) {
       let err = caught;
       // a secret in the wrong place: the error points at this command, and names it
@@ -1208,10 +1224,12 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "for") {
-    const list = await evaluate(command.list, state);
+    const { value: list, labels } = await evaluateLabeled(command.list, state);
     const items = loopItems(list, command);
     for (let index = 0; index < items.length; index++) {
+      // each item has the labels of the list
       setOwn(scopeFor(command.name, state), command.name, items[index]);
+      taint.setSlot(scopeFor(command.name, state), command.name, labels);
       if (command.index !== null) {
         setOwn(scopeFor(command.index, state), command.index, index);
       }
@@ -1422,21 +1440,32 @@ async function runCommand(command, state, tools, maxSteps) {
 
   if (command.type === "toolCall") {
     const args = [];
+    // each argument keeps its labels inside the tool
+    const argLabels = [];
     for (const arg of command.args) {
-      args.push(await evaluate(arg, state));
+      const { value, labels } = await evaluateLabeled(arg, state);
+      args.push(value);
+      argLabels.push(labels);
     }
     const named = Object.create(null);
+    const namedLabels = Object.create(null);
     for (const arg of command.named) {
-      named[arg.name] = await evaluate(arg.value, state);
+      const { value, labels } = await evaluateLabeled(arg.value, state);
+      named[arg.name] = value;
+      namedLabels[arg.name] = labels;
     }
 
     const step = Object.create(null);
     step.args = args;
     step.named = named;
+    const definition = state.definitions[command.name];
+    // an untrusted tool's result is untrusted; the label goes on before the hooks and the audit, so both show it
+    if (definition !== undefined && definition.untrusted) {
+      taint.addLabel(state, taint.UNTRUSTED, "tool " + command.name);
+    }
     await runHooks("before", [command.name], step, state, command);
     auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).join(", "));
 
-    const definition = state.definitions[command.name];
     if (definition !== undefined) {
       // "within" on the call limits every run inside the tool; the shorter limit wins
       const savedLimit = state.timeLimit;
@@ -1444,7 +1473,7 @@ async function runCommand(command, state, tools, maxSteps) {
         state.timeLimit = shorter(state.timeLimit, await durationMs(command.within, state));
       }
       try {
-        state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
+        state.result = await callTool(definition, args, named, command, state, tools, maxSteps, argLabels, namedLabels);
       } finally {
         state.timeLimit = savedLimit;
       }
@@ -1470,7 +1499,38 @@ async function runCommand(command, state, tools, maxSteps) {
 
 // ----- expressions -----
 
+// every expression has a taint frame: it collects the labels of what the expression reads
+// see src/js/taint.js
 async function evaluate(node, state) {
+  taint.begin(state, false);
+  try {
+    const value = await evaluateNode(node, state);
+    taint.withValue(state, value, canLabel(value));
+    return value;
+  } finally {
+    taint.end(state);
+  }
+}
+
+// a value and its labels
+async function evaluateLabeled(node, state) {
+  taint.begin(state, false);
+  try {
+    const value = await evaluate(node, state);
+    return { value, labels: taint.current(state) };
+  } finally {
+    taint.end(state);
+  }
+}
+
+const TAINT_CHECKS = ["is private", "is not private", "is untrusted", "is not untrusted"];
+
+// a list or object is data that can take labels; a file reference, a pattern or a secret is not
+function canLabel(value) {
+  return !(value instanceof FileRef || value instanceof Pattern || value instanceof Secret);
+}
+
+async function evaluateNode(node, state) {
   const type = node.type;
 
   if (type === "string" || type === "number" || type === "boolean") {
@@ -1568,11 +1628,13 @@ async function evaluate(node, state) {
     return secretValue(node, state);
   }
   if (type === "result") {
+    taint.add(state, state.resultLabels);
     return state.result;
   }
   if (type === "variable") {
     const scope = scopeFor(node.name, state);
     if (Object.hasOwn(scope, node.name)) {
+      taint.add(state, taint.slot(scope, node.name));
       return scope[node.name];
     }
     // a $ global that is not set yet is null, so "if $last is null" works on the first run
@@ -1621,6 +1683,7 @@ async function evaluate(node, state) {
     return new ProcessInfo(record, state);
   }
   if (type === "previousOutput") {
+    taint.addLabel(state, taint.PRIVATE);
     return state.previousOutput;
   }
   if (type === "processes") {
@@ -1628,6 +1691,7 @@ async function evaluate(node, state) {
   }
   // the audit: this session's records, oldest first, as plain values
   if (type === "audit") {
+    taint.addLabel(state, taint.PRIVATE);
     const list = [];
     for (const record of state.audit.records) {
       list.push({ ...record });
@@ -1670,6 +1734,12 @@ async function evaluate(node, state) {
     return evaluateUnary(node, value);
   }
   if (type === "check") {
+    // is private, is untrusted: a check of the value's labels, not of the value
+    if (TAINT_CHECKS.includes(node.operator)) {
+      const { labels } = await evaluateLabeled(node.value, state);
+      const label = node.operator.endsWith("private") ? taint.PRIVATE : taint.UNTRUSTED;
+      return node.operator.startsWith("is not") ? !taint.has(labels, label) : taint.has(labels, label);
+    }
     // "x exists" asks if a variable is set, so an unset variable is not an error here
     const isWhether = node.operator === "exists" || node.operator === "does not exist";
     if (isWhether && node.value.type === "variable" && !Object.hasOwn(scopeFor(node.value.name, state), node.value.name)) {
@@ -1733,7 +1803,7 @@ async function evaluate(node, state) {
 
 // run a tool from AGENTS.talk, with its own local variables
 // gives back the tool's result at the end of the tool
-async function callTool(definition, args, named, command, state, tools, maxSteps) {
+async function callTool(definition, args, named, command, state, tools, maxSteps, argLabels, namedLabels) {
   if (args.length > definition.params.length) {
     throw new ScriptError("Tool '" + definition.name + "' takes " + definition.params.length + " arguments, found " + args.length, command);
   }
@@ -1741,16 +1811,24 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   for (let index = 0; index < definition.params.length; index++) {
     const param = definition.params[index];
     setOwn(locals, param, index < args.length ? args[index] : null);
+    if (argLabels && index < argLabels.length) {
+      taint.setSlot(locals, param, argLabels[index]);
+    }
   }
   for (const name of Object.keys(named)) {
     if (!definition.params.includes(name)) {
       throw new ScriptError("Tool '" + definition.name + "' has no argument named '" + name + "'", command);
     }
     setOwn(locals, name, named[name]);
+    if (namedLabels) {
+      taint.setSlot(locals, name, namedLabels[name]);
+    }
   }
 
   const savedVariables = state.variables;
   const savedResult = state.result;
+  const savedResultLabels = state.resultLabels;
+  state.resultLabels = taint.none();
   const savedHandler = state.handler;
   const savedHandling = state.handling;
   state.variables = locals;
@@ -1764,6 +1842,8 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   state.auditFrom = definition.name;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
+    // the call takes the labels of the tool's result
+    taint.add(state, state.resultLabels);
     return state.result;
   } catch (err) {
     // an error inside the tool points into AGENTS.talk
@@ -1774,6 +1854,7 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
+    state.resultLabels = savedResultLabels;
     state.handler = savedHandler;
     state.file = savedFile;
     state.handling = savedHandling;
@@ -1834,6 +1915,7 @@ async function runProgram(command, state) {
   auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + secretNote(command.secrets));
   // the output can hold a secret's value, for example from "env"
   result.output = redact(result.output, state);
+  taint.addLabel(state, taint.PRIVATE);
 
   // after hooks see the result
   state.result = result;
@@ -1935,6 +2017,7 @@ async function runGit(command, state) {
   if (command.operation === "diff" || command.operation === "show") {
     result.output = hideSecretDiffs(result.output);
   }
+  taint.addLabel(state, taint.PRIVATE);
   state.result = result.output;
   await runHooks("after", ["git"], step, state, command);
   return result.output;
@@ -2398,6 +2481,7 @@ class ProcessInfo {
     this.code = record.code;
     // the output can hold a secret's value
     this.output = redact(record.output, state);
+    taint.addLabel(state, taint.PRIVATE);
   }
 }
 
@@ -2669,6 +2753,8 @@ async function runFetch(command, state) {
   // a server can send a secret's value back, so the response text shows <secret NAME>
   const text = redact(await readLimited(response, current, command), state);
   step.status = response.status;
+  // text from the web is untrusted: it must not drive an action without a question
+  taint.addLabel(state, taint.UNTRUSTED, current.href);
 
   let result;
   if (command.as === "response") {
@@ -2918,8 +3004,18 @@ function localDate(date) {
 }
 
 // one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
+// a step notes the labels of what its command read, such as (private)
+// all file text is private, so a read or a file change notes only untrusted
+const FILE_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete"];
 function auditStep(state, kind, target, details) {
-  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact(details || "", state), from: state.auditFrom };
+  let labels = taint.current(state);
+  if (FILE_STEPS.includes(kind)) {
+    labels = taint.without(labels, taint.PRIVATE);
+  }
+  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact((details || "") + taint.note(labels), state), from: state.auditFrom };
+  if (labels.size > 0) {
+    record.labels = taint.forHook(labels);
+  }
   state.auditSteps.push(record);
   state.audit.records.push(record);
   if (state.audit.records.length > AUDIT_RECORDS) {
@@ -3199,6 +3295,9 @@ async function runHooks(when, names, step, state, node) {
   if (state.inHook) {
     return;
   }
+  // the step's labels: what the command read so far; the step's fields carry them too
+  step.labels = taint.forHook(taint.current(state));
+  taint.attach(step, taint.current(state));
   for (const hook of state.hooks) {
     if (hook.when === when && names.includes(hook.name)) {
       await runHook(hook, step, state, node);
@@ -3210,6 +3309,7 @@ async function runHooks(when, names, step, state, node) {
 async function runHook(hook, step, state, node) {
   const savedVariables = state.variables;
   const savedResult = state.result;
+  const savedResultLabels = state.resultLabels;
   const savedHandler = state.handler;
   const savedHandling = state.handling;
   const locals = Object.create(null);
@@ -3236,6 +3336,7 @@ async function runHook(hook, step, state, node) {
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
+    state.resultLabels = savedResultLabels;
     state.handler = savedHandler;
     state.handling = savedHandling;
     state.inHook = false;
@@ -3321,13 +3422,16 @@ function scopeFor(name, state) {
 }
 
 // set a variable, a property or an index
+// the variable or object takes the labels of the command so far, which hold the value's labels
 async function assign(target, value, state) {
   if (target.type === "result") {
     state.result = value;
     return;
   }
   if (target.type === "variable") {
-    setOwn(scopeFor(target.name, state), target.name, value);
+    const scope = scopeFor(target.name, state);
+    setOwn(scope, target.name, value);
+    taint.setSlot(scope, target.name, taint.current(state));
     return;
   }
 
@@ -3353,6 +3457,8 @@ async function assign(target, value, state) {
   } catch (err) {
     throw new ScriptError("Cannot set '" + name + "'", target);
   }
+  // a list or object keeps one set of labels for all its items
+  taint.attach(object, taint.current(state));
 }
 
 // defineProperty always makes a plain own field, even for names like __proto__
@@ -3695,6 +3801,8 @@ async function readText(file, state, node) {
   // remember what the script saw, for the stale-write check
   state.seen.set(real, text);
   step.text = text;
+  // file text is private: it must not leave the machine without a question
+  taint.addLabel(state, taint.PRIVATE);
   auditRead(state, file.path);
   await runHooks("after", ["read"], step, state, node);
   return text;
