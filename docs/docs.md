@@ -37,14 +37,14 @@ ClankTalk is under construction. Expect things to change.
 
 ## Getting Started
 
-ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server with one tool, `clank_talk`. Point your agent at it with a `.mcp.json` in your project:
+ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server with one tool, `clank_talk`. It needs Node 22 or later. Point your agent at it with a `.mcp.json` in your project:
 
 ```json
 {
   "mcpServers": {
     "clank-talk": {
-      "command": "node",
-      "args": ["bin/clank-talk-mcp.js", "--log", "tmp/clank-talk.log"]
+      "command": "npx",
+      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp", "--log", "tmp/clank-talk.log"]
     }
   }
 }
@@ -75,8 +75,6 @@ Want to see what your agent is up to? Watch the log:
 ```bash
 tail -f tmp/clank-talk.log
 ```
-
-TODO: npm package.
 
 ## The Language
 

@@ -164,6 +164,71 @@ pre {
   .compare { grid-template-columns: 1fr; }
 }
 
+/* install box, under the hero */
+.install { max-width: 680px; margin: 2rem auto 0; text-align: center; }
+.install-picker { position: relative; display: inline-flex; align-items: center; gap: 0.6rem; }
+.install-label { font-family: var(--font-heading); font-size: 0.95rem; color: var(--text-muted); }
+.install-button {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  font: inherit; padding: 6px 12px; cursor: pointer;
+  background: #fff; border: 1px solid var(--border); border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.install-button:hover { border-color: var(--text-muted); }
+.install-chevron {
+  width: 7px; height: 7px; margin-left: 2px;
+  border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted);
+  transform: translateY(-2px) rotate(45deg);
+}
+.install-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 10;
+  min-width: 220px; margin: 0; padding: 6px; list-style: none; text-align: left;
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+.install-menu li {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 6px 10px; border-radius: 6px; cursor: pointer;
+}
+.install-menu li:hover, .install-menu li:focus { background: var(--bg-subtle); outline: none; }
+.agent-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 22px; height: 22px; border-radius: 6px;
+  font-family: var(--font-heading); font-size: 0.8rem; font-weight: 700; color: #fff;
+}
+.agent-icon.claude { background: #d97757; }
+.agent-icon.cursor { background: #111; }
+.agent-icon.codex { background: #10a37f; }
+.agent-icon.pi { background: #6b4fbb; }
+.agent-icon.other { background: #5b6472; }
+.install-code { position: relative; margin-top: 0.8rem; text-align: left; }
+.install-code pre { margin: 0; padding-right: 5rem; }
+.install-copy {
+  position: absolute; top: 8px; right: 8px;
+  font: inherit; font-size: 0.8rem; padding: 3px 10px; cursor: pointer;
+  color: var(--code-text); background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3); border-radius: var(--radius);
+}
+.install-note { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.4rem; }
+
+/* the home page: features two to a row, one column on phones */
+.showcase { max-width: 1100px; }
+.feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem 48px;
+  margin: 3rem 0;
+}
+.feature { min-width: 0; }
+.feature h2 { margin: 0 0 0.4rem; }
+.feature .window { margin: 1rem 0 0; }
+.feature-wide { grid-column: 1 / -1; max-width: 680px; width: 100%; justify-self: center; }
+/* in a card, the bash and ClankTalk windows stack */
+.feature .compare { grid-template-columns: 1fr; gap: 0; width: auto; margin-left: 0; transform: none; }
+@media (max-width: 760px) {
+  .feature-grid { grid-template-columns: 1fr; }
+}
+
 .construction {
   margin-top: 3rem;
   padding: 0.2rem 1.2rem;

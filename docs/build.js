@@ -44,16 +44,37 @@ fs.mkdirSync(OUT);
 
 const template = fs.readFileSync(path.join(SRC, "template.html"), "utf8");
 
+// the home page shows features two to a row: in a "showcase", each ## section becomes a card in a grid
+// a section with no code window spans the whole row
+// the under-construction box and what follows it stay out of the grid
+function showcase(html) {
+  const cut = html.indexOf('<div class="construction">');
+  const body = cut === -1 ? html : html.slice(0, cut);
+  const tail = cut === -1 ? "" : html.slice(cut);
+  const parts = body.split(/(?=<h2)/);
+  let out = parts[0] + '<div class="feature-grid">\n';
+  for (const part of parts.slice(1)) {
+    const wide = !part.includes('class="window"');
+    out += '<section class="feature' + (wide ? " feature-wide" : "") + '">\n' + part + "</section>\n";
+  }
+  return out + "</div>\n" + tail;
+}
+
 // a page from Markdown, in the template
 function page(md, outName) {
+  let content = marked.parse(md);
+  // the title is the first h1 of the page, so a "# comment" in a code block cannot become the title
   let title = "clank-talk";
-  const heading = md.match(/^# (.+)$/m);
+  const heading = content.match(/<h1[^>]*>(.*?)<\/h1>/);
   if (heading) {
-    title = heading[1] + " - clank-talk";
+    title = heading[1].replace(/<[^>]+>/g, "") + " - clank-talk";
   }
   // split/join so that "$" in content is not treated as a replace pattern
   let html = template.split("{{title}}").join(title);
-  html = html.split("{{content}}").join(marked.parse(md));
+  if (md.includes('class="features showcase"')) {
+    content = showcase(content);
+  }
+  html = html.split("{{content}}").join(content);
   fs.writeFileSync(path.join(OUT, outName), html);
   console.log("page: " + outName);
 }

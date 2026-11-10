@@ -18,11 +18,54 @@ end
 </div>
 <img src="img/clanktalk-robot.png" alt="A friendly robot">
 </div>
+<div class="install">
+<div class="install-picker">
+<span class="install-label">Install for</span>
+<button class="install-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="agent-icon claude">C</span><span class="install-name">Claude Code</span><span class="install-chevron"></span></button>
+<ul class="install-menu" role="listbox" hidden>
+<li role="option" tabindex="0" data-agent="claude"><span class="agent-icon claude">C</span>Claude Code</li>
+<li role="option" tabindex="0" data-agent="cursor"><span class="agent-icon cursor">C</span>Cursor</li>
+<li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
+<li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
+<li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
+</ul>
+</div>
+<div class="install-code">
+<button class="install-copy" type="button">Copy</button>
+<pre data-agent="claude"><code># add the server
+claude mcp add clank-talk -- npx -y -p clank-talk@0.2 clank-talk-mcp
+# start Claude Code with ClankTalk as its only tool
+claude --tools "" --allowedTools mcp__clank-talk</code></pre>
+<pre data-agent="cursor" hidden><code>// .cursor/mcp.json
+{
+  "mcpServers": {
+    "clank-talk": {
+      "command": "npx",
+      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
+    }
+  }
+}</code></pre>
+<pre data-agent="codex" hidden><code># ~/.codex/config.toml
+[mcp_servers.clank-talk]
+command = "npx"
+args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
+<pre data-agent="pi" hidden><code># coming soon: a ClankTalk extension for pi</code></pre>
+<pre data-agent="other" hidden><code>{
+  "mcpServers": {
+    "clank-talk": {
+      "command": "npx",
+      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<script src="js/install.js"></script>
 <p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
 <p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable language. Your agent gets the tools it needs to do real work. You get sandboxes, security hooks, undo, and the final say.</p>
 </div>
 
-<div class="features">
+<div class="features showcase">
 
 ## Easy To Read
 
@@ -83,17 +126,6 @@ tool run_tests
 end
 ```
 
-## Git, Without The Footguns
-
-Git is built in, with the parts that run programs turned off. Your agent commits only the files it names, merges only by fast-forward, and pushes only when you say yes.
-
-```talk fix.talk
-git switch to new branch 'fix-retries'
-git commit [./src/config.js] with 'More retries'
-git push
-# dialog: Push branch 'fix-retries' to origin?  yes / no
-```
-
 ## You Stay In Charge
 
 Security policy should be code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step. Allow it, reject it, or ask you.
@@ -120,6 +152,17 @@ ClankTalk saves file changes before it makes them, so you can roll agent work ba
 ```talk undo.talk
 undo 2
 undo changes to ./src/config.js
+```
+
+## Git, Without The Footguns
+
+Git is built in, with the parts that run programs turned off. Your agent commits only the files it names, merges only by fast-forward, and pushes only when you say yes.
+
+```talk fix.talk
+git switch to new branch 'fix-retries'
+git commit [./src/config.js] with 'More retries'
+git push
+# dialog: Push branch 'fix-retries' to origin?  yes / no
 ```
 
 ## Your Tools, In AGENTS.talk

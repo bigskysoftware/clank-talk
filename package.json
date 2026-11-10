@@ -1,6 +1,6 @@
 {
   "name": "clank-talk",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "TODO",
   "license": "BSD-3-Clause",
   "repository": {
@@ -8,6 +8,9 @@
     "url": "git+https://github.com/bigskysoftware/clank-talk.git"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "src/js/clank-talk.js",
   "bin": {
     "clank-talk-mcp": "bin/clank-talk-mcp.js"
