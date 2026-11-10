@@ -165,7 +165,7 @@ export const HELP = [
     name: "wait", kind: "command",
     syntax: "wait <duration> | wait until <condition> [within <duration>]",
     description: "Wait for a time, or until a condition is true. 'wait until' checks every 200 ms; an error in the condition counts as false. With no 'within', it gives up after 30 seconds. Durations: 100ms, 2s, 5 seconds, 1 minute.",
-    examples: ["wait 2 seconds", "wait until (fetch 'http://localhost:4000/' as response)'s status is 200 within 10 seconds"],
+    examples: ["wait 2 seconds", "wait until (fetch http://localhost:4000/ as response)'s status is 200 within 10 seconds"],
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",
@@ -183,7 +183,7 @@ export const HELP = [
     name: "fetch", kind: "command",
     syntax: "fetch <url> [as json | as response | as text] [with method: ..., headers: ..., body: ...] [within <duration>]   (also a value: set page to fetch url)",
     description: "Get a URL over http or https. The result is the body as text, or parsed with 'as json'. 'as response' gives { status, headers, text }. A new host asks the human first, unless AGENTS.talk has 'allow fetch from'. Local and private addresses must be in AGENTS.talk. Limits: 30 seconds, 5 MB.",
-    examples: ["fetch 'https://api.github.com/repos/bigskysoftware/htmx' as json\nprint it's stargazers_count", "fetch 'https://example.com/api' as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
+    examples: ["fetch https://api.github.com/repos/bigskysoftware/htmx as json\nprint it's stargazers_count", "fetch https://example.com/api as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
   },
   {
     name: "ask", kind: "command",
@@ -194,7 +194,7 @@ export const HELP = [
   {
     name: "undo", kind: "command",
     syntax: "undo | undo <count> | undo changes to <file> | the undo list",
-    description: "Put back the files that earlier scripts changed. 'undo' takes back the last script that changed files, 'undo 3' the last 3, newest first. If a file changed after that script, undo changes nothing. It does not undo run programs, tools, or git commits. The result is the files it put back.",
+    description: "Put back the files that scripts changed. 'undo' takes back this script's changes so far, or if it made none, the last script that changed files. 'undo 3' takes back 3, newest first. If a file changed after that script, undo changes nothing. It does not undo run programs, tools, or git commits. The result is the files it put back.",
     examples: ["undo", "undo changes to ./src/app.js", "print the undo list"],
   },
   {
@@ -225,8 +225,8 @@ export const HELP = [
   },
   {
     name: "paths", kind: "expression",
-    syntax: "./x  ../x  @/x  ./src/**/*.js  ./\"my file.txt\"",
-    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files, sorted by path, and skip node_modules and .git unless the pattern names them. A file has name, path, text, lines, size and modified. Paths outside the project are refused.",
+    syntax: "./x  ../x  @/x  ./src/**/*.js  ./\"my file.txt\"  https://example.com/x",
+    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files, sorted by path, and skip node_modules and .git unless the pattern names them. A file has name, path, text, lines, size and modified. Paths outside the project are refused. A URL (https://...) needs no quotes: it is text.",
     examples: ["print ./src/**/*.js", "print the size of @/README.md"],
   },
   {
@@ -406,9 +406,9 @@ const GROUPS = [
  */
 export function referenceMarkdown() {
   const lines = [
-    "# ClankTalk Reference",
+    "# ClankTalk Docs for Agents",
     "",
-    "Every command and expression, with examples. This page is made from the same table as `help` in a script, so the two always agree. For the story, read the [docs](docs.html).",
+    "Every command and expression, with examples. This page is made from the same table as `help` in a script, so the two always agree. For the story, read the [docs for humans](docs.html).",
     "",
   ];
   for (const group of GROUPS) {

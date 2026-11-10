@@ -1,6 +1,6 @@
 <div class="features">
 
-<p><a href="./">Home</a> | <a href="reference.html">Reference</a></p>
+<p><a href="./">Home</a> | <a href="reference.html">Docs for Agents</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
 
 # ClankTalk Docs
 
@@ -11,16 +11,24 @@ ClankTalk is a scripting language for AI agents. You give your agent ClankTalk, 
 Here is a script an agent might write:
 
 ```talk
-for file in ./src/**/*.js
-  if the file's text contains 'var '
-    replace 'var ' with 'let ' in the file
-  end
+replace 'retries: 3'
+   with 'retries: 5'
+   in @/src/config.js
+
+run_tests
+
+if the result's code is not 0
+  undo
 end
 ```
+
+It changes a setting, runs the tests, and if they fail, takes the change back.
 
 The first thing you probably noticed is that it reads like English. ClankTalk is a member of the [xTalk](https://en.wikipedia.org/wiki/XTalk) family, like HyperTalk and [hyperscript](https://hyperscript.org). That's on purpose: the agent writes the script, but *you* have to read it.
 
 The second thing you might notice is what's missing: no shell, no pipes, no `rm -rf`. The runtime is the sandbox. If ClankTalk can't do it, your agent can't do it.
+
+This page is for humans: it tells the story. The [docs for agents](reference.html) list every command and expression, with examples. Your agent gets the same text from `help`.
 
 <div class="construction">
 
@@ -46,7 +54,21 @@ ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server with one tool
 Then take away the agent's other tools. With Claude Code:
 
 ```bash
-claude --tools "" --strict-mcp-config --mcp-config .mcp.json
+claude --tools "" --allowedTools mcp__clank-talk
+```
+
+`--tools ""` turns off the built-in tools (the shell, file edits, and so on), and keeps MCP tools. Now ClankTalk is the only way your agent can touch your machine.
+
+Next, give your agent a way to run your tests, in an `AGENTS.talk` at the root of your project:
+
+```talk
+# AGENTS.talk
+allow env PATH, HOME
+
+# Runs the full test suite.
+tool run_tests
+  run 'npm test' in a sandbox with local network
+end
 ```
 
 Want to see what your agent is up to? Watch the log:
@@ -57,36 +79,23 @@ tail -f tmp/clank-talk.log
 
 TODO: npm package.
 
-## Language Basics
+## The Language
 
-### Comments
+A quick tour. The [docs for agents](reference.html) have the rest.
 
-Comments start with `#` and go to the end of the line:
+### Comments, Blocks and Help
+
+Comments start with `#`. Commands follow one another, no punctuation needed. If you want two on one line, use `then`. Blocks always close with `end`. Always.
 
 ```talk
 # this is a comment
-print 'Yep, that was a comment' # and so is this
-```
-
-### Separators
-
-Commands follow one another, no punctuation needed. If you want two commands on one line, use `then`:
-
-```talk
 set x to 1 then print x
-```
-
-Blocks always close with `end`. Always.
-
-```talk
 if x > 10
   print 'big'
 end
 ```
 
-### Help
-
-ClankTalk can explain itself. `help` lists everything, and `help <word>` shows one thing, with examples:
+ClankTalk can explain itself. `help` lists everything, and `help <word>` shows one thing, with examples. This is how an agent learns the language: it asks.
 
 ```talk
 help
@@ -94,9 +103,7 @@ help replace
 help tools
 ```
 
-This is how an agent learns the language: it asks.
-
-## Values
+### Values and Strings
 
 Numbers, text, `true`, `false`, `null`, lists and objects:
 
@@ -104,20 +111,13 @@ Numbers, text, `true`, `false`, `null`, lists and objects:
 set robot to {name: 'clank', tags: ['agent', 'robot'], parts: 1_000}
 ```
 
-### Strings
-
-Single or double quotes, your pick. Strings can span lines, and the indent they all share is removed, so you can indent them with your script:
+Single or double quotes, your pick. Strings can span lines, and the indent they all share is removed, so you can indent them with your script. Use `${...}` to put a value in:
 
 ```talk
 set message to '
   Dear human,
     Your tests passed.
   '
-```
-
-Use `${...}` to put a value into a string:
-
-```talk
 print 'Hello, ${robot's name}!'
 ```
 
@@ -129,33 +129,24 @@ set code to """
 """
 ```
 
-## Variables
+### Variables and the Result
 
 ```talk
 set total to 0
 increment total by 5
-decrement total
 set $last_total to total
 ```
 
-A plain name is local to the script. A name that starts with `$` is a global, and sticks around between scripts.
-
-Most commands put their value in `it`, also known as `the result`:
+A plain name is local to the script. A name that starts with `$` is a global, and sticks around between scripts. Most commands put their value in `it`, also known as `the result`:
 
 ```talk
 read @/README.md
 print it
 ```
 
-## Expressions
+### Expressions
 
-`the` is optional. Use it where it reads better:
-
-```talk
-print the result
-```
-
-There are three ways to get a property, and they all mean the same thing:
+`the` is optional. Use it where it reads better. There are three ways to get a property, and they all mean the same thing:
 
 ```talk
 print robot's name
@@ -167,23 +158,12 @@ Math works the way you'd expect, with one twist: mixing operators needs parenthe
 
 ```talk
 print 1 + (2 * 3)
-```
-
-Comparisons come in words and symbols:
-
-```talk
 if total is greater than 10 and no errors
   print 'ok'
 end
 ```
 
-Text checks: `contains`, `starts with`, `ends with`, `is in`, `is empty`, `exists`, and their `not` forms. Conversions: `as json`, `as pretty json`, `as number`, `as text`.
-
-```talk
-set config to the file's text as json
-```
-
-## Control Flow
+### Control Flow
 
 ```talk
 if count > 10
@@ -193,17 +173,9 @@ else if count > 0
 else
   print 'none'
 end
-```
 
-Loops:
-
-```talk
 for item in [1, 2, 3] index i
   print '${i}: ${item}'
-end
-
-repeat 3 times
-  print 'clank'
 end
 
 repeat until done
@@ -211,102 +183,13 @@ repeat until done
 end
 ```
 
-`break` and `continue` work in any loop.
-
-## Files
-
-Paths are part of the language:
-
-* `./notes.txt` and `../notes.txt` start from the current folder
-* `@/README.md` starts from the project root
-* `./src/**/*.js` gives a list of files. Globs skip `node_modules` and `.git`, unless you name them in the pattern
-* `./"my notes.txt"` holds a path with spaces
-
-Anything outside the project root is refused.
-
-A file has a `name`, `path`, `text`, `lines`, `size` and `modified`. Text checks work right on a file:
+`break` and `continue` work in any loop. And when you need to wait for something:
 
 ```talk
-for file in @/src/**/*.js
-  if file contains 'TODO'
-    print file's path
-  end
-end
+wait 2 seconds
 ```
 
-### Lines
-
-Each line knows its number:
-
-```talk
-for line in lines of ./notes.txt
-  if line contains 'TODO'
-    print line
-  end
-end
-
-print lines 10 to 20 of ./notes.txt
-print the last of ./notes.txt
-```
-
-`first` and `last` work on lists, files and text.
-
-### Finding
-
-`find` gives you the lines that contain some text, in one file or many:
-
-```talk
-find 'TODO' in @/src/**/*.js
-print the result
-```
-
-Each line knows its file and its number, so `print` shows `src/app.js:12: // TODO: fix`. `find` also works on text, such as the output of a tool:
-
-```talk
-run_tests
-find 'FAIL' in the result's output
-if the result is empty
-  print 'all good'
-end
-```
-
-### Changing Files
-
-```talk
-write 'hello' to ./out.txt
-append ' world' to ./out.txt
-replace 'var ' with 'let ' in ./src/app.js
-```
-
-`replace` changes every match, and gives back a list of what it changed. If nothing matched, the result is empty, and you get a warning, since that is usually a typo.
-
-You can also edit by line number. Read the file first, so you know the numbers:
-
-```talk
-print lines 10 to 12 of ./src/app.js
-replace lines 11 to 11 of ./src/app.js with 'let x = 2'
-put '// added' after line 12 of ./src/app.js
-remove lines 20 to 22 of ./src/app.js
-```
-
-### Working Together
-
-You and your agent can work on the same files. If you save a file after the agent read it, the agent's next write fails, and it has to read the file again. Your change stays.
-
-### Undo
-
-Your agent made a mess? Take it back:
-
-```talk
-undo                          # the last script that changed files
-undo 3                        # the last three
-undo changes to ./src/app.js  # just one file
-print the undo list
-```
-
-Undo works across scripts in the same session. If a file changed after the script, say you edited it yourself, undo won't touch anything. Undo covers file changes only: not programs that `run` started, and not git commits.
-
-## Errors
+### Errors
 
 An error stops the script. Unless you catch it:
 
@@ -322,56 +205,66 @@ end
 
 `on error` can go anywhere in a script, and covers all of it. `continue` goes on with the command after the one that failed. `stop`, the default, ends the script with the error.
 
-## Fetch
+## Files
+
+Paths are part of the language:
+
+* `./notes.txt` and `../notes.txt` start from the current folder
+* `@/README.md` starts from the project root
+* `./src/**/*.js` gives a list of files. Globs skip `node_modules` and `.git`, unless you name them in the pattern
+* `./"my notes.txt"` holds a path with spaces
+* `https://example.com/api` is a URL, no quotes needed
+
+Anything outside the project root is refused. A file has a `name`, `path`, `text`, `lines`, `size` and `modified`, and text checks work right on a file:
 
 ```talk
-fetch 'https://api.github.com/repos/bigskysoftware/htmx' as json
-print it's stargazers_count
-
-fetch 'https://example.com/api' as response with method: 'POST', body: { name: 'x' }
-if the result's status is not 201
-  print the result's text
+for file in @/src/**/*.js
+  if file contains 'TODO'
+    print file's path
+  end
 end
 ```
 
-A fetch can send your project's data anywhere, so the first fetch to a new host asks you. Say yes, and that host is fine for the rest of the session. Hosts you always trust go in `AGENTS.talk`:
+### Lines and Finding
+
+Each line knows its number, and `first` and `last` work on lists, files and text:
 
 ```talk
-# AGENTS.talk
-allow fetch from 'api.github.com', '*.npmjs.org'
+print lines 10 to 20 of ./notes.txt
+print the last of ./notes.txt
 ```
 
-`localhost` and private addresses must be listed there too, so a script can't poke at your local services or your cloud's metadata server by accident.
-
-## Git
-
-ClankTalk has git built in, with the dangerous parts taken out:
+`find` gives you the lines that contain some text, in one file or many. Each line knows its file, so `print` shows `src/app.js:12: // TODO: fix`:
 
 ```talk
-git status
-print it
-
-git diff ./src/app.js
-git log 5
-git show 'HEAD'
-git branch
-
-git switch to new branch 'fix-parser'
-git commit [./src/app.js, ./test/app.test.js] with 'Fix the parser'
-git switch to 'main'
-git merge 'fix-parser'
-git delete branch 'fix-parser'
+find 'TODO' in @/src/**/*.js
+print the result
 ```
 
-`git commit` adds and commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards, so it never makes a merge commit or a conflict. `git push` sends the current branch to origin, but asks you first, every time. If you trust your agent with that, add `allow git push` to `AGENTS.talk`.
+### Changing Files
 
-Git can run programs from its config: hooks, pagers, filters, and more. So ClankTalk turns all of those off, and starts git with a clean environment. If the repo's own config still asks git to run a program, git won't run at all, and your agent tells you what to remove.
+```talk
+write 'hello' to ./out.txt
+append ' world' to ./out.txt
+replace 'retries: 3' with 'retries: 5' in ./src/config.js
+```
+
+`replace` changes every match, and gives back a list of what it changed. If nothing matched, you get a warning, since that is usually a typo.
+
+You can also edit by line number. Read the file first, so you know the numbers:
+
+```talk
+print lines 10 to 12 of ./src/app.js
+replace lines 11 to 11 of ./src/app.js with 'let x = 2'
+put '// added' after line 12 of ./src/app.js
+remove lines 20 to 22 of ./src/app.js
+```
+
+You and your agent can work on the same files. If you save a file after the agent read it, the agent's next write fails, and it has to read the file again. Your change stays.
 
 ## Tools
 
-Sometimes your agent really does need to run something, like your test suite. Fine!
-
-You define tools in `AGENTS.talk`, at the root of your project:
+Sometimes your agent really does need to run something, like your test suite. Fine! You define tools in `AGENTS.talk`, and the comment above a tool is its help:
 
 ```talk
 # AGENTS.talk
@@ -379,75 +272,125 @@ allow env PATH, HOME
 
 # Runs the full test suite.
 tool run_tests
-  run 'npm test' within 10 minutes
+  run 'npm test' in a sandbox with local network within 10 minutes
 end
 
 # Runs one test file.
 tool run_test with file
-  run 'node' with '--test', file
+  run 'node' with '--test', file in a sandbox
 end
 ```
+
+Your agent calls tools by name:
+
+```talk
+run_tests within 5 minutes
+if the result's code is not 0
+  find 'FAIL' in the result's output
+  print it
+end
+
+run_test with file: './test/app.test.js'
+```
+
+`run` only works inside a tool, never uses a shell, and passes on only the environment variables that `allow env` lists. Got a set of tools you like? Put them in their own `.talk` file, and `import ./talk/git.talk`.
+
+### Sandboxes
+
+Your agent can write code, and `npm test` runs code. So a tool that runs your tests can, in effect, run anything your agent writes. That's why the tools above say `in a sandbox`.
+
+In a sandbox, a program can write only your project (but not `.git`, `.talk` files or hidden files), read only system folders, its own install folder and tool caches, and has no network. Its home folder is a fresh, empty one, so it can't read your secrets. Loosen it where a tool needs it:
+
+```talk
+# AGENTS.talk
+tool install
+  run 'npm install' in a sandbox with network, writes to '~/.npm'
+end
+```
+
+The options are `with network`, `with local network` (localhost only, for tests that start their own servers), `writes to <path>` and `reads of <path>`.
+
+It works on macOS (`sandbox-exec`) and Linux (`bubblewrap`). Anywhere else, a sandboxed `run` is an error. It never quietly runs without the sandbox. Before the first sandboxed run, ClankTalk tests that the sandbox really holds.
+
+### Servers
 
 A tool can also start something that keeps running, like a dev server:
 
 ```talk
 # AGENTS.talk
 tool site_server
-  start 'npm run serve-site' as 'site'
+  start 'npm run serve-site' as 'site' in a sandbox
 end
 ```
 
-Your agent can then wait for it, look at it, and stop it:
+Your agent can then wait for it, look at it, and stop it. When the session ends, ClankTalk stops them all.
 
 ```talk
 site_server
-wait until (fetch 'http://localhost:4000/' as response)'s status is 200 within 10 seconds
+wait until (fetch http://localhost:8000/ as response)'s status is 200 within 10 seconds
 print the output of process 'site'
 stop process 'site'
-print the processes
 ```
 
-When the session ends, ClankTalk stops them all.
+## Safety
 
-Got a set of tools you like? Put them in their own `.talk` file, and import it:
+Here is what ClankTalk won't let your agent do, and how you can let it, when you want to.
+
+### Files It Can't Change
+
+Scripts can't change `.talk` files, so your agent can't change its own tools. They can't change hidden files or folders either, like `.env`, `.git/` or `.github/`: those hold secrets, and config that runs code. Nothing is allowed by default. If your agent needs one, it tells you the line to add:
 
 ```talk
 # AGENTS.talk
-import ./talk/git.talk
+allow changes to @/.github/, @/.gitignore
 ```
 
-The comment above a tool is its help. Your agent calls tools by name:
+### Git
+
+ClankTalk has git built in, with the dangerous parts taken out:
 
 ```talk
-run_tests within 5 minutes
-if the result's code is not 0
-  print the result's output
-end
-
-run_test './test/app.test.js'
-run_test with file: './test/app.test.js'
+git status
+git diff ./src/app.js
+git switch to new branch 'fix-parser'
+git commit [./src/app.js, ./test/app.test.js] with 'Fix the parser'
+git switch to 'main'
+git merge 'fix-parser'
+git delete branch 'fix-parser'
 ```
 
-### Sandboxes
+`git commit` commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards. `git push` asks you first, every time, unless you add `allow git push` to `AGENTS.talk`.
 
-Your agent can write code, and `npm test` runs code. So a tool that runs your tests can, in effect, run anything your agent writes. Put it in a sandbox:
+Git can run programs from its config: hooks, pagers, filters, and more. So ClankTalk turns all of those off, and starts git with a clean environment. If the repo's own config still asks git to run a program, git won't run at all, and your agent tells you what to remove.
+
+### Fetch
+
+```talk
+fetch https://api.github.com/repos/bigskysoftware/htmx as json
+print it's stargazers_count
+```
+
+A fetch can send your project's data anywhere, so the first fetch to a new host asks you. Say yes, and that host is fine for the rest of the session. Hosts you always trust go in `AGENTS.talk`. `localhost` and private addresses must be listed there too, so a script can't poke at your local services or your cloud's metadata server by accident:
 
 ```talk
 # AGENTS.talk
-tool run_tests
-  run 'npm test' in a sandbox with local network
-end
+allow fetch from 'api.github.com', '*.npmjs.org', 'localhost'
+```
 
-tool install
-  run 'npm install' in a sandbox with network, writes to '~/.npm'
+### Asking You
+
+`ask` puts a question to you, and waits. Only you answer, never the agent. If nobody can answer, it gives `null`, which means no:
+
+```talk
+ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes
+if the result is 'yes'
+  print 'ok'
 end
 ```
 
-In a sandbox, a program can write only your project (but not `.git`, `.talk` files or hidden files), read only system folders, its own install folder and tool caches, and has no network. Loosen it with `with network`, `with local network` (localhost only, for tests that start their own servers), `writes to <path>` and `reads of <path>`.
+### Hooks
 
-It works on macOS (`sandbox-exec`) and Linux (`bubblewrap`). Anywhere else, a sandboxed `run` is an error. It never quietly runs without the sandbox. Before the first sandboxed run, ClankTalk tests that the sandbox really holds.
-
-Want every `run` sandboxed? Say so with a hook:
+Security policy should be code you can read. Hooks go in `AGENTS.talk`, and run before or after a step. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
 
 ```talk
 # AGENTS.talk
@@ -456,44 +399,7 @@ before run
     reject 'Use a sandbox'
   end
 end
-```
 
-A few rules keep this safe:
-
-* `run` only works inside a tool, and never uses a shell. Use `in a sandbox` for anything that runs project code
-* The program gets only the environment variables that `allow env` lists
-* Scripts can't change `.talk` files, so your agent can't change its own tools
-* Scripts can't change hidden files or folders, like `.env`, `.git/` or `.github/`. Those hold secrets, and config that runs code. Nothing is allowed by default. If your agent needs one, it tells you the line to add:
-
-```talk
-# AGENTS.talk
-allow changes to @/.github/, @/.gitignore
-```
-
-## Hooks
-
-Security policy should be code you can read. Hooks go in `AGENTS.talk`, and run before or after a step:
-
-```talk
-# AGENTS.talk
-before change
-  if the change's path ends with '.env'
-    reject 'Cannot change env files!'
-  end
-end
-
-after run
-  print 'ran ' + the run's program + ': ' + the result's code
-end
-```
-
-A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. A `before` hook can `reject` the step: it doesn't happen, and the script gets an error.
-
-Hooks run for the agent's scripts and inside tools. Commands inside a hook don't run hooks, so a hook can't trip over itself.
-A hook can ask you before a step happens. Only you answer, never the agent:
-
-```talk
-# AGENTS.talk
 before git
   if the git's operation is 'commit'
     ask 'Commit ' + the git's files + '?' with 'yes' or 'no'
@@ -504,10 +410,28 @@ before git
 end
 ```
 
-If nobody can answer, `ask` gives `null`, and the hook above says no. Safe by default.
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. Commands inside a hook don't run hooks, so a hook can't trip over itself.
+
+### Undo
+
+Your agent made a mess? Take it back:
+
+```talk
+undo                          # the last script that changed files
+undo 3                        # the last three
+undo changes to ./src/app.js  # just one file
+print the undo list
+```
+
+Undo works across scripts in the same session. If a file changed after the script, say you edited it yourself, undo won't touch anything. Undo covers file changes only: not programs that `run` started, and not git commits.
 
 ## The Fine Print
 
-Be honest with yourself about one thing: if a tool runs project code, like a test suite, the agent can write that code. `run` is where the ClankTalk sandbox ends.
+Be honest with yourself about a few things:
+
+* A `run` without `in a sandbox` is where the ClankTalk sandbox ends. The program can do anything you can do.
+* The sandbox limits files and the network. It doesn't limit CPU or memory.
+* On Linux, the sandbox is weaker: it protects hidden files only at the top of your project, and only the ones that exist when the program starts. We test on macOS. If you use Linux, please test it, and tell us.
+* A web page or a tool's output can hold text that tries to steer your agent. ClankTalk keeps the damage small, but it can't stop your agent from believing what it reads.
 
 </div>

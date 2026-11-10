@@ -10,14 +10,31 @@ const SRC = "docs";
 const OUT = "_site";
 const SKIP = ["build.js", "highlight.js", "serve.js", "template.html"];
 
-// ```talk blocks get highlighted, other blocks use the default renderer
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ```talk blocks get highlighted
+// a title after the language puts the block in a window: ```talk bump.talk
 marked.use({
   renderer: {
     code(token) {
-      if (token.lang !== "talk") {
+      const parts = (token.lang || "").trim().split(/\s+/);
+      const lang = parts[0];
+      const title = parts.slice(1).join(" ");
+      if (lang !== "talk" && title === "") {
         return false;
       }
-      return '<pre><code class="language-talk">' + highlight(token.text) + "</code></pre>\n";
+      let code;
+      if (lang === "talk") {
+        code = '<pre><code class="language-talk">' + highlight(token.text) + "</code></pre>\n";
+      } else {
+        code = '<pre><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(token.text) + "</code></pre>\n";
+      }
+      if (title === "") {
+        return code;
+      }
+      return '<div class="window">\n<div class="window-title">' + escapeHtml(title) + "</div>\n" + code + "</div>\n";
     },
   },
 });
@@ -42,7 +59,7 @@ function page(md, outName) {
 }
 
 // the reference is made from the help table, so it always agrees with help
-page('<div class="features">\n\n<p><a href="./">Home</a> | <a href="docs.html">Docs</a></p>\n\n' + referenceMarkdown() + "\n\n</div>\n", "reference.html");
+page('<div class="features">\n\n<p><a href="./">Home</a> | <a href="docs.html">Docs for Humans</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>\n\n' + referenceMarkdown() + "\n\n</div>\n", "reference.html");
 
 for (const name of fs.readdirSync(SRC)) {
   if (SKIP.includes(name)) {

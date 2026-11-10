@@ -1,20 +1,15 @@
 # Tools for agents that work on clank-talk itself
-# Commits stay with the human, so there is no git_commit tool.
 
 allow env PATH, HOME
+allow fetch from 'localhost', '127.0.0.1'
 
+# Runs the full test suite.
 tool run_tests
-  run 'npm test'
+  run 'npm test' in a sandbox with local network
 end
 
-tool git_status
-  run 'git status --short --branch'
-end
-
-tool git_diff
-  run 'git diff'
-end
-
-tool git_log
-  run 'git log --oneline -15'
+# Starts the docs site at http://localhost:8000/, with live reload.
+# Stop it with: stop process 'site'
+tool site_server
+  start 'npm run serve-site' as 'site' in a sandbox
 end

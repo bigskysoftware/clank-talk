@@ -7,6 +7,7 @@ Undo puts back the files that a script changed. It covers file changes only: `wr
 ## Syntax
 
 - Approved: `undo` takes back all file changes of the last script that changed files. That script can be from an earlier call in the same session.
+- Approved (built): in a script that changed files, `undo` takes back that script's own changes so far first. Thus `replace ... then run_tests, and if they fail, undo` works in one script. Changes after the undo go on the list at the end of the script.
 - Approved: `undo 3` takes back the last 3 scripts that changed files, newest first.
 - Approved: `undo changes to <file>` puts back one file, as it was before the last script that changed it.
 - Approved: `the undo list` is a list of the scripts that undo can take back, newest first. Each item has `number` (1 is the newest), `time` and `files`. `print the undo list` shows one line for each.

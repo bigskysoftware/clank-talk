@@ -94,3 +94,19 @@ test("hooks can watch and reject undo", async () => {
   assert.deepEqual(await errors("undo"), ["no undo here"]);
   assert.equal(await readProject("a.txt"), "A");
 });
+
+test("undo in a script takes back that script's own changes first", async () => {
+  await ok("write 'earlier' to ./b.txt");
+  await ok("write 'A' to ./a.txt\nundo\nprint read ./a.txt");
+  assert.equal(await readProject("a.txt"), "a\n");
+  assert.equal(await readProject("b.txt"), "earlier");
+  // with no changes of its own, undo takes back the earlier script
+  await ok("undo");
+  assert.equal(await readProject("b.txt"), "b\n");
+  // changes after the undo are recorded at the end, once
+  await ok("write 'X' to ./a.txt\nundo\nwrite 'Y' to ./a.txt");
+  assert.equal(await readProject("a.txt"), "Y");
+  await ok("undo");
+  assert.equal(await readProject("a.txt"), "a\n");
+  assert.deepEqual(await errors("undo"), ["Nothing to undo"]);
+});

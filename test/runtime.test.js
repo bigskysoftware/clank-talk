@@ -232,3 +232,7 @@ test('wait waits, and cancel ends a wait', async () => {
   const result = await execution.done;
   assert.equal(result.status, 'cancelled');
 });
+
+test('a url needs no quotes', async () => {
+  assert.deepEqual(await output("set u to https://example.com/a?b=1\nprint u\nprint u starts with 'https'"), ['https://example.com/a?b=1', 'true']);
+});

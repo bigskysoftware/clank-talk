@@ -185,6 +185,26 @@ export function tokenize(source) {
     }
     return digits;
   }
+  // the rest of an unquoted path or url: it ends at whitespace, ")", ",", an unmatched "]" or "}",
+  // or a possessive 's; a "[" or "{" in it is part of a glob, so only an unmatched "]" or "}" ends it
+  function readPathRest() {
+    let value = "";
+    let depth = 0;
+    while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && source[i] !== "," && !(source[i] === "'" && isPossessive(source, i))) {
+      if (source[i] === "[" || source[i] === "{") {
+        depth++;
+      }
+      if (source[i] === "]" || source[i] === "}") {
+        if (depth === 0) {
+          break;
+        }
+        depth--;
+      }
+      value += source[i];
+      advance();
+    }
+    return value;
+  }
 
   function push(type, value, startLine, startColumn) {
     tokens.push({ type, value, line: startLine, column: startColumn });
@@ -307,6 +327,23 @@ export function tokenize(source) {
       continue;
     }
 
+    // url: https://example.com/a?b=1, as approved: <word>:// and then the path rules
+    // it is a string value, so fetch and print use it as text
+    if (!isWordChar(prev || " ") && /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(source.slice(i, i + 40))) {
+      let value = "";
+      while (source[i] !== ":") {
+        value += source[i];
+        advance();
+      }
+      value += "://";
+      advance();
+      advance();
+      advance();
+      value += readPathRest();
+      push("string", value, startLine, startColumn);
+      continue;
+    }
+
     // path: ./foo and ../foo are relative to the current directory, @/foo to the project root
     // a path ends at whitespace, ")", ",", an unmatched "]" or "}", or a possessive 's
     // ./"my file.txt" puts the rest of the path in double quotes, so it can hold those characters
@@ -331,21 +368,7 @@ export function tokenize(source) {
         }
         advance();
       } else {
-        // a "[" or "{" in a path is part of a glob, so only an unmatched "]" or "}" ends the path
-        let depth = 0;
-        while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && source[i] !== "," && !(source[i] === "'" && isPossessive(source, i))) {
-          if (source[i] === "[" || source[i] === "{") {
-            depth++;
-          }
-          if (source[i] === "]" || source[i] === "}") {
-            if (depth === 0) {
-              break;
-            }
-            depth--;
-          }
-          value += source[i];
-          advance();
-        }
+        value += readPathRest();
       }
       push("path", value, startLine, startColumn);
       continue;

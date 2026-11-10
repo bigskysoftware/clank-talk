@@ -210,6 +210,8 @@ async function execute(source, options, execution) {
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
     undo: options.undo || [],
+    // how many of the execution's changes are on the undo list already
+    recordedChanges: 0,
     // the host's way to ask the human: async ({ question, choices, signal }) => text or null
     ask: options.ask || null,
   };
@@ -1859,9 +1861,13 @@ async function askState(state, question, choices, limit) {
 
 // at the end of a script, its file changes go on the undo list, even if it failed part way
 // one item for each file: the text before the script, and after it
+// "undo" in a script records the script's changes so far first, so it can take them back;
+// recordedChanges keeps those from being recorded twice at the end
 function recordUndo(state) {
   const byPath = new Map();
-  for (const change of state.execution.changes) {
+  const changes = state.execution.changes.slice(state.recordedChanges);
+  state.recordedChanges = state.execution.changes.length;
+  for (const change of changes) {
     // undo does not record itself, so there is no redo
     if (change.undo) {
       continue;
@@ -1884,6 +1890,8 @@ function recordUndo(state) {
 
 // undo, undo <count>, undo changes to <file>; the result is the paths it put back
 async function runUndo(command, state) {
+  // the running script's own changes so far are the newest item
+  recordUndo(state);
   // the items to take back, newest first: { path, before, after }
   let items = [];
   let entries = [];

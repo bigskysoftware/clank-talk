@@ -133,10 +133,9 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 ### Not yet
 
 - Approved: `$name` in a string is plain text. Only `${...}` is interpolation, because `$` marks a global.
-- Approved: URLs. A URL starts with `<word>://` and otherwise follows the path rules.
+- Approved (built): URLs. A URL starts with `<word>://` and otherwise follows the path rules. It is a string value: `fetch https://x.com/a?b=1 as json`.
 - Approved for later: `/.../` is a regex. Pending: how to tell a regex from division.
 - Wanted: absolute paths (`/etc/hosts`). They also start with `/`, so they wait for the same regex and division decision.
-- URLs as their own token type.
 - Words with `-` in them.
 
 ## Open questions

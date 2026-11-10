@@ -171,3 +171,11 @@ test("'s after ], } and ) is a possessive", () => {
   assert.deepEqual(simple("[1]'s x"), ["op:[", "number:1", "op:]", "possessive:'s", "word:x"]);
   assert.deepEqual(simple("{}'s x (y)'s z"), ["op:{", "op:}", "possessive:'s", "word:x", "op:(", "word:y", "op:)", "possessive:'s", "word:z"]);
 });
+
+test("a url is a string token, and ends by the path rules", () => {
+  assert.deepEqual(simple("fetch https://api.x.com/a?b=1&c=2 as json"), ["word:fetch", "string:https://api.x.com/a?b=1&c=2", "word:as", "word:json"]);
+  assert.deepEqual(simple("[http://a.com, http://b.com]"), ["op:[", "string:http://a.com", "op:,", "string:http://b.com", "op:]"]);
+  assert.deepEqual(simple("(http://a.com/x)'s length"), ["op:(", "string:http://a.com/x", "op:)", "possessive:'s", "word:length"]);
+  assert.deepEqual(simple("x:// y"), ["string:x://", "word:y"]);
+  assert.deepEqual(simple("a:b"), ["word:a", "op::", "word:b"]);
+});
