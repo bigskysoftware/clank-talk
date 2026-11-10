@@ -257,6 +257,13 @@ find 'TODO' in @/src/**/*.js
 print the result
 ```
 
+`find` is a value too, so you can keep what it finds:
+
+```talk
+set todos to find 'TODO' in @/src/**/*.js
+print todos's length
+```
+
 ### Changing Files
 
 ```talk

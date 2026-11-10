@@ -899,12 +899,7 @@ async function runCommand(command, state, tools, maxSteps) {
     return null;
   }
   if (command.type === "find") {
-    const text = toText(await asText(await evaluate(command.text, state), state, command));
-    if (text === "") {
-      throw new ScriptError("Cannot find empty text", command);
-    }
-    const target = await evaluate(command.target, state);
-    state.result = await findLines(text, target, state, command);
+    state.result = await evaluate(command, state);
     return null;
   }
 
@@ -1102,8 +1097,17 @@ async function evaluate(node, state) {
     // line numbers start at 1, both ends are included, and a range past the end stops at the last line
     return all.slice(Math.max(from, 1) - 1, Math.max(to, 0));
   }
-if (type === "read") {
+  if (type === "read") {
     return await readText(await evaluate(node.file, state), state, node);
+  }
+  // find as a value: set hits to find 'TODO' in @/src/**/*.js
+  if (type === "find") {
+    const text = toText(await asText(await evaluate(node.text, state), state, node));
+    if (text === "") {
+      throw new ScriptError("Cannot find empty text", node);
+    }
+    const target = await evaluate(node.target, state);
+    return await findLines(text, target, state, node);
   }
   if (type === "null") {
     return null;

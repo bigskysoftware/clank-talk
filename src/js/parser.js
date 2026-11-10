@@ -520,7 +520,15 @@ export function parse(source, options = {}) {
       errors.length = savedErrorCount;
     }
 
-// read as an expression: set readme to read @/README.md
+    // find as a value: set hits to find 'TODO' in @/src/**/*.js
+    // the target takes only a value with access, so "find 'x' in f is empty" checks the found lines
+    if (isWord("find")) {
+      const findToken = current();
+      i++;
+      return parseFind(findToken, parseAccess);
+    }
+
+    // read as an expression: set readme to read @/README.md
     if (isWord("read")) {
       const readToken = current();
       i++;
@@ -1161,7 +1169,7 @@ export function parse(source, options = {}) {
   }
 
   // find <text> in <file, list of files, or text>
-  function parseFind(token) {
+  function parseFind(token, parseTarget = parseExpression) {
     const text = parseBefore(["in"], parseExpression);
     if (text === null) {
       return null;
@@ -1175,7 +1183,7 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    const target = parseExpression();
+    const target = parseTarget();
     if (target === null) {
       return null;
     }

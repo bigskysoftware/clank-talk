@@ -179,6 +179,13 @@ test('find gives the lines that contain the text, and print shows path:number', 
   assert.deepEqual(await output(`find 'nope' in ./notes.txt\nprint the result is empty`), ['true']);
 });
 
+test('find is also a value', async () => {
+  assert.deepEqual(await output(`set hits to find 'TODO' in ./notes.txt\nprint hits's first's number`), ['2']);
+  assert.deepEqual(await output(`print find 'b' in 'abc\\nxyz\\nb'`), ['1: abc\n3: b']);
+  assert.deepEqual(await output(`if find 'nope' in ./notes.txt is empty\n  print 'none'\nend`), ['none']);
+  assert.deepEqual(await output(`in ./notes.txt do\n  set hits to find 'TODO'\nend\nprint hits's length`), ['1']);
+});
+
 test('find errors', async () => {
   assert.deepEqual(await errors(`find '' in ./notes.txt`), ['Cannot find empty text']);
   assert.deepEqual(await errors(`find 'x' in 5`), ["'find' needs a file, a list of files, or text, found 5"]);
