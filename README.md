@@ -1,8 +1,8 @@
-# ClankTalk
+<img src="docs/img/readme-hero.png" alt="A friendly robot says a ClankTalk script: in @/src/config.js, replace 'retries: 3' with 'retries: 5'. Run the tests. If the result's code is not 0, undo." width="700">
+
+# Clank*Talk*
 
 A sandboxed scripting language for AI agents. You give your agent ClankTalk, in place of a shell.
-
-<img src="docs/img/readme-hero.png" alt="A friendly robot says a ClankTalk script: in @/src/config.js, replace 'retries: 3' with 'retries: 5'. Run the tests. If the result's code is not 0, undo." width="700">
 
 It reads like English, because the agent writes the script but *you* have to read it. And there is no shell: if ClankTalk can't do it, your agent can't do it.
 

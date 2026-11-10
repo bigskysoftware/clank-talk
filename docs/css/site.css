@@ -53,7 +53,7 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; }
   line-height: 1;
   color: #000000;
 }
-.hero-accent { color: #4a84c4; }
+.hero-accent { color: #4a84c4; font-style: italic; }
 .hero h1 { margin: 0.5rem 0 2rem; font-size: 1.4rem; color: #3a3a3a; }
 .subtitle { max-width: 680px; margin: 1.5rem auto 0; font-size: 1.05rem; color: #333333; }
 
