@@ -223,7 +223,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, fetchHosts: session.fetchHosts, processes: session.processes, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -331,7 +331,7 @@ export function main(args) {
   }
 
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), log };
+  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, log };
 
   // when the client goes away, stop the background processes, so nothing is left running
   const stopAll = () => stopAllProcesses(session.processes);

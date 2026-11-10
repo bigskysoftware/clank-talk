@@ -115,6 +115,7 @@ function lineLabel(line) {
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
+ * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to talk/audit/
  * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
  */
 export function start(source, options = {}) {
@@ -214,23 +215,41 @@ async function execute(source, options, execution) {
     recordedChanges: 0,
     // the host's way to ask the human: async ({ question, choices, signal }) => text or null
     ask: options.ask || null,
+    // the audit: the session (script count and records; a host keeps it), this script's steps,
+    // the files this script read, where a step runs (script, a tool name, or a hook), and the format
+    audit: options.audit || { scripts: 0, records: [] },
+    // the file in talk/audit/ is written only for a host session; the MCP host always passes one
+    auditToFile: options.audit !== undefined,
+    auditScript: 0,
+    auditSteps: [],
+    auditReads: new Set(),
+    auditFrom: "script",
+    auditFormat: agents.auditFormat,
   };
+  state.audit.scripts++;
+  state.auditScript = state.audit.scripts;
 
+  let status = "done";
+  let failure = [];
   try {
     await runCommands(script.commands, state, tools, maxSteps);
   } catch (err) {
-    recordUndo(state);
     if (err instanceof Cancelled) {
-      return finish(execution, "cancelled", [errorFor(err)]);
+      status = "cancelled";
+      failure = [errorFor(err)];
+    } else if (err instanceof ScriptError) {
+      status = "failed";
+      failure = [errorFor(err)];
+    } else {
+      recordUndo(state);
+      await writeAudit(state, source, "failed", [{ message: err.message, line: 0, column: 0 }]);
+      throw err;
     }
-    if (err instanceof ScriptError) {
-      return finish(execution, "failed", [errorFor(err)]);
-    }
-    throw err;
   }
 
   recordUndo(state);
-  return finish(execution, "done", []);
+  await writeAudit(state, source, status, failure);
+  return finish(execution, status, failure);
 }
 
 // an error object for the host; "file" is there only for errors in AGENTS.talk
@@ -284,7 +303,7 @@ function toolList(state, hostTools) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], hooks: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], auditFormat: "text", hooks: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -329,6 +348,14 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedEnv.push(...definition.names);
         } else {
           result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "audit") {
+        if (file.name === AGENTS_TALK) {
+          result.auditFormat = definition.format;
+        } else {
+          result.errors.push({ message: "'audit as' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -797,6 +824,7 @@ async function runCommand(command, state, tools, maxSteps) {
     step.args = args;
     step.named = named;
     await runHooks("before", [command.name], step, state, command);
+    auditStep(state, "tool", command.name, args.map((arg) => toText(arg)).join(", "));
 
     const definition = state.definitions[command.name];
     if (definition !== undefined) {
@@ -915,6 +943,14 @@ if (type === "read") {
   if (type === "processes") {
     return processList(state);
   }
+  // the audit: this session's records, oldest first, as plain values
+  if (type === "audit") {
+    const list = [];
+    for (const record of state.audit.records) {
+      list.push({ ...record });
+    }
+    return list;
+  }
   if (type === "property") {
     const object = await evaluate(node.object, state);
     if (object instanceof FileRef) {
@@ -1012,6 +1048,9 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   state.handling = false;
   const savedFile = state.file;
   state.file = definition.file || AGENTS_TALK;
+  // steps inside the tool are "from" the tool in the audit
+  const savedFrom = state.auditFrom;
+  state.auditFrom = definition.name;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
     return state.result;
@@ -1027,6 +1066,7 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
     state.handler = savedHandler;
     state.file = savedFile;
     state.handling = savedHandling;
+    state.auditFrom = savedFrom;
   }
 }
 
@@ -1065,6 +1105,7 @@ async function runProgram(command, state) {
   }
 
   let result;
+  const started = Date.now();
   if (sandbox === null) {
     result = await spawnProgram(program, args, state.cwd, env, limit, state, command);
   } else {
@@ -1075,6 +1116,8 @@ async function runProgram(command, state) {
       await fs.rm(wrapped.tmp, { recursive: true, force: true });
     }
   }
+
+  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s");
 
   // after hooks see the result
   state.result = result;
@@ -1165,6 +1208,7 @@ async function runGit(command, state) {
   if (result.code !== 0) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
+  auditStep(state, "git", args.join(" "), "");
   state.result = result.output;
   await runHooks("after", ["git"], step, state, command);
   return result.output;
@@ -1339,6 +1383,27 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
 
 // the self-test runs once for each server process, and its result stays
 let sandboxTest = null;
+
+// for the audit: "in a sandbox with network, " or ""
+function sandboxText(sandbox) {
+  if (sandbox === null) {
+    return "";
+  }
+  const options = [];
+  if (sandbox.network) {
+    options.push("network");
+  }
+  if (sandbox.localNetwork) {
+    options.push("local network");
+  }
+  for (const path of sandbox.writes) {
+    options.push("writes to " + path);
+  }
+  for (const path of sandbox.reads) {
+    options.push("reads of " + path);
+  }
+  return "in a sandbox" + (options.length > 0 ? " with " + options.join(", ") : "") + ", ";
+}
 
 // "in a sandbox with ...": the values, or null for no sandbox; hooks see them as the step's sandbox
 async function sandboxValues(command, state) {
@@ -1541,6 +1606,7 @@ async function startProcess(command, state) {
   // newest last, so the list can show newest first
   state.processes.delete(name);
   state.processes.set(name, record);
+  auditStep(state, "start", name, sandboxText(sandbox) + [program, ...args].join(" "));
   return new ProcessInfo(record);
 }
 
@@ -1557,6 +1623,7 @@ async function stopProcess(command, state) {
     await runHooks("before", ["stop"], step, state, command);
     record.status = "stopped";
     await endProcess(record);
+    auditStep(state, "stop", name, "");
   }
   return new ProcessInfo(record);
 }
@@ -1720,6 +1787,7 @@ async function runFetch(command, state) {
       result = text;
     }
   }
+  auditStep(state, "fetch", method + " " + current.href, response.status + ", " + Buffer.byteLength(text) + " bytes");
   state.result = result;
   await runHooks("after", ["fetch"], step, state, command);
   return result;
@@ -1854,13 +1922,92 @@ async function askState(state, question, choices, limit) {
     clearTimeout(timer);
   }
 
-  if (typeof answer !== "string") {
-    return null;
+  if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
+    answer = null;
   }
-  if (choices.length > 0 && !choices.includes(answer)) {
-    return null;
-  }
+  auditStep(state, "ask", question, answer === null ? "no answer" : "answer: " + answer);
   return answer;
+}
+
+// ----- audit -----
+// see src/md/features/audit.md
+
+// the session keeps at most this many records for "the audit"
+const AUDIT_RECORDS = 5000;
+
+function clock(date) {
+  return date.toTimeString().slice(0, 8);
+}
+
+function localDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return date.getFullYear() + "-" + month + "-" + day;
+}
+
+// one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
+function auditStep(state, kind, target, details) {
+  const record = { time: clock(new Date()), script: state.auditScript, kind, target: String(target), details: details || "", from: state.auditFrom };
+  state.auditSteps.push(record);
+  state.audit.records.push(record);
+  if (state.audit.records.length > AUDIT_RECORDS) {
+    state.audit.records.shift();
+  }
+}
+
+// a read is recorded once for each file in a script
+function auditRead(state, path) {
+  if (!state.auditReads.has(path)) {
+    state.auditReads.add(path);
+    auditStep(state, "read", path, "");
+  }
+}
+
+function cut(text, width) {
+  return text.length > width ? text.slice(0, width - 3) + "..." : text;
+}
+
+function auditLine(record) {
+  let details = record.details;
+  if (record.from !== "script") {
+    details += (details === "" ? "" : ", ") + "from " + record.from;
+  }
+  return record.time + "  " + record.kind.padEnd(8) + " " + cut(record.target, 40).padEnd(40) + "  " + details;
+}
+
+// append this script's block to the day's file in talk/audit/; scripts cannot change @/talk/
+// a failure to write is a warning, so the audit never breaks a script
+async function writeAudit(state, source, status, errors) {
+  if (!state.auditToFile) {
+    return;
+  }
+  try {
+    const now = new Date();
+    const folder = nodePath.join(state.root, "talk", "audit");
+    await fs.mkdir(folder, { recursive: true });
+    let text = "";
+    let name = localDate(now) + ".log";
+    if (state.auditFormat === "json") {
+      name = localDate(now) + ".jsonl";
+      text += JSON.stringify({ type: "script", time: now.toISOString(), script: state.auditScript, status, steps: state.execution.steps, source, errors }) + "\n";
+      for (const record of state.auditSteps) {
+        text += JSON.stringify({ type: "step", ...record }) + "\n";
+      }
+    } else {
+      text += "== " + clock(now) + "  script " + state.auditScript + "  " + status + "  " + state.execution.steps + " steps ==\n";
+      text += source.trim() + "\n--\n";
+      for (const record of state.auditSteps) {
+        text += auditLine(record) + "\n";
+      }
+      for (const error of errors) {
+        text += "!! " + error.line + ":" + error.column + " " + error.message.split("\n")[0] + "\n";
+      }
+      text += "\n";
+    }
+    await fs.appendFile(nodePath.join(folder, name), text);
+  } catch (err) {
+    state.execution.warnings.push({ message: "Could not write the audit: " + err.message, line: 1, column: 1 });
+  }
 }
 
 // ----- undo -----
@@ -2042,6 +2189,13 @@ function changeStep(kind, file, fields) {
 
 // a file change runs the hooks for its kind (write, replace, ...) and the "change" hooks
 async function changeHooks(when, step, state, node) {
+  if (when === "after") {
+    let details = "undo saved";
+    if (step.kind === "undo") {
+      details = step.text === null ? "removed" : "put back";
+    }
+    auditStep(state, step.kind, step.path, details);
+  }
   await runHooks(when, [step.kind, "change"], step, state, node);
 }
 
@@ -2073,6 +2227,8 @@ async function runHook(hook, step, state, node) {
   state.inHook = true;
   const savedFile = state.file;
   state.file = hook.file;
+  const savedFrom = state.auditFrom;
+  state.auditFrom = "hook " + hook.when + " " + hook.name;
   try {
     await runCommands(hook.body, state, state.tools, state.maxSteps);
   } catch (err) {
@@ -2091,6 +2247,7 @@ async function runHook(hook, step, state, node) {
     state.handling = savedHandling;
     state.inHook = false;
     state.file = savedFile;
+    state.auditFrom = savedFrom;
   }
 }
 
@@ -2425,6 +2582,7 @@ async function readText(file, state, node) {
   // remember what the script saw, for the stale-write check
   state.seen.set(real, text);
   step.text = text;
+  auditRead(state, file.path);
   await runHooks("after", ["read"], step, state, node);
   return text;
 }

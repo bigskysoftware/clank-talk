@@ -422,6 +422,23 @@ end
 
 A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. Commands inside a hook don't run hooks, so a hook can't trip over itself.
 
+### Audit
+
+Ever wonder what your agent is actually doing? Every step that touches the world is written to `talk/audit/`, one file a day:
+
+```text
+== 10:42:01  script 12  done  6 steps ==
+in @/src/config.js
+  replace 'retries: 3' with 'retries: 5'
+run_tests
+--
+10:42:01  replace  src/config.js                             undo saved
+10:42:01  tool     run_tests
+10:42:09  run      npm test                                  in a sandbox with local network, code 0, 7.9 s, from run_tests
+```
+
+Your agent can't change it: scripts can't touch `talk/`. Want it for tools instead of eyes? Add `audit as json` to `AGENTS.talk`. And your agent can read its own: `the audit` holds this session's steps, so you can ask it what it did.
+
 ### Undo
 
 Your agent made a mess? Take it back:

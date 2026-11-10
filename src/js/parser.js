@@ -412,6 +412,11 @@ export function parse(source, options = {}) {
     if (isWord("the")) {
       i++;
       const next = current();
+      // the audit: the steps of this session
+      if (next !== undefined && next.type === "word" && next.value === "audit") {
+        i++;
+        return node("audit", next, {});
+      }
       // the processes: the background processes, newest first
       if (next !== undefined && next.type === "word" && next.value === "processes") {
         i++;
@@ -1784,6 +1789,23 @@ export function parse(source, options = {}) {
             i++;
           }
         }
+        continue;
+      }
+      // audit as json | audit as text: the format of the audit in talk/audit/
+      if (isWord("audit")) {
+        const token = current();
+        i++;
+        if (!isWord("as")) {
+          error("Expected 'as json' or 'as text'");
+          continue;
+        }
+        i++;
+        if (!isWord("json") && !isWord("text")) {
+          error("Expected 'as json' or 'as text'");
+          continue;
+        }
+        definitions.push({ type: "audit", format: current().value, line: token.line, column: token.column });
+        i++;
         continue;
       }
       if (isWord("import")) {

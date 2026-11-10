@@ -210,6 +210,12 @@ export const HELP = [
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
+    name: "audit", kind: "expression",
+    syntax: "the audit | audit as json (in AGENTS.talk)",
+    description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to talk/audit/<date>.log, which scripts cannot change; 'audit as json' in AGENTS.talk writes JSON Lines instead.",
+    examples: ["for step in the audit\n  if step's kind is 'write'\n    print step's target\n  end\nend"],
+  },
+  {
     name: "allow", kind: "command", where: "AGENTS.talk",
     syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow git push | allow fetch from '<host>', ...",
     description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow git push' lets git push go without asking the human. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com.",

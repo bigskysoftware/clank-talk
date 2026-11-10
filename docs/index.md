@@ -195,9 +195,20 @@ ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with 
 claude --tools "" --allowedTools mcp__clank-talk
 ```
 
+## Full Audit
+
+Ever wonder what your agent is actually doing? Wonder no more.
+
+Every step that touches the world is written to `talk/audit/`: what ran, what it touched, and where. Your agent can't change it.
+
+```text talk/audit/2026-11-09.log
+10:42:01  replace  src/config.js   undo saved
+10:42:01  tool     run_tests
+10:42:09  run      npm test        code 0, 7.9 s
+```
+
 ## Coming Soon
 
-- **Audit:** a log of every step: what ran, what it touched, and where the data came from
 - **Taint tracking:** values remember where they came from, so data from the web can't sneak into places it shouldn't
 - **Secrets:** your agent uses an API key by name, and never sees it
 
