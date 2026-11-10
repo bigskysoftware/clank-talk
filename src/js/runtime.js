@@ -2119,7 +2119,7 @@ async function evaluateNode(node, state) {
     if (node.operator === "+") {
       left = joinPart(left);
       right = joinPart(right);
-    } else if (TEXT_OPERATORS.includes(node.operator)) {
+    } else if (TEXT_OPERATORS.includes(node.operator) && !inList(node.operator, left, right)) {
       // other text operators use the text of a file or a line
       left = await asText(left, state, node);
       right = await asText(right, state, node);
@@ -2273,7 +2273,11 @@ async function programAndArgs(command, state) {
   } else {
     program = toText(value);
     for (const arg of command.args) {
-      args.push(argText(await evaluate(arg, state), state));
+      const value = await evaluate(arg, state);
+      if (value === null || value === undefined) {
+        throw new ScriptError("An argument to " + describe(program) + " is null. Give the tool a value for it", arg);
+      }
+      args.push(argText(value, state));
       written.push(startsWritten(arg));
     }
   }
@@ -2611,7 +2615,11 @@ async function gitArgs(command, state, step) {
       }
       paths.push(file.path);
     }
-    const message = toText(await evaluate(command.message, state));
+    const given = await evaluate(command.message, state);
+    if (given === null || given === undefined) {
+      throw new ScriptError("The commit message is null. Give the commit a message", command.message);
+    }
+    const message = toText(given);
     if (message.trim() === "") {
       throw new ScriptError("A commit needs a message", command.message);
     }
@@ -3128,6 +3136,9 @@ async function runFetch(command, state) {
         throw new ScriptError("headers must be an object, such as { 'Accept': 'text/plain' }", arg.value);
       }
       for (const name of Object.keys(value)) {
+        if (value[name] === null || value[name] === undefined) {
+          throw new ScriptError("The header " + describe(name) + " is null. Give it a value, or leave it out", arg.value);
+        }
         headers[name] = toText(revealSecrets(value[name], secrets));
       }
     } else if (arg.name === "body") {
@@ -4131,10 +4142,10 @@ function evaluateBinary(node, left, right) {
   }
 
   if (op === "is") {
-    return left === right;
+    return sameValue(left, right);
   }
   if (op === "is not") {
-    return left !== right;
+    return !sameValue(left, right);
   }
   if (op === "is less than") {
     return toNumber(left, node) < toNumber(right, node);
@@ -4201,6 +4212,32 @@ function convert(node, value) {
 
 // operators that use the text of a file or a line
 const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "is in", "is not in"];
+
+// contains and is in on a list compare items, so a file in the list stays a file
+function inList(op, left, right) {
+  if (op === "contains" || op === "does not contain") {
+    return Array.isArray(left);
+  }
+  if (op === "is in" || op === "is not in") {
+    return Array.isArray(right);
+  }
+  return false;
+}
+
+// is, contains and is in: a file is the same as a file with the same path; a line is its text
+// other values are the same only if they are equal (1 is not '1'), and lists and objects only if they are one
+function sameValue(left, right) {
+  if (left instanceof FileRef && right instanceof FileRef) {
+    return left.absolute === right.absolute;
+  }
+  if (left instanceof Line) {
+    left = left.text;
+  }
+  if (right instanceof Line) {
+    right = right.text;
+  }
+  return left === right;
+}
 
 // a part of + or ${}: a file is its path, a line is its text, other values stay as they are
 function joinPart(value) {
@@ -4809,7 +4846,7 @@ function contains(container, item, node) {
     return container.includes(toText(item));
   }
   if (Array.isArray(container)) {
-    return container.includes(item);
+    return container.some((each) => sameValue(each, item));
   }
   if (container === null || container === undefined) {
     return false;

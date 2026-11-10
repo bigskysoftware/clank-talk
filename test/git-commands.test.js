@@ -115,6 +115,7 @@ test("git commit checks its values", async () => {
   try {
     assert.match((await errors("git commit ./.env with 'oops'"))[0], /^A script cannot commit hidden files or folders/);
     assert.deepEqual(await errors("git commit ./a.txt with ''"), ["A commit needs a message"]);
+    assert.deepEqual(await errors("git commit ./a.txt with null"), ["The commit message is null. Give the commit a message"]);
     assert.deepEqual(await errors("git commit [] with 'x'"), ["git commit found no files to commit"]);
   } finally {
     await fs.rm(path.join(root, ".env"));

@@ -297,3 +297,15 @@ test("+ and ${} give a file's path; its text is explicit", async () => {
   assert.deepEqual(await output("print 'text: ' + ./src/a.js's text"), ["text: var a = 1\n"]);
   assert.deepEqual(await output("print 'line: ' + line 1 of ./notes.txt"), ["line: first"]);
 });
+
+test("is, contains and is in compare a file by its path, and a line by its text", async () => {
+  assert.deepEqual(await output("print ./src/a.js is @/src/a.js"), ["true"]);
+  assert.deepEqual(await output("print ./src/a.js is ./src/b.js"), ["false"]);
+  assert.deepEqual(await output("print ./src/a.js is not ./src/b.js"), ["true"]);
+  assert.deepEqual(await output("print (./src/*.js) contains ./src/a.js"), ["true"]);
+  assert.deepEqual(await output("print ./src/a.js is in ./src/*.js"), ["true"]);
+  assert.deepEqual(await output("print ./README.md is in ./src/*.js"), ["false"]);
+  assert.deepEqual(await output("print (line 1 of ./notes.txt) is 'first'"), ["true"]);
+  assert.deepEqual(await output("print (lines 1 to 2 of ./notes.txt) contains 'first'"), ["true"]);
+  assert.deepEqual(await output("print ./notes.txt contains 'TODO'"), ["true"]);
+});

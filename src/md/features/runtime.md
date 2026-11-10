@@ -89,6 +89,8 @@ These are semantics, not syntax. A human approved them.
 - An unknown variable is `null`, as in hyperscript.
 - A missing property is `null`. A property of `null` is `null`.
 - `is` is strict: `1 is '1'` is false.
+- Approved (built): `is`, `is not`, `contains` on a list, and `is in` a list compare a file by its path, and a line by its text. Thus `./a.js is @/a.js` is true, `(./src/*.js) contains ./src/a.js` is true, and `(line 1 of f) is 'x'` compares the text. Before, they compared objects, so a hook check such as `if file is @/package.json` never matched. Lists and objects are the same only if they are one value.
+- Approved (built): `null` is an error where it would leave as the text `null`: a `run` or `start` argument, a fetch header, and a commit message. `+`, `${}` and `print` still show `null`.
 - `+` joins text if either side is text. Otherwise it adds numbers.
 - Math on a value that is not a number is an error. Text that holds a number, such as `'2'`, counts as a number.
 - Division by zero is an error.

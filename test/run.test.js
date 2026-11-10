@@ -218,3 +218,9 @@ test("an argument that starts with written-out text can start with '-'", async (
   assert.deepEqual(await output("echo 'Foo'\nprint it.output"), ["-Dtest=Foo\n"]);
   assert.match((await result("echo2 '-x'")).errors[0].message, /^The argument '-x' starts with '-'/);
 });
+
+test("a null argument is an error, not the text null", async () => {
+  await agentsTalk(`tool echo with text\n  run '${NODE}' with '-e', 'console.log(process.argv[1])', text\nend`);
+  assert.deepEqual((await result("echo null")).errors.map((e) => e.message), ["An argument to '" + NODE + "' is null. Give the tool a value for it"]);
+  assert.deepEqual((await result("echo")).errors.map((e) => e.message), ["An argument to '" + NODE + "' is null. Give the tool a value for it"]);
+});

@@ -122,6 +122,10 @@ test("a public name that points to a private address is refused", async () => {
   assert.match((await errors("fetch 'http://six.example/'", { lookup }))[0], /^fetch refused: six\.example points to a local or private address \(\[::1\]\)/);
 });
 
+test("a null header is an error", async () => {
+  assert.deepEqual(await errors(`fetch '${base}/text' with headers: { 'X-Key': null }`), ["The header 'X-Key' is null. Give it a value, or leave it out"]);
+});
+
 test("limits", async () => {
   assert.deepEqual(await errors(`fetch '${base}/big'`), [`fetch got more than 5242880 bytes from ${base}/big`]);
   assert.deepEqual(await errors("fetch 'file:///etc/passwd'"), ["fetch only takes http and https URLs, found 'file:///etc/passwd'"]);
