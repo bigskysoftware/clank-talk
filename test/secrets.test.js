@@ -293,3 +293,17 @@ test("load errors for secrets in a run", async () => {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("the changed files that the host shows hide a secret's value, but the file and undo keep it", async () => {
+  await fs.writeFile(path.join(root, "copy-me.txt"), "key: " + TOKEN + "\n");
+  const result = await run("write read ./copy-me.txt to ./copied.txt", { root });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.changes.map((change) => change.after), ["key: <secret TOKEN>\n"]);
+  assert.equal(await fs.readFile(path.join(root, "copied.txt"), "utf8"), "key: " + TOKEN + "\n");
+  await fs.writeFile(path.join(root, "copy-me.txt"), "changed\n");
+  const undo = [];
+  const edit = await run("replace 'key' with 'token' in ./copied.txt", { root, undo });
+  assert.deepEqual(edit.changes.map((change) => change.before), ["key: <secret TOKEN>\n"]);
+  assert.deepEqual((await run("undo", { root, undo })).errors, []);
+  assert.equal(await fs.readFile(path.join(root, "copied.txt"), "utf8"), "key: " + TOKEN + "\n");
+});

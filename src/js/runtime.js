@@ -361,6 +361,8 @@ async function execute(source, options, execution) {
 
   execution.patterns.stop();
   recordUndo(state);
+  // the host shows the changed files to the agent; undo has its own copy of the text, so only the copy for the host is redacted
+  execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
   failure = failure.map((error) => ({ ...error, message: redact(error.message, state) }));
   for (const warning of execution.warnings) {
@@ -727,6 +729,21 @@ function checkPolicy(policy, agents) {
     return "'" + shown + "' is outside the policy: " + ruleAt(rule) + " limits " + rule.what + " to " + rule.values.join(", ");
   };
   for (const { definition, where } of agents.allows) {
+    // allow secret: inside "deny secrets", "limit secrets to" and "limit fetch to"
+    if (definition.type === "allowSecret") {
+      if (denied.secrets) {
+        errors.push({ message: "This uses secrets, and " + ruleAt(denied.secrets) + " denies secrets", ...where });
+      } else if (limits.secrets && !limits.secrets.values.includes(definition.name)) {
+        errors.push({ message: outside("allow secret " + definition.name, limits.secrets), ...where });
+      }
+      if (limits.fetch) {
+        for (const host of definition.hosts) {
+          if (!isFetchHostInside(host, limits.fetch.values)) {
+            errors.push({ message: outside("allow secret " + definition.name + " for fetch to '" + host + "'", limits.fetch), ...where });
+          }
+        }
+      }
+    }
     if (definition.type === "allowFetch" && limits.fetch) {
       for (const host of definition.hosts) {
         if (!isFetchHostInside(host, limits.fetch.values)) {

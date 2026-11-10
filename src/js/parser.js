@@ -2101,8 +2101,8 @@ export function parse(source, options = {}) {
     }
     if (token.value === "limit") {
       const what = current();
-      if (what === undefined || !["fetch", "env", "changes"].includes(what.value)) {
-        error("Expected fetch, env or changes");
+      if (what === undefined || !["fetch", "env", "changes", "secrets"].includes(what.value)) {
+        error("Expected fetch, env, changes or secrets");
         return null;
       }
       i++;
@@ -2111,8 +2111,8 @@ export function parse(source, options = {}) {
         return null;
       }
       i++;
-      // fetch: hosts in quotes; env: names; changes: paths
-      const wanted = { fetch: "string", env: "word", changes: "path" }[what.value];
+      // fetch: hosts in quotes; env and secrets: names; changes: paths
+      const wanted = { fetch: "string", env: "word", changes: "path", secrets: "word" }[what.value];
       const values = [];
       while (true) {
         const value = current();
@@ -2138,10 +2138,10 @@ export function parse(source, options = {}) {
           return null;
         }
         what = "git push";
-      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes")) {
+      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets")) {
         what = current().value;
       } else {
-        error("Expected git push, start, fetch, run or writes");
+        error("Expected git push, start, fetch, run, writes or secrets");
         return null;
       }
       i++;

@@ -58,7 +58,7 @@ test("an error in the policy stops the script, and names the policy file", async
   const result = await run("print 1", { root, policy: { name: "acme.talk", source: "limit planets to 'mars'" } });
   assert.equal(result.status, "failed");
   assert.equal(result.errors[0].file, "acme.talk");
-  assert.match(result.errors[0].message, /^Expected fetch, env or changes/);
+  assert.match(result.errors[0].message, /^Expected fetch, env, changes or secrets/);
 });
 
 test("--policy reads the file, and --policy-hash refuses a changed one", async () => {
@@ -87,6 +87,28 @@ test("AGENTS.talk allows outside the policy are load errors that name both lines
     "AGENTS.talk 1: 'allow fetch from '*.github.com'' is outside the policy: acme.talk 3:1 limits fetch to api.github.com, *.acme.internal",
     "AGENTS.talk 2: 'allow env SECRET' is outside the policy: acme.talk 4:1 limits env to PATH, HOME",
     "AGENTS.talk 3: 'allow changes to @/.vscode/' is outside the policy: acme.talk 5:1 limits changes to @/.github/",
+  ]);
+});
+
+test("allow secret lines must be inside the policy", async () => {
+  const policy = [
+    "policy 'acme'",
+    "limit fetch to 'api.github.com'",
+    "limit secrets to GITHUB_TOKEN",
+  ].join("\n");
+  await fs.writeFile(path.join(root, "AGENTS.talk"), [
+    "allow secret GITHUB_TOKEN for fetch to 'api.github.com', 'evil.com'",
+    "allow secret NPM_TOKEN for run",
+  ].join("\n"));
+  const result = await run("print 1", { root, policy: { name: "acme.talk", source: policy } });
+  assert.deepEqual(result.errors.map((e) => e.file + " " + e.line + ": " + e.message), [
+    "AGENTS.talk 1: 'allow secret GITHUB_TOKEN for fetch to 'evil.com'' is outside the policy: acme.talk 2:1 limits fetch to api.github.com",
+    "AGENTS.talk 2: 'allow secret NPM_TOKEN' is outside the policy: acme.talk 3:1 limits secrets to GITHUB_TOKEN",
+  ]);
+  const denied = await run("print 1", { root, policy: { name: "acme.talk", source: "policy 'acme'\ndeny secrets" } });
+  assert.deepEqual(denied.errors.map((e) => e.file + " " + e.line + ": " + e.message), [
+    "AGENTS.talk 1: This uses secrets, and acme.talk 2:1 denies secrets",
+    "AGENTS.talk 2: This uses secrets, and acme.talk 2:1 denies secrets",
   ]);
 });
 

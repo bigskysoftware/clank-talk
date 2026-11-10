@@ -67,15 +67,20 @@ end
 
 ### Leaks back
 
-- Approved (built): the exact text of each allowed secret shows as `<secret NAME>` in: `run` output, process output, fetch responses (text and headers), print output, errors, warnings, and the audit. `the previous output` comes from print output, so it is covered too.
+- Approved (built): the exact text of each allowed secret shows as `<secret NAME>` in: `run` output, process output, fetch responses (text and headers), print output, errors, warnings, the changed files, and the audit. `the previous output` comes from print output, so it is covered too.
 - Approved (built): file reads are not changed. Why: `replace` in a file with a token would write `<secret X>` and lose the token. Gap: a script can read a file with a token and send that text to an allowed host. Taint must close this gap.
-- Gap: the changed-files diff that the MCP host shows can hold a secret's value from a file. Same cause as file reads.
+- Approved (built): the changed files that the host shows (before and after text) show a secret's value as `<secret NAME>`. Undo keeps its own copy of the real text, and the files do not change.
 - Limit: redaction finds the exact text only. A program that changes the value (for example base64) can still leak it. Only the sandbox (no network) limits that.
 
 ### Audit and hooks
 
 - Approved (built): the audit records the names, never the values: `fetch  GET https://api.github.com/user  200, 1234 bytes  (secret GITHUB_TOKEN)`.
 - Approved (built): the fetch step has `secrets`, the list of names, so a hook can check a fetch that sends a token.
+
+### Policy
+
+- Approved (built): a harness policy can limit secrets: `limit secrets to <names>`, `deny secrets`, and `limit fetch to` also covers `allow secret ... for fetch to`. See [policy.md](policy.md).
+
 ## Decisions
 
 - Approved: the syntax: `secret NAME` as a value, and `allow secret NAME for fetch to <host>` or `allow secret NAME for run` in AGENTS.talk.
