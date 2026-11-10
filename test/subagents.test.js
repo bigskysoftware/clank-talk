@@ -252,3 +252,18 @@ test("stop process stops a background subagent", async () => {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("a subagent tool cannot reach an unsafe tool through another tool", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-subagents-"));
+  try {
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "tool delete_notes\n  delete @/notes.txt\nend\n\ntool apparently_safe\n  delete_notes\nend\n\ntool ask_model\n  run 'Call apparently_safe.' in a subagent with only apparently_safe\nend");
+    assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["The tool apparently_safe cannot be in a subagent's 'with only' list, because it uses 'delete' (through the tool delete_notes). Injected text could choose its arguments"]);
+    // a loop of calls ends, and a safe chain is fine
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "tool a\n  b\nend\n\ntool b\n  a\nend\n\ntool s\n  run 'x' in a subagent with only a\nend");
+    assert.deepEqual((await run("print 1", { root: dir })).errors, []);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+

@@ -26,6 +26,7 @@ Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 - Approved (built): labels go on expressions, not on each value. Each expression collects the labels of what it reads, and gives them to the expression around it. Thus a value made from labeled values has all their labels: `+`, `${}`, `replace` in text, `lines of`, `first`, `last`, indexes, properties, conversions, `sorted`, `unique`, `find` in text, `length`, and check results.
 - Approved (built): variables, `$` globals, `the result`, tool arguments and tool results keep one set of labels next to the value. A list or object keeps one set for all its items, wherever it goes. Why: values stay plain JavaScript, so the runtime does not change; the cost is extra labels, never fewer.
 - Approved (built): each command has its own frame, so control flow gives no labels: `if page contains 'x'` does not label what the `if` body sets.
+- Approved (built): `on error` keeps the labels of the failed command: the error's message can hold its values, so `error` gets the labels of everything that the command read. Why: without it, a script could make a private or untrusted value fail on purpose, and send the message out with no question (security review 2).
 - Approved (built): an untrusted label keeps at most 5 origins.
 
 ## Checks and hooks
@@ -54,7 +55,8 @@ Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 
 - Approved (built): a written file remembers its untrusted labels. Reading it gives `private` plus those labels. A full `write` takes the labels of its text only; `append` keeps the file's labels too; `replace` and line edits read the file first, so they keep its labels.
 - Approved (built): file labels persist in `@/.talk/taint.json` (scripts cannot change `@/.talk/`). It holds only files with a label beyond `private`: in practice, files written with `untrusted` text. A rewrite with no `untrusted` text removes the entry.
-- Approved (built): each entry has the path, a SHA-256 hash of the file's text, the labels with origins, the time, the session and the script number. If the text changed outside ClankTalk, the hash does not match, and the entry is dropped on the next read. `delete` removes the entry; `move` and `git move` move it; `undo` removes it if the text it puts back does not match.
+- Approved (built): each entry has the path, a SHA-256 hash of the file's text, the labels with origins, the time, the session and the script number. If the text changed outside ClankTalk, the hash does not match, and the entry is dropped on the next read. `delete` removes the entry; `move` and `git move` move it.
+- Approved (built): undo puts the labels back with the text. Each change keeps a copy of the file's entry from before it; when undo restores text that matches that entry's hash, the entry comes back (for a write, a delete and a move). Why: without it, a write and an undo removed an untrusted label (security review 2).
 - Approved (built): the audit records each change as a `taint` step: `taint  notes.md  untrusted from https://...`, `cleared`, `moved from old.md`, or `dropped: changed outside ClankTalk`.
 - Approved: `.talk/taint.json` goes in `.gitignore`, with all of `.talk/`. Why: it is audit-like data about one machine's work. Checked in, it changes with every untrusted write, it holds paths and sessions of scratch files, and it can describe files in a state that was never committed. Entries are sorted by path anyway.
 - Later, maybe: an AGENTS.talk line to share labels in git, with entries only for files that git tracks.

@@ -51,6 +51,7 @@ use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY
 
 - Approved (built): trust the actions, not the answer. The subagent's power comes only from the tools after `with only`. The arguments it sends get no labels, so its tool calls ask no taint questions.
 - Approved (built): the answer gets every label the subagent saw (the prompt and the tool results), and always `untrusted` from `subagent <tool>`.
+- Approved (built): the load check follows tool calls: a listed tool must not reach an unsafe step through another tool, and a host tool counts as unsafe, because ClankTalk cannot look into it (security review 2).
 - Approved (built): a load check refuses a tool in a `with only` list if it writes files (`write`, `append`, `put`, line edits, `replace` in a file, `move`, `delete`), or uses `fetch`, `git`, `start`, or another subagent. `run` is left to the author: list only tools that are safe with any argument. A tool that posts, deletes or spends money must not be in a `with only` list.
 - Approved (built): a tool in a `with only` list must be in AGENTS.talk.
 - Approved (built): a policy can say `deny subagents`.

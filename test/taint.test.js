@@ -296,3 +296,52 @@ test(".talk/taint.json lists its entries sorted by path", async () => {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+
+// ----- security review 2 -----
+
+test("on error keeps the labels of the failed command", async () => {
+  const asked = [];
+  const ask = async (request) => {
+    asked.push(request.question);
+    return "no";
+  };
+  // a private value in an error message: the fetch still asks
+  await run(`set n to (read ./notes.txt) as number\non error\n  fetch '${base}/' with method: 'POST', body: error's message\nend`, { root, ask });
+  assert.deepEqual(asked, ["Send private data to 127.0.0.1?"]);
+  // an untrusted value in an error message: the run still asks
+  asked.length = 0;
+  await run(`set n to (fetch '${base}/') as number\non error\n  say error's message\nend`, { root, ask });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /^Run echo with untrusted text from/);
+});
+
+test("undo puts back the labels of the text it restores", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-undo-"));
+  const undo = [];
+  const go = async (script) => {
+    const result = await run(script, { root: dir, undo });
+    assert.deepEqual(result.errors, []);
+    return result.output;
+  };
+  try {
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
+    await go(`write (fetch '${base}/') to ./page.txt`);
+    // write over it, then undo: the old text comes back, and so does its label
+    await go("write 'clean text' to ./page.txt");
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["false"]);
+    await go("undo");
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
+    // delete, then undo
+    await go("delete ./page.txt");
+    await go("undo");
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
+    // move, then undo: the label goes back to the old path
+    await go("move ./page.txt to ./moved.txt");
+    await go("undo");
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+

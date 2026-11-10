@@ -391,7 +391,8 @@ async function execute(source, options, execution) {
     }
   }
   // the host shows the changed files to the agent; undo has its own copy of the text, so only the copy for the host is redacted
-  execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
+  // labelsBefore is for undo only, so the host does not get it
+  execution.changes = execution.changes.map(({ labelsBefore, ...change }) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
   failure = failure.map((error) => ({ ...error, message: redact(error.message, state) }));
   for (const warning of execution.warnings) {
@@ -499,7 +500,7 @@ function checkSubagents(agents) {
           errors.push({ message: "A subagent can use only tools from AGENTS.talk, and there is no tool " + name, ...where });
           continue;
         }
-        const unsafe = unsafeForSubagent(tool);
+        const unsafe = unsafeForSubagent(tool, agents.definitions, new Set());
         if (unsafe !== null) {
           errors.push({ message: "The tool " + name + " cannot be in a subagent's 'with only' list, because it uses " + unsafe + ". Injected text could choose its arguments", ...where });
         }
@@ -509,9 +510,24 @@ function checkSubagents(agents) {
   return errors;
 }
 
-// the first step in a tool that a subagent must not reach, or null
-function unsafeForSubagent(tool) {
+// the first step that a subagent must not reach, in the tool or in any tool it calls, or null
+// a host tool cannot be looked into, so it counts as unsafe; seen stops a loop of calls
+function unsafeForSubagent(tool, definitions, seen) {
+  seen.add(tool.name);
   for (const node of findNodes(tool, [])) {
+    if (node.type === "toolCall") {
+      const called = definitions[node.name];
+      if (called === undefined) {
+        return "the host tool " + node.name;
+      }
+      if (!seen.has(node.name)) {
+        const inner = unsafeForSubagent(called, definitions, seen);
+        if (inner !== null) {
+          return inner + " (through the tool " + node.name + ")";
+        }
+      }
+      continue;
+    }
     if (SUBAGENT_UNSAFE.includes(node.type)) {
       return "'" + node.type + "'";
     }
@@ -1371,6 +1387,12 @@ async function runCommands(commands, state, tools, maxSteps) {
         } else {
           state.resultLabels = taint.union(state.resultLabels, taint.current(state));
         }
+      } catch (failed) {
+        // the message of an error can hold the values of its command, so the error keeps their labels
+        if (failed instanceof ScriptError) {
+          failed.labels = taint.union(failed.labels || taint.none(), taint.current(state));
+        }
+        throw failed;
       } finally {
         taint.end(state);
       }
@@ -1380,6 +1402,7 @@ async function runCommands(commands, state, tools, maxSteps) {
       if (err instanceof SecretUse) {
         const word = SECRET_COMMAND_WORDS.includes(command.type) ? command.type : null;
         err = new ScriptError(secretUseMessage(err.secret, err.where || word, state), command);
+        err.labels = caught.labels;
       }
       if (!canHandle(err, state)) {
         throw err;
@@ -1424,13 +1447,17 @@ function canHandle(err, state) {
 // gives "continue" or "stop" (the default)
 async function runHandler(err, state, tools, maxSteps) {
   const error = Object.create(null);
-  error.message = err.message;
+  // the handler sees no secret's value, and the message keeps the labels of the failed command
+  error.message = redact(err.message, state);
   error.line = err.line;
   error.column = err.column;
   if (err.file) {
     error.file = err.file;
   }
   setOwn(state.variables, "error", error);
+  const labels = err.labels || taint.none();
+  taint.setSlot(state.variables, "error", labels);
+  taint.attach(error, labels);
   state.handling = true;
   try {
     const signal = await runCommands(state.handler.body, state, tools, maxSteps);
@@ -3519,7 +3546,8 @@ function recordUndo(state) {
     }
     const item = byPath.get(change.path);
     if (item === undefined) {
-      byPath.set(change.path, { path: change.path, before: change.before, after: change.after });
+      // labelsBefore: the file's taint entry before the script, so undo can put it back
+      byPath.set(change.path, { path: change.path, before: change.before, after: change.after, labelsBefore: change.labelsBefore || null });
     } else {
       item.after = change.after;
     }
@@ -3578,6 +3606,7 @@ async function runUndo(command, state) {
   // check everything first: each file must be as the script left it,
   // or as a newer item puts it back; if one is not, nothing changes
   const final = new Map();
+  const finalLabels = new Map();
   const changed = [];
   for (const item of items) {
     let now;
@@ -3590,6 +3619,7 @@ async function runUndo(command, state) {
       changed.push(item.path);
     }
     final.set(item.path, item.before);
+    finalLabels.set(item.path, item.labelsBefore || null);
   }
   if (changed.length > 0) {
     throw new ScriptError("Cannot undo: these files changed after the script: " + changed.join(", ") + ". Nothing was changed", command);
@@ -3597,7 +3627,7 @@ async function runUndo(command, state) {
 
   const restored = [];
   for (const [path, text] of final) {
-    await restoreFile(path, text, state, command);
+    await restoreFile(path, text, state, command, finalLabels.get(path));
     restored.push(path);
   }
 
@@ -3628,7 +3658,7 @@ async function currentText(path, state) {
 
 // put a file back to its old text; null removes a file that the script made
 // the same checks as a write, and the "undo" and "change" hooks
-async function restoreFile(path, text, state, node) {
+async function restoreFile(path, text, state, node, labelsBefore) {
   const file = new FileRef(nodePath.resolve(state.root, path), state.root);
   checkInsideRoot(file.absolute, state, node, path);
   checkDenied("writes", state, node);
@@ -3650,9 +3680,13 @@ async function restoreFile(path, text, state, node) {
     state.seen.set(await fs.realpath(file.absolute), text);
   }
   state.execution.changes.push({ path: file.path, before, after: text, undo: true });
-  // undo puts back old text; labels for other text no longer hold
+  // undo puts back old text, and the labels that text had, so undo cannot remove a label
   const entry = state.fileLabels[file.path];
-  if (entry !== undefined && (text === null || entry.hash !== taint.hashText(text))) {
+  if (labelsBefore && text !== null && labelsBefore.hash === taint.hashText(text)) {
+    state.fileLabels[file.path] = { ...labelsBefore };
+    state.fileLabelsChanged = true;
+    auditStep(state, "taint", file.path, "restored: " + taint.describe(taint.entryLabels(labelsBefore)));
+  } else if (entry !== undefined && (text === null || entry.hash !== taint.hashText(text))) {
     taint.deleteFile(state.fileLabels, file.path);
     state.fileLabelsChanged = true;
     auditStep(state, "taint", file.path, "cleared");
@@ -4317,13 +4351,22 @@ async function writeText(file, text, append, state, node) {
   }
   await fs.writeFile(real, after, "utf8");
   state.seen.set(await fs.realpath(real), after);
-  state.execution.changes.push({ path: file.path, before, after });
+  state.execution.changes.push({ path: file.path, before, after, labelsBefore: labelEntryFor(state, file.path, before) });
   // an append keeps what is in the file, so it keeps the file's labels too
   let labels = taint.current(state);
   if (append && before !== null) {
     labels = taint.union(labels, taint.forFileText(state.fileLabels, file.path, before).labels);
   }
   fileLabelsAfter(state, file.path, after, labels);
+}
+
+// a copy of a file's taint entry, if it holds for this text; undo uses it to put the labels back
+function labelEntryFor(state, path, text) {
+  const entry = state.fileLabels[path];
+  if (entry === undefined || text === null || entry.hash !== taint.hashText(text)) {
+    return null;
+  }
+  return { ...entry, labels: entry.labels.map((item) => ({ label: item.label, from: [...item.from] })) };
 }
 
 // remember the untrusted labels of a file's new text, and audit a change
@@ -4377,7 +4420,7 @@ async function deleteFile(file, state, node) {
   const text = await fs.readFile(real, "utf8");
   await fs.rm(file.absolute);
   state.seen.delete(real);
-  state.execution.changes.push({ path: file.path, before: text, after: null });
+  state.execution.changes.push({ path: file.path, before: text, after: null, labelsBefore: labelEntryFor(state, file.path, text) });
   if (taint.deleteFile(state.fileLabels, file.path)) {
     state.fileLabelsChanged = true;
     auditStep(state, "taint", file.path, "cleared");
@@ -4408,8 +4451,8 @@ async function moveFile(from, to, state, node) {
   state.seen.delete(real);
   state.seen.set(await fs.realpath(to.absolute), text);
   // two changes, so undo puts the text back at the old path, and removes the new one
-  state.execution.changes.push({ path: from.path, before: text, after: null });
-  state.execution.changes.push({ path: to.path, before: null, after: text });
+  state.execution.changes.push({ path: from.path, before: text, after: null, labelsBefore: labelEntryFor(state, from.path, text) });
+  state.execution.changes.push({ path: to.path, before: null, after: text, labelsBefore: null });
   // the labels move with the file
   if (taint.moveFile(state.fileLabels, from.path, to.path)) {
     state.fileLabelsChanged = true;

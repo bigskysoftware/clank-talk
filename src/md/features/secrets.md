@@ -67,6 +67,7 @@ end
 
 ### Leaks back
 
+- Approved (built): `on error` gets the error's message with each secret's value as `<secret NAME>`, so a handler cannot copy a value from a file into a fetch (security review 2).
 - Approved (built): the exact text of each allowed secret shows as `<secret NAME>` in: `run` output, process output, fetch responses (text and headers), print output, errors, warnings, the changed files, and the audit. `the previous output` comes from print output, so it is covered too.
 - Approved (built): file reads are not changed. Why: `replace` in a file with a token would write `<secret X>` and lose the token. Gap: a script can read a file with a token and send that text to an allowed host. Taint must close this gap.
 - Approved (built): the changed files that the host shows (before and after text) show a secret's value as `<secret NAME>`. Undo keeps its own copy of the real text, and the files do not change.

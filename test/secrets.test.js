@@ -307,3 +307,13 @@ test("the changed files that the host shows hide a secret's value, but the file 
   assert.deepEqual((await run("undo", { root, undo })).errors, []);
   assert.equal(await fs.readFile(path.join(root, "copied.txt"), "utf8"), "key: " + TOKEN + "\n");
 });
+
+
+test("on error sees no secret's value, also from a file that holds it", async () => {
+  await fs.writeFile(path.join(root, "copy.txt"), TOKEN + "\n");
+  assert.deepEqual(await output("set n to (read ./copy.txt) as number\non error\n  write error's message to ./leak.txt\n  continue\nend"), []);
+  const leak = await fs.readFile(path.join(root, "leak.txt"), "utf8");
+  assert.ok(!leak.includes(TOKEN));
+  assert.match(leak, /<secret TOKEN>/);
+});
+
