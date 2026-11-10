@@ -23,6 +23,13 @@ claude mcp add clank-talk -- npx -y -p clank-talk@0.2 clank-talk-mcp
 claude --tools "" --allowedTools mcp__clank-talk
 ```
 
+With Codex:
+
+```bash
+codex mcp add clank-talk -- npx -y -p clank-talk@0.2 clank-talk-mcp
+codex mcp list
+```
+
 Any other MCP client:
 
 ```json
