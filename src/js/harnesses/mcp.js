@@ -115,7 +115,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, privateHosts: session.privateHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, privateHosts: session.privateHosts, harness: "MCP", processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
       scope.output.text = keptOutput(result);
     } finally {
       if (timer !== null) {

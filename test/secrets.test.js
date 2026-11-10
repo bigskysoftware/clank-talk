@@ -156,7 +156,7 @@ test("allow secret is only for AGENTS.talk, and needs for fetch to or for run", 
     await fs.writeFile(path.join(dir, "more.talk"), "allow secret X for fetch to 'a.com'");
     assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["'allow secret' is only allowed in AGENTS.talk"]);
     await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow secret X for push");
-    assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["Expected 'fetch' or 'run', as in: allow secret X for fetch to 'api.github.com'"]);
+    assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["Expected 'fetch', 'run' or 'subagents', as in: allow secret X for fetch to 'api.github.com'"]);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

@@ -63,7 +63,7 @@ end
 
 - Approved: `require sandbox for run, start`: a `run` or `start` with no `in a sandbox` is a load error in AGENTS.talk (loud), not only a runtime error.
 - Approved: `limit <what> to <list>`: a ceiling. An `allow` in AGENTS.talk outside it is a load error that names the policy line.
-- Approved: `deny <what>`: `git push`, `start`, `fetch`, `run`, `writes` (read-only session). A tool in AGENTS.talk that uses a denied thing is a load error.
+- Approved: `deny <what>`: `git push`, `start`, `fetch`, `run`, `writes` (read-only session), `secrets`, `subagents`. A tool in AGENTS.talk that uses a denied thing is a load error.
 - Approved: policy hooks run before AGENTS.talk hooks, and AGENTS.talk cannot remove them.
 - Approved (built): `deny writes` denies file changes (`write`, `append`, line edits, `replace` in a file, `undo`) and git changes (`switch`, `commit`, `merge`, `delete`). It does not cover programs: a program in a sandbox can write in the project. For a read-only session, also `deny run` and `deny start`.
 - Approved (built): the rules apply at load time to AGENTS.talk tools and hooks, and again at run time to each step. Thus a script cannot get around them.

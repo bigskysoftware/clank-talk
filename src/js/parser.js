@@ -1782,7 +1782,18 @@ export function parse(source, options = {}) {
       return null;
     }
     let sandbox = null;
-    if (isWord("in")) {
+    let subagent = null;
+    // run '<prompt>' in a subagent with only <tool>, ...: see src/md/features/subagents.md
+    if (isWord("in") && tokens[i + 2] !== undefined && tokens[i + 2].type === "word" && tokens[i + 2].value === "subagent") {
+      subagent = parseSubagent();
+      if (subagent === null) {
+        return null;
+      }
+      if (args !== null || secrets.length > 0) {
+        error("A subagent takes a prompt only, with no 'with' arguments or 'using secret'");
+        return null;
+      }
+    } else if (isWord("in")) {
       sandbox = parseSandbox();
       if (sandbox === null) {
         return null;
@@ -1796,7 +1807,78 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "run", program, args, secrets, sandbox, within, line: token.line, column: token.column };
+    return { type: "run", program, args, secrets, sandbox, subagent, within, line: token.line, column: token.column };
+  }
+
+  // in a subagent with only <tool>, <tool>: after run; gives { tools }
+  function parseSubagent() {
+    i++;
+    if (!isWord("a")) {
+      error("Expected 'a subagent'");
+      return null;
+    }
+    i++;
+    i++;
+    if (!isWord("with")) {
+      error("Expected 'with only', as in: in a subagent with only gh_issues");
+      return null;
+    }
+    i++;
+    if (!isWord("only")) {
+      error("Expected 'only', as in: in a subagent with only gh_issues");
+      return null;
+    }
+    i++;
+    const tools = [];
+    while (true) {
+      const name = parseName();
+      if (name === null) {
+        return null;
+      }
+      tools.push(name);
+      if (!isOp(",")) {
+        break;
+      }
+      i++;
+    }
+    return { tools };
+  }
+
+  // use model '<id>' for subagents [with secret NAME]: at the top of AGENTS.talk
+  function parseUseModel(token) {
+    if (!isWord("model")) {
+      error("Expected 'model', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+      return null;
+    }
+    i++;
+    const model = current();
+    if (model === undefined || model.type !== "string") {
+      error("Expected a model name in quotes, such as 'claude-sonnet-5-5'");
+      return null;
+    }
+    i++;
+    for (const word of ["for", "subagents"]) {
+      if (!isWord(word)) {
+        error("Expected '" + word + "', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+        return null;
+      }
+      i++;
+    }
+    // with secret NAME: the key, for a harness that cannot lend its model; pi needs none
+    let secret = null;
+    if (isWord("with")) {
+      i++;
+      if (!isWord("secret")) {
+        error("Expected 'secret', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+        return null;
+      }
+      i++;
+      secret = parseName();
+      if (secret === null) {
+        return null;
+      }
+    }
+    return { type: "useModel", model: model.value, secret, line: token.line, column: token.column };
   }
 
   // in a sandbox [with network, local network, writes to <path>, reads of <path>], after run or start
@@ -1885,6 +1967,23 @@ export function parse(source, options = {}) {
     if (program === null) {
       return null;
     }
+    // start '<prompt>' in a subagent with only <tool>, ... as '<name>': a subagent in the background
+    if (isWord("in") && tokens[i + 2] !== undefined && tokens[i + 2].type === "word" && tokens[i + 2].value === "subagent") {
+      const subagent = parseSubagent();
+      if (subagent === null) {
+        return null;
+      }
+      if (!isWord("as")) {
+        error("Expected 'as' and a name, such as: start 'Summarize the issues' in a subagent with only gh_issues as 'issues'");
+        return null;
+      }
+      i++;
+      const subagentName = parseExpression();
+      if (subagentName === null) {
+        return null;
+      }
+      return { type: "start", program, args: null, name: subagentName, secrets: [], sandbox: null, subagent, line: token.line, column: token.column };
+    }
     let args = null;
     if (isWord("with")) {
       i++;
@@ -1921,7 +2020,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "start", program, args, name, secrets, sandbox, line: token.line, column: token.column };
+    return { type: "start", program, args, name, secrets, sandbox, subagent: null, line: token.line, column: token.column };
   }
 
   // at the top of AGENTS.talk:
@@ -1984,10 +2083,15 @@ export function parse(source, options = {}) {
     // allow secret NAME for run: a run or start that is provided it, with "using secret NAME"
     if (isWord("run")) {
       i++;
-      return { type: "allowSecret", name, hosts: [], run: true, line: token.line, column: token.column };
+      return { type: "allowSecret", name, hosts: [], run: true, subagents: false, line: token.line, column: token.column };
+    }
+    // allow secret NAME for subagents: the key for the model, in "use model ... with secret NAME"
+    if (isWord("subagents")) {
+      i++;
+      return { type: "allowSecret", name, hosts: [], run: false, subagents: true, line: token.line, column: token.column };
     }
     if (!isWord("fetch")) {
-      error("Expected 'fetch' or 'run', as in: allow secret " + name + " for fetch to 'api.github.com'");
+      error("Expected 'fetch', 'run' or 'subagents', as in: allow secret " + name + " for fetch to 'api.github.com'");
       return null;
     }
     i++;
@@ -2000,7 +2104,7 @@ export function parse(source, options = {}) {
     if (hosts === null) {
       return null;
     }
-    return { type: "allowSecret", name, hosts, run: false, line: token.line, column: token.column };
+    return { type: "allowSecret", name, hosts, run: false, subagents: false, line: token.line, column: token.column };
   }
 
   // 'api.github.com', '*.npmjs.org': hosts in quotes, lower case
@@ -2147,10 +2251,10 @@ export function parse(source, options = {}) {
           return null;
         }
         what = "git push";
-      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets")) {
+      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets") || isWord("subagents")) {
         what = current().value;
       } else {
-        error("Expected git push, start, fetch, run, writes or secrets");
+        error("Expected git push, start, fetch, run, writes, secrets or subagents");
         return null;
       }
       i++;
@@ -2254,6 +2358,15 @@ export function parse(source, options = {}) {
         i++;
         while (!atEnd() && !isWord("policy") && !isWord("require") && !isWord("limit") && !isWord("deny") && !isWord("audit") && !isWord("before") && !isWord("after")) {
           i++;
+        }
+        continue;
+      }
+      if (isWord("use")) {
+        const token = current();
+        i++;
+        const definition = parseUseModel(token);
+        if (definition !== null) {
+          definitions.push(definition);
         }
         continue;
       }

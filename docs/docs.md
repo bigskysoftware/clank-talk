@@ -576,6 +576,29 @@ TODO (Carson): the limits, in your words.
 - An `if` does not pass labels to what it sets.
 - Taint can't see inside a program. A tool that brings in web text needs `untrusted tool`.
 
+### Subagents
+
+TODO (Carson): intro. Hand a task to a model that can use only the tools you name.
+
+```talk
+# AGENTS.talk
+untrusted tool gh_issues with query
+  run 'gh' with 'issue', 'list', '--search', query
+end
+
+# Summarizes the most important open issues.
+tool summarize_issues
+  run 'Summarize the most important open issues' in a subagent with only gh_issues
+end
+```
+
+TODO (Carson): prose for these points.
+
+- In pi, the subagent uses pi's own model and login. In Claude Code and other MCP clients, it needs a model and a key: `use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY`.
+- The subagent can call only the tools after `with only`, and those tools can't write files, fetch, or use git.
+- Its answer is always untrusted.
+- `start '...' in a subagent with only gh_issues as 'issues'` runs it in the background, as a process.
+
 ### Asking You
 
 `ask` puts a question to you, and waits, two minutes at most, unless you say `within`. Only you answer, never the agent. If nobody answers, it gives `null`, which means no:

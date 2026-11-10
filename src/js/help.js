@@ -152,8 +152,8 @@ export const HELP = [
   {
     name: "run", kind: "command", where: "AGENTS.talk",
     syntax: "run <program and args> | run <program> with <arg>, ... [using secret <NAME>, ...] [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>]",
-    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on. 'in a sandbox' runs it in an OS sandbox: it can write only the project (not .git, .talk or hidden files), read only system folders, its own install folder and tool caches, and use no network ('with local network' allows localhost only). On an OS with no sandbox, it is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable; AGENTS.talk needs 'allow secret NPM_TOKEN for run'. Its value shows as <secret NPM_TOKEN> in the output.",
-    examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend"],
+    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on. 'in a sandbox' runs it in an OS sandbox: it can write only the project (not .git, .talk or hidden files), read only system folders, its own install folder and tool caches, and use no network ('with local network' allows localhost only). On an OS with no sandbox, it is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable; AGENTS.talk needs 'allow secret NPM_TOKEN for run'. Its value shows as <secret NPM_TOKEN> in the output. 'run <prompt> in a subagent with only <tools>' hands the task to a model that can call only those tools; its answer is untrusted.",
+    examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend", "# Summarizes the most important open issues.\ntool summarize_issues\n  run 'Summarize the most important open issues' in a subagent with only gh_issues\nend"],
   },
   {
     name: "import", kind: "command", where: "AGENTS.talk",
@@ -188,7 +188,7 @@ export const HELP = [
   {
     name: "start", kind: "command", where: "AGENTS.talk",
     syntax: "start <program> [with <arg>, ...] as <name> [using secret <NAME>, ...] [in a sandbox [with ...]]",
-    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run.",
+    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> in a subagent with only <tools> as <name>' runs a subagent in the background; its answer is the process's output.",
     examples: ["tool site_server\n  start 'npm run serve-site' as 'site' in a sandbox\nend"],
   },
   {
@@ -241,8 +241,8 @@ export const HELP = [
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
-    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>', ... | allow secret <NAME> for fetch to '<host>', ... | allow secret <NAME> for run",
-    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com. 'allow secret ... for fetch to' lets scripts use a secret, and names the hosts it can go to; it does not skip the fetch question. 'allow secret ... for run' lets a run or start in a tool have it, with 'using secret'. A name cannot be in both 'allow env' and 'allow secret'.",
+    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>', ... | allow secret <NAME> for fetch to '<host>', ... | allow secret <NAME> for run | allow secret <NAME> for subagents | use model '<id>' for subagents [with secret <NAME>]",
+    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com. 'allow secret ... for fetch to' lets scripts use a secret, and names the hosts it can go to; it does not skip the fetch question. 'allow secret ... for run' lets a run or start in a tool have it, with 'using secret'. A name cannot be in both 'allow env' and 'allow secret'. 'use model' picks the model for subagents; pi lends its own, other harnesses need a key from 'allow secret ... for subagents'.",
     examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore", "allow secret GITHUB_TOKEN for fetch to 'api.github.com'"],
   },
   {

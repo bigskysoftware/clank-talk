@@ -2,6 +2,7 @@
 // pi.js is the entry file. It gives this module pi's TypeBox, so the tests can run without pi.
 
 import { run, stopAllProcesses } from "../clank-talk.js";
+import { SubagentError, schemaFor } from "../subagent.js";
 import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
@@ -89,6 +90,8 @@ export function clankTalkExtension(pi, Type) {
           processes: session.processes,
           audit: session.audit,
           ask: askFor(ctx),
+          harness: "pi",
+          lendModel: lendModelFor(ctx),
           maxSteps: MAX_STEPS,
           onStep: progressFor(onUpdate),
           signal,
@@ -108,6 +111,62 @@ export function clankTalkExtension(pi, Type) {
 
 function newSession(root) {
   return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), privateHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
+}
+
+// a subagent uses pi's own model and login, so it needs no API key; see src/md/features/subagents.md
+// name is null for pi's current model, "provider/id", or a bare model id
+export function lendModelFor(ctx) {
+  if (!ctx || !ctx.modelRegistry) {
+    return null;
+  }
+  return (name) => {
+    const model = name === null ? ctx.model : findModel(ctx, name);
+    if (!model) {
+      throw new Error(name === null ? "pi has no model selected for the subagent" : "pi does not know the model " + name + ". Use a name from /model, such as anthropic/claude-sonnet-5-5");
+    }
+    return async ({ system, tools, history, signal }) => {
+      const context = {
+        systemPrompt: system,
+        tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: schemaFor(tool) })),
+        messages: history.flatMap(piMessages),
+      };
+      const reply = await ctx.modelRegistry.complete(model, context, { signal });
+      if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+        throw new SubagentError("The model failed: " + (reply.errorMessage || reply.stopReason));
+      }
+      const text = reply.content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
+      const calls = reply.content.filter((block) => block.type === "toolCall").map((block) => ({ id: block.id, name: block.name, input: block.arguments }));
+      const stops = { toolUse: "tool_use", length: "too_long" };
+      return { stop: stops[reply.stopReason] || "end", text, calls, raw: reply };
+    };
+  };
+}
+
+function findModel(ctx, name) {
+  const slash = name.indexOf("/");
+  if (slash > 0) {
+    return ctx.modelRegistry.find(name.slice(0, slash), name.slice(slash + 1));
+  }
+  return ctx.modelRegistry.getAvailable().find((model) => model.id === name);
+}
+
+// the neutral history as pi messages: the assistant's reply goes back as it came
+function piMessages(message) {
+  const timestamp = Date.now();
+  if (message.role === "user") {
+    return [{ role: "user", content: message.text, timestamp }];
+  }
+  if (message.role === "assistant") {
+    return [message.raw];
+  }
+  return message.results.map((result) => ({
+    role: "toolResult",
+    toolCallId: result.id,
+    toolName: result.name,
+    content: [{ type: "text", text: result.content }],
+    isError: result.isError,
+    timestamp,
+  }));
 }
 
 // "ask" in a script goes to a pi dialog, so the human answers, never the model

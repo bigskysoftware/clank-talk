@@ -11,6 +11,7 @@ import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } f
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
 import * as taint from "./taint.js";
+import { runSubagent, anthropicModel, SubagentError, API_URL } from "./subagent.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
 import os from "node:os";
@@ -254,6 +255,7 @@ async function execute(source, options, execution) {
   }
   const secrets = await loadSecrets(root, agents.allowedSecrets);
   secrets.errors.push(...checkSecretUses(agents));
+  secrets.errors.push(...checkSubagents(agents));
   if (secrets.errors.length > 0) {
     return finish(execution, "failed", secrets.errors);
   }
@@ -324,6 +326,14 @@ async function execute(source, options, execution) {
     recordedChanges: 0,
     // the host's way to ask the human: async ({ question, choices, signal }) => text or null
     ask: options.ask || null,
+    // subagents: the host's name, a host that lends its model (pi): (name or null) => model or null,
+    // the API URL (tests use a local one), and the "use model" line
+    harness: options.harness || "this host",
+    // the host's options, for the small scripts that a background subagent runs
+    options,
+    lendModel: options.lendModel || null,
+    subagentUrl: options.subagentUrl || API_URL,
+    useModel: agents.useModel,
     // how long a question waits when it has no "within"; a host can change it
     askTimeLimit: options.askTimeLimit || ASK_TIME_LIMIT,
     askTimedOut: false,
@@ -405,7 +415,7 @@ async function loadSecrets(root, allowed) {
   }
   const local = await readEnvFile(nodePath.join(root, ".env.local"));
   const base = await readEnvFile(nodePath.join(root, ".env"));
-  for (const { name, hosts, run, where } of allowed) {
+  for (const { name, hosts, run, subagents, where } of allowed) {
     let entry = secrets.get(name);
     if (entry === undefined) {
       let value = process.env[name];
@@ -421,12 +431,15 @@ async function loadSecrets(root, allowed) {
       if (value !== null && value.length < SECRET_MIN_LENGTH) {
         errors.push({ message: "The value of secret " + name + " is shorter than " + SECRET_MIN_LENGTH + " characters, so it cannot be kept out of the output. Use a longer value, or remove the allow line.", ...where });
       }
-      entry = { name, hosts: [], run: false, value };
+      entry = { name, hosts: [], run: false, subagents: false, value };
       secrets.set(name, entry);
     }
     entry.hosts.push(...hosts);
     if (run) {
       entry.run = true;
+    }
+    if (subagents) {
+      entry.subagents = true;
     }
   }
   return { secrets, errors };
@@ -454,6 +467,209 @@ function checkSecretUses(agents) {
     }
   }
   return errors;
+}
+
+// ----- subagents; see src/md/features/subagents.md -----
+
+// at most this many tool calls, and this long, for one subagent
+const SUBAGENT_MAX_CALLS = 20;
+const SUBAGENT_TIME_LIMIT = 5 * 60 * 1000;
+
+// steps that a tool in a "with only" list cannot have: injected text can choose its arguments
+const SUBAGENT_UNSAFE = ["write", "append", "put", "remove", "replaceLines", "removeLines", "move", "delete", "fetch", "git", "start"];
+
+// load errors: the model's key must be allowed for subagents, and each "with only" tool must exist and be safe
+function checkSubagents(agents) {
+  const errors = [];
+  const model = agents.useModel;
+  if (model !== null && model.secret !== null && !agents.allowedSecrets.some((allowed) => allowed.name === model.secret && allowed.subagents)) {
+    errors.push({ message: "'use model' needs its key allowed for subagents. Add: allow secret " + model.secret + " for subagents", ...model.where });
+  }
+  for (const definition of Object.values(agents.definitions)) {
+    for (const node of findNodes(definition, [])) {
+      if ((node.type !== "run" && node.type !== "start") || !node.subagent) {
+        continue;
+      }
+      const where = { line: node.line, column: node.column, file: definition.file };
+      for (const name of node.subagent.tools) {
+        const tool = agents.definitions[name];
+        if (tool === undefined) {
+          errors.push({ message: "A subagent can use only tools from AGENTS.talk, and there is no tool " + name, ...where });
+          continue;
+        }
+        const unsafe = unsafeForSubagent(tool);
+        if (unsafe !== null) {
+          errors.push({ message: "The tool " + name + " cannot be in a subagent's 'with only' list, because it uses " + unsafe + ". Injected text could choose its arguments", ...where });
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+// the first step in a tool that a subagent must not reach, or null
+function unsafeForSubagent(tool) {
+  for (const node of findNodes(tool, [])) {
+    if (SUBAGENT_UNSAFE.includes(node.type)) {
+      return "'" + node.type + "'";
+    }
+    // replace in a variable is fine; replace in a file is a write
+    if (node.type === "replace" && node.target && node.target.type !== "variable" && node.target.type !== "result") {
+      return "'replace' in a file";
+    }
+    if ((node.type === "run" || node.type === "start") && node.subagent) {
+      return "another subagent";
+    }
+  }
+  return null;
+}
+
+// the model for a subagent: the host lends one (pi), or the API with the key from "use model"
+function subagentModel(state, node) {
+  const use = state.useModel;
+  if (state.lendModel !== null) {
+    try {
+      return state.lendModel(use === null ? null : use.model);
+    } catch (err) {
+      throw new ScriptError(err.message, node);
+    }
+  }
+  if (use === null || use.secret === null) {
+    throw new ScriptError("This harness (" + state.harness + ") cannot lend its model to a subagent. Add a model and a key to AGENTS.talk: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY", node);
+  }
+  const entry = state.secrets.get(use.secret);
+  if (entry === undefined || entry.value === null) {
+    throw new ScriptError("No value for secret " + use.secret + ". Put it in the environment, in .env.local or in .env.", node);
+  }
+  return anthropicModel({ url: state.subagentUrl, key: entry.value, model: use.model });
+}
+
+// run '<prompt>' in a subagent with only <tools>: the answer is untrusted text
+async function runSubagentCommand(command, state) {
+  checkDenied("subagents", state, command);
+  const { value: promptValue, labels: promptLabels } = await evaluateLabeled(command.program, state);
+  const prompt = redact(toText(promptValue), state);
+  const ask = subagentModel(state, command);
+  const owner = "subagent " + state.auditFrom;
+  const tools = command.subagent.tools.map((name) => ({ name, description: state.definitions[name].description || "A ClankTalk tool.", params: state.definitions[name].params }));
+  let limit = shorter(state.timeLimit, SUBAGENT_TIME_LIMIT);
+  if (command.within !== null) {
+    limit = shorter(limit, await durationMs(command.within, state));
+  }
+  const timeout = AbortSignal.timeout(limit);
+  const signal = AbortSignal.any([state.execution.signal, timeout]);
+
+  // every label the subagent saw goes on its answer
+  let seen = promptLabels;
+  const callOne = async (name, input) => {
+    if (!command.subagent.tools.includes(name)) {
+      return { content: "There is no tool named " + name + ". Use: " + command.subagent.tools.join(", "), isError: true };
+    }
+    takeStep(command, state, state.maxSteps);
+    const definition = state.definitions[name];
+    const args = definition.params.map((param) => (input[param] === undefined || input[param] === null ? null : String(input[param])));
+    const savedFrom = state.auditFrom;
+    state.auditFrom = owner;
+    // a root frame: the subagent's arguments have no labels, so its tool calls ask no taint questions
+    taint.begin(state, true);
+    try {
+      if (definition.untrusted) {
+        taint.addLabel(state, taint.UNTRUSTED, "tool " + name);
+      }
+      const step = Object.create(null);
+      step.args = args;
+      step.named = Object.create(null);
+      await runHooks("before", [name], step, state, command);
+      auditStep(state, "tool", name, args.map((arg) => toText(arg)).join(", "));
+      const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps, [], Object.create(null));
+      await runHooks("after", [name], step, state, command);
+      seen = taint.union(seen, taint.current(state));
+      return { content: redact(toText(showSecrets(result)), state), isError: false };
+    } catch (err) {
+      if (!(err instanceof ScriptError) || err instanceof Cancelled || err instanceof StepBudget) {
+        throw err;
+      }
+      return { content: redact(err.message, state), isError: true };
+    } finally {
+      taint.end(state);
+      state.auditFrom = savedFrom;
+    }
+  };
+
+  let answer;
+  try {
+    answer = await runSubagent({ ask, prompt, tools, callTool: callOne, maxCalls: SUBAGENT_MAX_CALLS, signal });
+  } catch (err) {
+    if (state.execution.signal.aborted) {
+      throw new Cancelled("Cancelled", command);
+    }
+    if (timeout.aborted) {
+      throw new ScriptError("The subagent did not finish within " + limit + "ms", command);
+    }
+    if (err instanceof SubagentError) {
+      throw new ScriptError(redact(err.message, state), command);
+    }
+    throw err;
+  }
+  // a model wrote the answer after it read tool output, so it is always untrusted
+  taint.add(state, seen);
+  taint.addLabel(state, taint.UNTRUSTED, owner);
+  auditStep(state, "subagent", owner, answer.calls + (answer.calls === 1 ? " tool call" : " tool calls"));
+  return redact(answer.text, state);
+}
+
+// start '<prompt>' in a subagent with only <tools> as '<name>': the same subagent, in the background
+// the script that starts it ends before it does, so each tool call runs as its own small script,
+// with the host's options, and the tool's arguments in $ globals (never in the script text)
+async function startSubagent(command, state) {
+  checkDenied("subagents", state, command);
+  const name = await processName(command, state);
+  const prompt = redact(toText(await evaluate(command.program, state)), state);
+  const ask = subagentModel(state, command);
+  const owner = "subagent " + name;
+  const allowed = command.subagent.tools;
+  const tools = allowed.map((tool) => ({ name: tool, description: state.definitions[tool].description || "A ClankTalk tool.", params: state.definitions[tool].params }));
+  const options = state.options;
+  const callOne = async (tool, input) => {
+    if (!allowed.includes(tool)) {
+      return { content: "There is no tool named " + tool + ". Use: " + allowed.join(", "), isError: true };
+    }
+    const globals = Object.create(null);
+    const names = state.definitions[tool].params.map((param, index) => {
+      globals["$arg" + index] = input[param] === undefined || input[param] === null ? null : String(input[param]);
+      return "$arg" + index;
+    });
+    const source = "print " + tool + (names.length > 0 ? " " + names.join(", ") : "");
+    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null });
+    if (result.errors.length > 0) {
+      return { content: result.errors.map((error) => error.message).join("\n"), isError: true };
+    }
+    return { content: result.output.join("\n"), isError: false };
+  };
+
+  const abort = new AbortController();
+  const record = { name, child: null, abort, subagent: owner, status: "running", code: null, output: "" };
+  state.processes.delete(name);
+  state.processes.set(name, record);
+  auditStep(state, "start", name, "subagent with only " + allowed.join(", "));
+  const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(SUBAGENT_TIME_LIMIT)]);
+  runSubagent({ ask, prompt, tools, callTool: callOne, maxCalls: SUBAGENT_MAX_CALLS, signal }).then(
+    (answer) => {
+      if (record.status === "running") {
+        record.output = redact(answer.text, state);
+        record.status = "exited";
+        record.code = 0;
+      }
+    },
+    (err) => {
+      if (record.status === "running") {
+        record.output = redact(signal.aborted ? "The subagent did not finish within " + SUBAGENT_TIME_LIMIT + "ms" : err.message, state);
+        record.status = "exited";
+        record.code = 1;
+      }
+    },
+  );
+  return new ProcessInfo(record, state);
 }
 
 // the environment for a run or start: "allow env", and the secrets it is provided with "using secret"
@@ -844,6 +1060,10 @@ function deniedUses(node) {
     }
     return GIT_WRITES.includes(node.operation) ? ["writes"] : [];
   }
+  // a subagent is not a program: deny subagents covers it
+  if ((node.type === "run" || node.type === "start") && node.subagent) {
+    return ["subagents"];
+  }
   if (["start", "fetch", "run"].includes(node.type)) {
     return [node.type];
   }
@@ -880,7 +1100,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -949,9 +1169,19 @@ async function loadAgentsTalk(root, hostTools) {
         }
         continue;
       }
+      if (definition.type === "useModel") {
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'use model' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (result.useModel !== null) {
+          result.errors.push({ message: "Only one 'use model' line is allowed", ...where });
+        } else {
+          result.useModel = { model: definition.model, secret: definition.secret, where };
+        }
+        continue;
+      }
       if (definition.type === "allowSecret") {
         if (file.name === AGENTS_TALK) {
-          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, where });
+          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, subagents: definition.subagents, where });
         } else {
           result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
         }
@@ -1298,7 +1528,7 @@ async function runCommand(command, state, tools, maxSteps) {
     return null;
   }
   if (command.type === "start") {
-    state.result = await startProcess(command, state);
+    state.result = command.subagent ? await startSubagent(command, state) : await startProcess(command, state);
     return null;
   }
   if (command.type === "stopProcess") {
@@ -1895,6 +2125,9 @@ async function durationMs(node, state) {
 // start a program with no shell, and wait for it
 // gives { code, output }: the exit code, and stdout and stderr together, in the order they came
 async function runProgram(command, state) {
+  if (command.subagent) {
+    return await runSubagentCommand(command, state);
+  }
   const { program, args } = await programAndArgs(command, state);
   const step = Object.create(null);
   step.program = program;
@@ -2507,6 +2740,10 @@ class ProcessInfo {
     // the output can hold a secret's value
     this.output = redact(record.output, state);
     taint.addLabel(state, taint.PRIVATE);
+    // a subagent's answer is always untrusted
+    if (record.subagent) {
+      taint.addLabel(state, taint.UNTRUSTED, record.subagent);
+    }
   }
 }
 
@@ -2520,23 +2757,7 @@ function processLine(info) {
 // start <program> as <name>, only in a tool
 async function startProcess(command, state) {
   const { program, args } = await programAndArgs(command, state);
-  const name = toText(await evaluate(command.name, state));
-  if (!/^[A-Za-z0-9_.-]+$/.test(name)) {
-    throw new ScriptError("A process name needs letters, digits, -, _ or ., found " + describe(name), command.name);
-  }
-  const existing = state.processes.get(name);
-  if (existing !== undefined && existing.status === "running") {
-    throw new ScriptError("Process '" + name + "' is already running. Stop it first", command);
-  }
-  let running = 0;
-  for (const record of state.processes.values()) {
-    if (record.status === "running") {
-      running++;
-    }
-  }
-  if (running >= MAX_PROCESSES) {
-    throw new ScriptError("At most " + MAX_PROCESSES + " processes can run at a time. Stop one first", command);
-  }
+  const name = await processName(command, state);
 
   const step = Object.create(null);
   step.program = program;
@@ -2617,6 +2838,10 @@ async function stopProcess(command, state) {
 
 // end the process group, and wait up to 2 seconds before a hard kill
 async function endProcess(record) {
+  if (record.abort) {
+    record.abort.abort();
+    return;
+  }
   const closed = new Promise((resolve) => {
     if (record.child.exitCode !== null || record.child.signalCode !== null) {
       resolve();
@@ -2635,7 +2860,34 @@ async function endProcess(record) {
   clearTimeout(timer);
 }
 
+// the name for a new background process: valid, not running yet, and under the limit
+async function processName(command, state) {
+  const name = toText(await evaluate(command.name, state));
+  if (!/^[A-Za-z0-9_.-]+$/.test(name)) {
+    throw new ScriptError("A process name needs letters, digits, -, _ or ., found " + describe(name), command.name);
+  }
+  const existing = state.processes.get(name);
+  if (existing !== undefined && existing.status === "running") {
+    throw new ScriptError("Process '" + name + "' is already running. Stop it first", command);
+  }
+  let running = 0;
+  for (const record of state.processes.values()) {
+    if (record.status === "running") {
+      running++;
+    }
+  }
+  if (running >= MAX_PROCESSES) {
+    throw new ScriptError("At most " + MAX_PROCESSES + " processes can run at a time. Stop one first", command);
+  }
+  return name;
+}
+
+// a background subagent stops when its signal aborts; a program gets SIGTERM, then SIGKILL
 function signalProcess(record, signal) {
+  if (record.abort) {
+    record.abort.abort();
+    return;
+  }
   try {
     if (process.platform !== "win32" && record.child.pid !== undefined) {
       process.kill(-record.child.pid, signal);
