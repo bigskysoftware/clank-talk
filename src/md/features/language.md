@@ -4,15 +4,14 @@ New parser. Syntax ideas come from hyperscript.
 
 ## Keep from hyperscript
 
-- English-like commands: TODO
+- English-like commands.
 - Pluggable commands and expressions: the grammar is extensible.
-- Async-transparent execution: TODO
+- Async-transparent execution: `fetch`, `wait`, `ask` and tool calls read as plain steps, with no await.
 
 ## Drop from hyperscript
 
 - DOM features.
 - Inline JS blocks. These are an escape from the sandbox.
-- TODO
 
 ## Structure
 
@@ -154,7 +153,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved (built): URLs. A URL starts with `<word>://` and otherwise follows the path rules. It is a string value: `fetch https://x.com/a?b=1 as json`.
 - Approved for later: `/.../` is a regex. Pending: how to tell a regex from division.
 - Wanted: absolute paths (`/etc/hosts`). They also start with `/`, so they wait for the same regex and division decision.
-- Words with `-` in them.
+- Done: words with `-` in them. A hyphen joins a word when a letter follows it.
 
 ## Open questions
 

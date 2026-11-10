@@ -4,7 +4,7 @@ The runtime includes these capabilities by default.
 
 ## File system
 
-- Read, write, list, delete, move: TODO
+- Built: read, write, append, replace, find, put, remove, move, delete, and globs to list files. See [language.md](language.md) and `help`.
 - Scope: a root directory. Paths outside the root fail.
 - Every write records undo data.
 

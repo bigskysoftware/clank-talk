@@ -1,10 +1,10 @@
 # Host
 
-The runtime has a general host API. A pi extension is the first host.
+Two hosts run the runtime: the MCP host and a pi extension.
 
-- Host API: TODO
-- pi extension: TODO
-- Other hosts: TODO
+- Shared host code: `src/js/host.js` (tool description, result format, output cut, policy load). There is no formal host API.
+- pi extension: `src/js/clank-talk-pi.js` and `src/js/pi-host.js`. It runs in pi's process, with `ask` through pi's UI.
+- Other hosts: open.
 
 ## MCP host
 
@@ -35,7 +35,7 @@ Approved:
 
 ## Dogfood
 
-This repo has an `AGENTS.talk` (`run_tests`, `git_status`, `git_diff`, `git_log`) and a `.mcp.json` that starts the MCP host. There is no `git_commit` tool: commits stay with the human.
+This repo has an `AGENTS.talk` (`run_tests`, `site_server`) and a `.mcp.json` that starts the MCP host. Git is built in: see [../features/git.md](../features/git.md).
 
 - Hard start, ClankTalk only: `claude --tools "" --strict-mcp-config --mcp-config .mcp.json`
 - Soft start, all edits through ClankTalk: `claude --disallowedTools Edit Write NotebookEdit`

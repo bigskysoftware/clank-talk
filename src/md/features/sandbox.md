@@ -4,7 +4,7 @@ The runtime is the sandbox. A script can do only what the runtime gives it.
 
 ## Decision: in-process interpreter
 
-TODO: confirm. Reasons:
+Built this way. Reasons:
 
 - We control the parser and the interpreter. No eval and no JS escape exist.
 - Audit, taint and undo need access to every step. In-process makes this direct.

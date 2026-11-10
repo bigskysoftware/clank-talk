@@ -16,11 +16,6 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 ## Non-goals
 
 - General process execution.
-- TODO
-
-## Subtleties
-
-- TODO
 
 ## File Index
 

@@ -23,8 +23,9 @@ Approved:
 ## Open questions
 
 - A test that every command word has a help entry. The command table is inside the parser now.
-- Generate the MCP tool description from the same table.
-- TODO: split the docs in two. Docs for humans (docs/, in the hyperscript tone) and docs for agents (help, the MCP description: short, exact, every rule). Now docs/docs.md tries to do both.
+- Done: the MCP tool description comes from the same table. See below.
+- Done: the docs are in two: docs for humans (`docs/docs.md`) and docs for agents (the Reference page, from the help table).
+
 ## One source for agent docs
 
 - Approved: the help table in `src/js/help.js` is the one source for agent docs. It makes three things:
