@@ -62,17 +62,17 @@ args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
 </div>
 <script src="js/install.js"></script>
 <p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
-<p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable language. Your agent gets the tools it needs to do real work. You get sandboxes, security hooks, undo, and the final say.</p>
+<p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable, Agent & harness agnostic tool language. Your agents gets the tools they need to do real work. You get readable, auditable actions, sandboxes, security hooks, undo, and the final say in your agentic security profile.</p>
 </div>
 
 <div class="features showcase">
 
-## Easy To Read
+## Human Readable
 
-Agents write a lot of bash. Somebody has to read it. That somebody is you.
+ClankTalk is an xTalk language, inspired by [hyperscript](https://hyperscript.org).
 
-ClankTalk is an xTalk language, inspired by HyperTalk and [hyperscript](https://hyperscript.org).
-It reads like English, so you can tell what your agent did at a glance.
+It reads like English, so you can tell what your agent did at a glance.  Bash... not so much.
+
 
 <div class="compare">
 
@@ -98,27 +98,31 @@ end
 
 </div>
 
-## The Runtime Is The Sandbox
+## A Customizable Agent Sandbox
 
-Giving an agent a shell is giving it the keys to your machine. ClankTalk gives it a language instead.
+Giving an agent a shell is giving it the keys to your kingdom. ClankTalk gives it a controlled & observable language instead.
 
-The runtime is pure JavaScript. No bash, no exec, no escape hatches. If ClankTalk can't do it, your agent can't do it.
+The runtime is pure JavaScript
 
 - File access stays inside the project root
 - Secrets and config that runs code, like `.env` and `.git/`, are off limits
 - Fetch asks you before it talks to a new host
-- Runaway loops hit a step budget and stop
+- Runaway loops step budgets and stop
 
 ```talk escape.talk
 write 'hello' to ../../etc/hosts
 # error: Path is outside the project root: ../../etc/hosts
 ```
 
-## Real Sandboxes For Real Programs
+## Declarative Tools
 
-Your tests run code, and your agent writes code. So when a tool runs a program, put it in a sandbox: it can write your project, and nothing else. No home folder, no secrets, no network, unless you say so.
+Give your agents project specific tools that minimize the need for scripting.
 
-On an OS where ClankTalk can't prove the sandbox holds, the program doesn't run. Ever.
+// TODO example
+
+## Real OS Sandboxes For Real Programs
+
+When available & needed, tools can run programs in OS level sandboxes
 
 ```talk AGENTS.talk
 tool run_tests
@@ -126,9 +130,11 @@ tool run_tests
 end
 ```
 
-## You Stay In Charge
+## Agent Security Sovereignty
 
-Security policy should be code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step. Allow it, reject it, or ask you.
+Your agent security policy is code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step. 
+
+Allow it, reject it, or ask you.
 
 ```talk AGENTS.talk
 before git
@@ -165,6 +171,7 @@ git push
 # dialog: Push branch 'fix-retries' to origin?  yes / no
 ```
 
+// TODO I moved this up
 ## Your Tools, In AGENTS.talk
 
 Sometimes your agent really does need to run something, like your test suite or a dev server. Fine!
@@ -189,7 +196,7 @@ import ./tools/deploy.talk
 
 ## Works With Your Agent
 
-ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with Claude Code and any other agent that speaks MCP. Turn off your agent's shell, and ClankTalk is the only way in.
+ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with Claude Code or any other agent that speaks MCP. Turn off your agent's shell, and ClankTalk is the only way in.
 
 ```bash terminal
 claude --tools "" --allowedTools mcp__clank-talk
