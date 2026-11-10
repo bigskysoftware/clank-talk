@@ -440,9 +440,9 @@ Ever wonder what your agent is actually doing? Every step that touches the world
 
 ```text
 == 10:42:01  script 12  done  6 steps ==
-in @/src/config.js
-  replace 'retries: 3' with 'retries: 5'
-run_tests
+  in @/src/config.js
+    replace 'retries: 3' with 'retries: 5'
+  run_tests
 --
 10:42:01  replace  src/config.js                             undo saved
 10:42:01  tool     run_tests
