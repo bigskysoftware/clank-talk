@@ -68,3 +68,14 @@ test("a runaway pattern is stopped, and the next pattern still works", async () 
 test("pattern alone is still a plain word", async () => {
   assert.deepEqual(await output("set pattern to 5\nprint pattern"), ["5"]);
 });
+
+test("sorted and unique give new lists", async () => {
+  assert.deepEqual(await output("set names to ['b', 'a', 'c', 'a']\nprint sorted names\nprint unique names\nprint names"), ['["a","a","b","c"]', '["b","a","c"]', '["b","a","c","a"]']);
+  assert.deepEqual(await output("print sorted [10, 9, 'x', 1]"), ['[1,9,10,"x"]']);
+  assert.deepEqual(await output("print sorted unique (find pattern 'ok' in 'ok 2\\nok 1\\nok 2')"), ['2: ok 1\n1: ok 2']);
+  assert.deepEqual(await errors("print sorted 5"), ["sorted needs a list, found 5"]);
+});
+
+test("sorted and unique alone are still plain words", async () => {
+  assert.deepEqual(await output("set sorted to 5\nset unique to sorted + 1\nprint unique"), ["6"]);
+});

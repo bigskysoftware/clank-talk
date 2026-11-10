@@ -1121,6 +1121,26 @@ async function evaluate(node, state) {
     const target = await evaluate(node.target, state);
     return await findLines(text, target, state, node);
   }
+  // sorted <list>, unique <list>: a new list, and the old one stays as it was
+  if (type === "listOp") {
+    const list = await evaluate(node.list, state);
+    if (!Array.isArray(list)) {
+      throw new ScriptError(node.operation + " needs a list, found " + describe(list), node.list);
+    }
+    if (node.operation === "sorted") {
+      return [...list].sort(compareItems);
+    }
+    const seen = new Set();
+    const kept = [];
+    for (const item of list) {
+      const key = typeof item + ":" + itemKey(item);
+      if (!seen.has(key)) {
+        seen.add(key);
+        kept.push(item);
+      }
+    }
+    return kept;
+  }
   // pattern '<regexp>': a JavaScript regexp, with the u flag
   if (type === "pattern") {
     const source = toText(await evaluate(node.source, state));
@@ -3466,6 +3486,35 @@ function toText(value) {
 
 // the lines that contain the text, in a file, a list of files, or text
 // lines from a file know their file, so print can show path:number
+// what sorted and unique compare: a line by its text, a file by its path, other values by their text
+function itemKey(item) {
+  if (item instanceof Line) {
+    return item.text;
+  }
+  if (item instanceof FileRef) {
+    return item.path;
+  }
+  if (typeof item === "number") {
+    return item;
+  }
+  return toText(item);
+}
+
+// numbers first, as numbers; then the rest by character code, so the order is the same everywhere
+function compareItems(a, b) {
+  const left = itemKey(a);
+  const right = itemKey(b);
+  const leftNumber = typeof left === "number";
+  const rightNumber = typeof right === "number";
+  if (leftNumber && rightNumber) {
+    return left - right;
+  }
+  if (leftNumber !== rightNumber) {
+    return leftNumber ? -1 : 1;
+  }
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 // a job for the pattern worker; a job that runs too long is a script error
 async function patternJob(job, state, node) {
   try {

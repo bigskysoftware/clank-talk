@@ -296,6 +296,8 @@ end
 
 In `replace`, `$1`, `$<name>` and `$&` put the matched parts back. A pattern that runs wild is stopped after 2 seconds, so one bad regexp can't hang your agent.
 
+Want a tidy list? There's `sorted` and `unique`: `print sorted unique failures`.
+
 ### Changing Files
 
 ```talk

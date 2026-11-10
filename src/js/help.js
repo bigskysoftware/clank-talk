@@ -278,6 +278,12 @@ export const HELP = [
     examples: ["print last of lines of the result's output", "print the number of the last of ./a.js"],
   },
   {
+    name: "sorted", kind: "expression",
+    syntax: "sorted <list> | unique <list>",
+    description: "A new list; the old one stays as it was. sorted puts numbers first, as numbers, then text by character code. unique keeps each value once, in the first order. A line compares by its text, and a file by its path.",
+    examples: ["set names to sorted names", "set failures to unique failures\nprint sorted failures"],
+  },
+  {
     name: "operators", kind: "expression",
     syntax: "+ - * / mod   is  is not  <  >  <=  >=   and  or  not  no",
     description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. 'no x' is true for null and empty values.",

@@ -13,6 +13,9 @@ import { tokenize } from "./tokenizer.js";
 // how deep expressions and blocks can nest
 const MAX_NESTING = 100;
 
+// words that join values, so they never start one: "set sorted to 5" sets a variable named sorted
+const LINK_WORDS = ["to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
+
 export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "push", "delete"];
 
 /**
@@ -538,6 +541,26 @@ export function parse(source, options = {}) {
       const findToken = current();
       i++;
       return parseFind(findToken, parseAccess);
+    }
+
+    // sorted <list>, unique <list>: a new list; only with a value after it on the same line,
+    // so "sorted" alone stays a plain word, as in "set sorted to 5"
+    if (isWord("sorted") || isWord("unique")) {
+      const wordToken = current();
+      const after = tokens[i + 1];
+      const joins = after !== undefined && after.type === "word" && LINK_WORDS.includes(after.value);
+      if (after !== undefined && after.line === wordToken.line && !joins) {
+        const savedIndex = i;
+        const savedErrorCount = errors.length;
+        i++;
+        const list = parseAccess();
+        if (list !== null) {
+          return node("listOp", wordToken, { operation: wordToken.value, list });
+        }
+        // not a list: go back, and forget errors from the try
+        i = savedIndex;
+        errors.length = savedErrorCount;
+      }
     }
 
     // pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
