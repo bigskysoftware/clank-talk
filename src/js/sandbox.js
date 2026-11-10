@@ -71,18 +71,29 @@ export async function findOnPath(program, pathText) {
  * The install folders of a program: the folder above its bin/, as found on PATH and after symlinks.
  * ~/.nvm/versions/node/v22/bin/npm gives ~/.nvm/versions/node/v22.
  */
-export async function installDirs(program, pathText) {
+export async function installDirs(program, pathText, home = os.homedir()) {
   const found = await findOnPath(program, pathText);
   if (found === null) {
     return [];
   }
-  const dirs = [nodePath.dirname(nodePath.dirname(found))];
+  const homes = [home, await realOrSame(home)];
+  const dirs = [installDir(found, homes)];
   const real = await fs.realpath(found);
-  const realDir = nodePath.dirname(nodePath.dirname(real));
+  const realDir = installDir(real, homes);
   if (!dirs.includes(realDir)) {
     dirs.push(realDir);
   }
   return dirs;
+}
+
+// the folder above bin/, but never / or the home folder or a folder above it:
+// /bin/sh gives /bin, and ~/bin/tool gives ~/bin, so the program cannot read the whole disk or home
+function installDir(file, homes) {
+  const above = nodePath.dirname(nodePath.dirname(file));
+  if (above === nodePath.parse(above).root || homes.some((home) => home === above || home.startsWith(above + nodePath.sep))) {
+    return nodePath.dirname(file);
+  }
+  return above;
 }
 
 /**

@@ -26,6 +26,19 @@ test("installDirs finds the folder above bin/", async () => {
   assert.deepEqual(await installDirs("no-such-program-x", process.env.PATH), []);
 });
 
+test("installDirs never gives /, the home folder, or a folder above it", async () => {
+  assert.deepEqual(await installDirs("sh", "/bin"), ["/bin"]);
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "clank-home-"));
+  try {
+    await fs.mkdir(path.join(home, "bin"));
+    await fs.writeFile(path.join(home, "bin", "tool"), "#!/bin/sh\n", { mode: 0o755 });
+    const dirs = await installDirs("tool", path.join(home, "bin"), home);
+    assert.deepEqual(dirs, [path.join(home, "bin"), path.join(await fs.realpath(home), "bin")].filter((dir, index, all) => all.indexOf(dir) === index));
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
 test("the macOS profile: deny by default, the project, no secrets, network only if asked", async () => {
   const plan = await sandboxPlan({ root: "/p/proj", tmp: "/t/x", programDirs: ["/opt/node"], allowedChanges: [".github"] });
   const profile = macosProfile(plan);
