@@ -2838,6 +2838,11 @@ function unknownVariable(name, scope) {
   if (close !== undefined) {
     message += " Did you mean '" + close + "'?";
   }
+  // a hyphen joins a name, so a-b is one name; for subtraction, spaces are needed
+  if (name.includes("-")) {
+    const parts = name.split("-");
+    message += " For subtraction, put spaces around the minus: " + parts.join(" - ") + ".";
+  }
   return message + " Set it before you use it, for example: set " + name + " to 0";
 }
 

@@ -182,7 +182,7 @@ increment total by 5
 set $last_total to total
 ```
 
-A plain name is local to the script. A name that starts with `$` is a global, and sticks around between scripts. Use a name before you set it and you get an error, with a guess if it looks like a typo: `Did you mean 'total'?`. A global that was never set is just `null`. Most commands put their value in `it`, also known as `the result`:
+A plain name is local to the script. A name that starts with `$` is a global, and sticks around between scripts. Use a name before you set it and you get an error, with a guess if it looks like a typo: `Did you mean 'total'?`. A global that was never set is just `null`. Names can have hyphens, like `build-dir`, so put spaces around a minus: `total - tax`. Most commands put their value in `it`, also known as `the result`:
 
 ```talk
 read @/README.md

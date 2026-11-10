@@ -181,3 +181,10 @@ test("a url is a string token, and ends by the path rules", () => {
   assert.deepEqual(simple("x:// y"), ["string:x://", "word:y"]);
   assert.deepEqual(simple("a:b"), ["word:a", "op::", "word:b"]);
 });
+
+test("a hyphen joins a word when a letter follows it; n-1 and a - b stay subtraction", () => {
+  assert.deepEqual(simple("build-dir content-type x2-beta"), ["word:build-dir", "word:content-type", "word:x2-beta"]);
+  assert.deepEqual(simple("n-1"), ["word:n", "op:-", "number:1"]);
+  assert.deepEqual(simple("a - b"), ["word:a", "op:-", "word:b"]);
+  assert.deepEqual(simple("a-"), ["word:a", "op:-"]);
+});

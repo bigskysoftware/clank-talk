@@ -118,6 +118,7 @@ Code: `src/js/tokenizer.js`. The tokenizer makes a flat list of tokens. Each tok
 Each rule is **proposed** until a human approves it. See AGENTS.md.
 
 - Approved: `#` starts a comment, anywhere on a line, to the end of the line.
+- Approved (built): a hyphen is part of a word when a letter comes right after it: `build-dir`, `content-type`, `x2-beta`. Thus names, properties and tool names can have hyphens. `n-1` and `a - b` stay subtraction. An unknown name with a hyphen gets a hint in its error: `For subtraction, put spaces around the minus: total - tax`. Why: JSON keys and headers often have hyphens, and kebab names read well.
 - Approved: the tokenizer does not make newline tokens. The parser uses `end` and command words to find structure. Tokens keep the line number if the parser needs it later.
 - Approved: `'` after a word character, `)`, `]` or `}` is a possessive only before a non-word character. Thus `file's`, `[1, 2]'s last` and `(x as json)'s a` are possessives, and `say 'sun'` is a string. This replaces the earlier rule that `'s` does not work after `)`, `]` or `}`.
 - Approved: both `'` and `"` make strings.

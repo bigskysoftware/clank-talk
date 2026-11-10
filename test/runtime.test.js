@@ -239,3 +239,10 @@ test('wait waits, and cancel ends a wait', async () => {
 test('a url needs no quotes', async () => {
   assert.deepEqual(await output("set u to https://example.com/a?b=1\nprint u\nprint u starts with 'https'"), ['https://example.com/a?b=1', 'true']);
 });
+
+test("names and properties can have hyphens", async () => {
+  assert.deepEqual(await output("set build-dir to 'out'\nprint build-dir"), ["out"]);
+  assert.deepEqual(await output("set h to {content-type: 'json'}\nprint h's content-type\nprint h.content-type"), ["json", "json"]);
+  assert.deepEqual(await output("set n to 5\nprint n-1"), ["4"]);
+  assert.deepEqual(await errors("set total to 5\nset tax to 1\nprint total-tax"), ["Unknown variable 'total-tax'. For subtraction, put spaces around the minus: total - tax. Set it before you use it, for example: set total-tax to 0 @3:7"]);
+});

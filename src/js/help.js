@@ -304,7 +304,7 @@ export const HELP = [
   {
     name: "operators", kind: "expression",
     syntax: "+ - * / mod   is  is not  <  >  <=  >=   and  or  not  no",
-    description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. 'no x' is true for null and empty values.",
+    description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. 'no x' is true for null and empty values. A hyphen with a letter after it is part of a name (build-dir), so put spaces around a minus between names: a - b.",
     examples: ["print 1 + (2 * 3)", "if a is 1 and b is not 2 print 'yes' end"],
   },
   {

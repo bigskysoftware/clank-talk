@@ -426,7 +426,9 @@ export function tokenize(source) {
         value += "$";
         advance();
       }
-      while (i < source.length && isWordChar(source[i])) {
+      // a hyphen joins a word when a letter comes right after it: build-dir, content-type
+      // n-1 stays subtraction, and so does a - b
+      while (i < source.length && (isWordChar(source[i]) || (source[i] === "-" && /[A-Za-z]/.test(source[i + 1] || "")))) {
         value += source[i];
         advance();
       }
