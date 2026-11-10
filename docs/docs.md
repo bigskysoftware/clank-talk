@@ -597,7 +597,7 @@ TODO (Carson): prose for these points.
 - In pi, the subagent uses pi's own model and login. In Claude Code and other MCP clients, it needs a model and a key: `use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY`.
 - The subagent can call only the tools after `with only`, and those tools can't write files, fetch, or use git.
 - Its answer is always untrusted.
-- `start '...' in a subagent with only gh_issues as 'issues'` runs it in the background, as a process.
+- `start '...' as 'issues' in a subagent with only gh_issues` runs it in the background, as a process.
 
 ### Asking You
 

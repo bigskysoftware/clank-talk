@@ -1967,23 +1967,6 @@ export function parse(source, options = {}) {
     if (program === null) {
       return null;
     }
-    // start '<prompt>' in a subagent with only <tool>, ... as '<name>': a subagent in the background
-    if (isWord("in") && tokens[i + 2] !== undefined && tokens[i + 2].type === "word" && tokens[i + 2].value === "subagent") {
-      const subagent = parseSubagent();
-      if (subagent === null) {
-        return null;
-      }
-      if (!isWord("as")) {
-        error("Expected 'as' and a name, such as: start 'Summarize the issues' in a subagent with only gh_issues as 'issues'");
-        return null;
-      }
-      i++;
-      const subagentName = parseExpression();
-      if (subagentName === null) {
-        return null;
-      }
-      return { type: "start", program, args: null, name: subagentName, secrets: [], sandbox: null, subagent, line: token.line, column: token.column };
-    }
     let args = null;
     if (isWord("with")) {
       i++;
@@ -2012,6 +1995,18 @@ export function parse(source, options = {}) {
     const secrets = parseUsing();
     if (secrets === null) {
       return null;
+    }
+    // start '<prompt>' as '<name>' in a subagent with only <tool>, ...: a subagent in the background
+    if (isWord("in") && tokens[i + 2] !== undefined && tokens[i + 2].type === "word" && tokens[i + 2].value === "subagent") {
+      const subagent = parseSubagent();
+      if (subagent === null) {
+        return null;
+      }
+      if (args !== null || secrets.length > 0) {
+        error("A subagent takes a prompt only, with no 'with' arguments or 'using secret'");
+        return null;
+      }
+      return { type: "start", program, args, name, secrets, sandbox: null, subagent, line: token.line, column: token.column };
     }
     let sandbox = null;
     if (isWord("in")) {

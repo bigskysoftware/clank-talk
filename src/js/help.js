@@ -187,8 +187,8 @@ export const HELP = [
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",
-    syntax: "start <program> [with <arg>, ...] as <name> [using secret <NAME>, ...] [in a sandbox [with ...]]",
-    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> in a subagent with only <tools> as <name>' runs a subagent in the background; its answer is the process's output.",
+    syntax: "start <program> [with <arg>, ...] as <name> [using secret <NAME>, ...] [in a sandbox [with ...]] | start <prompt> as <name> in a subagent with only <tool>, ...",
+    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background; its answer is the process's output.",
     examples: ["tool site_server\n  start 'npm run serve-site' as 'site' in a sandbox\nend"],
   },
   {

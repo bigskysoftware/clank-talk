@@ -216,7 +216,7 @@ test("start in a subagent runs in the background, as a process", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-subagents-"));
   const processes = new Map();
   try {
-    await fs.writeFile(path.join(dir, "AGENTS.talk"), "tool t with q\n  set the result to 'got ' + q\nend\n\ntool watch\n  start 'Look into it' in a subagent with only t as 'looker'\nend");
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "tool t with q\n  set the result to 'got ' + q\nend\n\ntool watch\n  start 'Look into it' as 'looker' in a subagent with only t\nend");
     let release;
     const gate = new Promise((resolve) => {
       release = resolve;
@@ -245,7 +245,7 @@ test("stop process stops a background subagent", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-subagents-"));
   const processes = new Map();
   try {
-    await fs.writeFile(path.join(dir, "AGENTS.talk"), "tool t with q\n  set the result to q\nend\n\ntool watch\n  start 'x' in a subagent with only t as 'slow'\nend");
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "tool t with q\n  set the result to q\nend\n\ntool watch\n  start 'x' as 'slow' in a subagent with only t\nend");
     const lendModel = () => async ({ signal }) => await new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("stopped"))));
     assert.deepEqual((await run("watch\nstop process 'slow'\nprint process 'slow'", { root: dir, lendModel, processes })).output, ["slow: stopped"]);
   } finally {

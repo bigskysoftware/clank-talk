@@ -20,7 +20,7 @@ tool summarize_gh_issues
 end
 ```
 
-- Approved (built): `start '<prompt>' in a subagent with only <tools> as '<name>'` runs the same subagent in the background, as a process: `process 'name'` has its status and, when it ends, its answer as `output`. `stop process` stops it. The answer is untrusted.
+- Approved (built): `start '<prompt>' as '<name>' in a subagent with only <tools>` runs the same subagent in the background, as a process. Why this order: every `start` names the process first, and says where it runs last, as in `start 'npm run dev' as 'site' in a sandbox`. A process: `process 'name'` has its status and, when it ends, its answer as `output`. `stop process` stops it. The answer is untrusted.
 - Approved (built): a subagent takes a prompt only: `with` arguments or `using secret` on the same `run` are an error.
 
 ## The model
