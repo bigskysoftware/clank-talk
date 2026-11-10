@@ -116,6 +116,12 @@ test("a new public host asks the human, once per session", async () => {
   assert.deepEqual(asked, ["Fetch from example.invalid?", "Fetch from example.invalid?"]);
 });
 
+test("a public name that points to a private address is refused", async () => {
+  const lookup = async (host) => (host === "metadata.example" ? ["93.184.215.14", "169.254.169.254"] : ["[::1]"]);
+  assert.deepEqual(await errors("fetch 'http://metadata.example/'", { lookup }), ["fetch refused: metadata.example points to a local or private address (169.254.169.254).\nTo allow it, a human can add this line to AGENTS.talk:\n  allow fetch from 'metadata.example'"]);
+  assert.match((await errors("fetch 'http://six.example/'", { lookup }))[0], /^fetch refused: six\.example points to a local or private address \(\[::1\]\)/);
+});
+
 test("limits", async () => {
   assert.deepEqual(await errors(`fetch '${base}/big'`), [`fetch got more than 5242880 bytes from ${base}/big`]);
   assert.deepEqual(await errors("fetch 'file:///etc/passwd'"), ["fetch only takes http and https URLs, found 'file:///etc/passwd'"]);

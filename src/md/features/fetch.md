@@ -28,7 +28,8 @@ The risk: a fetch can send project data to any host, in the URL or the body. A w
 - Approved (built): any redirect that keeps the body is an error if it goes to another origin, also a 301 or 302 after a PUT, PATCH or DELETE. Before, only 307 and 308 were checked. Why: the body can hold a secret.
 - Approved (built): the audit records each redirect, as its own `redirect` step: the URL, the status, and where it goes (`302 to https://...`). Why: a redirect can send a request to another place, so it is a security risk.
 - Approved: a redirect is followed only to a host that is allowed in the same way.
-- Limit: the host check uses the name, not the address. A public name that points to a private address (DNS rebinding) is not caught.
+- Approved (built): the runtime also looks up the addresses of a name. If one of them is a local or private address, the fetch is refused, as for a private host. Only a line in AGENTS.talk with that exact name allows it. A name that does not resolve is not refused here: the fetch itself then fails.
+- Limit: the connection does its own lookup. Thus a name that changes its answer between the check and the connection (DNS rebinding) is not caught.
 
 ## Limits
 

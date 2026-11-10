@@ -200,7 +200,7 @@ export const HELP = [
   {
     name: "fetch", kind: "command",
     syntax: "fetch <url> [as json | as response | as text] [with method: ..., headers: ..., body: ...] [within <duration>]   (also a value: set page to fetch url)",
-    description: "Get a URL over http or https. The result is the body as text, or parsed with 'as json'. 'as response' gives { status, headers, text }. A new host asks the human first, unless AGENTS.talk has 'allow fetch from'. Local and private addresses must be in AGENTS.talk. Limits: 30 seconds, 5 MB.",
+    description: "Get a URL over http or https. The result is the body as text, or parsed with 'as json'. 'as response' gives { status, headers, text }. A new host asks the human first, unless AGENTS.talk has 'allow fetch from'. Local and private addresses must be in AGENTS.talk, and so must a name that points to one. Limits: 30 seconds, 5 MB.",
     examples: ["fetch https://api.github.com/repos/bigskysoftware/htmx as json\nprint it's stargazers_count", "fetch https://example.com/api as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
   },
   {

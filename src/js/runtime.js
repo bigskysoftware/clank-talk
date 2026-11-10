@@ -17,6 +17,7 @@ import nodePath from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import dns from "node:dns/promises";
 
 const DEFAULT_MAX_STEPS = 10_000;
 const AGENTS_TALK = "AGENTS.talk";
@@ -183,6 +184,7 @@ function lineLabel(line) {
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
+ * @param {Function} [options.lookup]               for tests: (host) => addresses, in place of a DNS lookup
  * @param {Set} [options.privateHosts]              hosts the human allowed private data to go to; pass the same Set for a session
  * @param {Object} [options.policy]                 the harness's policy: { name, source }, ClankTalk text; see src/md/features/policy.md
  * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
@@ -292,6 +294,7 @@ async function execute(source, options, execution) {
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
     fetchHosts: options.fetchHosts || new Set(),
+    lookup: options.lookup || lookupHost,
     // hosts the human said yes to for private data; a host keeps the Set for a session
     privateHosts: options.privateHosts || new Set(),
     // secrets from "allow secret" in AGENTS.talk, by name: { name, hosts, value }; value is null when not set
@@ -3252,6 +3255,15 @@ async function checkFetchHost(url, state, node) {
     }
     throw new ScriptError("fetch refused: " + host + " is a local or private address.\n" + allowLine, node);
   }
+  // a public name can point to a private address, so look at the addresses too
+  // limit: the connection does its own lookup, so a name that changes its answer in between is not caught
+  if (!state.allowedFetch.includes(host)) {
+    for (const address of await state.lookup(host)) {
+      if (isPrivateHost(address)) {
+        throw new ScriptError("fetch refused: " + host + " points to a local or private address (" + address + ").\n" + allowLine, node);
+      }
+    }
+  }
   if (isAllowedFetchHost(host, state.allowedFetch) || state.fetchHosts.has(host)) {
     return;
   }
@@ -3260,6 +3272,20 @@ async function checkFetchHost(url, state, node) {
     throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
   }
   state.fetchHosts.add(host);
+}
+
+// the addresses of a name, in the URL parser's form, so isPrivateHost can read them
+// a name that does not resolve gives no addresses; the fetch then fails on its own
+async function lookupHost(host) {
+  if (host.startsWith("[") || /^[\d.]+$/.test(host)) {
+    return [];
+  }
+  try {
+    const answers = await dns.lookup(host, { all: true });
+    return answers.map((answer) => new URL("http://" + (answer.family === 6 ? "[" + answer.address + "]" : answer.address)).hostname);
+  } catch (err) {
+    return [];
+  }
 }
 
 // 'api.github.com' allows that host; '*.github.com' allows hosts under github.com

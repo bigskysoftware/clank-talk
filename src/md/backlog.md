@@ -71,6 +71,7 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 - **A secret in a fetch URL,** with redaction in the audit, hooks and errors. Today it is an error.
 - **Typed parameters** for tools, such as `tool lint with file as path`. The runtime checks the value before `run`. See `infrastructure/security.md`.
 - **The OS keychain** as a source of secrets.
+- **DNS rebinding in fetch.** Connect only to an address that the check saw, and keep the name for TLS. See `features/fetch.md`.
 
 ## Docs
 
