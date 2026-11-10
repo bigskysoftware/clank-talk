@@ -120,7 +120,8 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: in a string with line breaks, the indent that all non-blank lines share is removed, so the string can be indented with the script.
 - Approved: `\${` gives a plain `${`. This follows the escape rule.
 - Approved: raw strings, `"""..."""`. No escapes, no `${}`, and no indent removal: the text is exactly what is between the quotes. Only a line break right after the opening quotes is dropped. Approved: the help, the MCP rules and the docs say this, and say to leave one empty line after the opening quotes to start with a blank line. A raw string ends at the first `"""`.
-- Approved (built): a raw string can open with more than three quotes, and then ends at the same count: `""""...""""` can hold `"""`. In a run of quotes, the last ones close the string, so the text can end with a quote. Use raw strings for code edits.
+- Approved (built): a raw string can open with more than three quotes, and then ends at the same count: `""""...""""` can hold `"""`. In a run of quotes, the last ones close the string, so the text can end with a quote.
+- Approved: no warning for a backslash followed by n, r or t in a raw string. In code edits, it is often correct, such as `"\n"` in JS. The changed-lines diff after an edit shows a wrong escape. Use raw strings for code edits.
 - Approved: indent details, as in Java text blocks. A line break right after the opening quote is dropped. If the closing quote is on its own line, the text ends with a line break. Blank lines become empty.
 - Approved: string escapes `\n`, `\t`, and `\x` for any other `x`.
 - Approved: numbers have no commas. `_` groups digits: `1_000`.
