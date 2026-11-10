@@ -104,7 +104,7 @@ args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
 
 <div class="features showcase">
 
-## Human Readable
+## Readable Scripts
 
 ClankTalk is an xTalk language, inspired by [hyperscript](https://hyperscript.org).
 
@@ -135,7 +135,7 @@ end
 </div>
 <script src="js/compare.js"></script>
 
-## A Customizable Agent Sandbox
+## Runtime Limits
 
 Giving an agent a shell is giving it the keys to your kingdom. ClankTalk gives it a controlled & observable language instead.
 
@@ -151,7 +151,7 @@ write 'hello' to ../../etc/hosts
 # error: outside the project root
 ```
 
-## Your Tools, In AGENTS.talk
+## Tools in AGENTS.talk
 
 Sometimes your agent really does need to run something, like your test suite or a dev server. Fine!
 
@@ -163,7 +163,7 @@ tool site_server
 end
 ```
 
-## Real OS Sandboxes For Real Programs
+## OS Sandboxes for Programs
 
 When available & needed, tools can run programs in OS level sandboxes.
 
@@ -173,7 +173,7 @@ tool run_tests
 end
 ```
 
-## Agent Security Sovereignty
+## Hooks
 
 Your agent security policy is code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step.
 
@@ -190,7 +190,7 @@ before git
 end
 ```
 
-## Full Audit
+## Audit Log
 
 Ever wonder what your agent is actually doing? Wonder no more.
 
@@ -213,7 +213,7 @@ undo 2
 undo changes to ./src/config.js
 ```
 
-## Git, Without The Footguns
+## Hardened Git
 
 Git is built in, with the parts that run programs turned off. Your agent commits only the files it names, and merges only by fast-forward.
 
@@ -223,7 +223,7 @@ git commit [./src/config.js] with 'More retries'
 git push
 ```
 
-## Works With Your Agent
+## MCP Server
 
 ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with Claude Code or any other agent that speaks MCP. Turn off your agent's shell, and ClankTalk is the only way in.
 
@@ -231,7 +231,7 @@ ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with 
 claude --tools "" --allowedTools mcp__clank-talk
 ```
 
-## Share Your Tools
+## Imports
 
 Tools are just ClankTalk, so they're easy to read and easy to share. Pull in a whole set with `import`.
 
