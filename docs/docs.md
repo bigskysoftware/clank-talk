@@ -451,6 +451,12 @@ Ever wonder what your agent is actually doing? Every step that touches the world
 
 Your agent can't change it: scripts can't touch `talk/`. Want it for tools instead of eyes? Add `audit as json` to `AGENTS.talk`. And your agent can read its own: `the audit` holds this session's steps, so you can ask it what it did.
 
+One tip: the audit is a log, not source. Keep it out of git with one line in your `.gitignore`:
+
+```text
+talk/audit/
+```
+
 ### Undo
 
 Your agent made a mess? Take it back:

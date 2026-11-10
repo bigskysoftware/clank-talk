@@ -22,7 +22,7 @@ The runtime records every step that touches the world outside the script, so a h
 
 - Approved: one file for each day, in `talk/audit/`: `talk/audit/2026-11-09.log`. Scripts cannot change `@/talk/`, and the sandbox cannot write it, so the agent cannot change its own audit. Only the runtime writes it.
 - Approved: the audit is always on.
-- Note: add `talk/audit/` to `.gitignore`.
+- Approved: we recommend `talk/audit/` in `.gitignore`: the audit is a log, not source. The README and the docs say so, and this repo does it.
 
 ## Formats
 
