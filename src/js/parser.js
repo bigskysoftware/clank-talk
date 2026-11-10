@@ -1288,6 +1288,15 @@ export function parse(source, options = {}) {
     return { type: "find", text, target, line: token.line, column: token.column };
   }
 
+  // delete <file>
+  function parseDelete(token) {
+    const file = parseExpression();
+    if (file === null) {
+      return null;
+    }
+    return { type: "delete", file, line: token.line, column: token.column };
+  }
+
   // move <file> to <file>
   function parseMove(token) {
     const from = parseBefore(["to"], parseExpression);
@@ -1417,6 +1426,7 @@ export function parse(source, options = {}) {
     replace: parseReplace,
     find: parseFind,
     move: parseMove,
+    delete: parseDelete,
     in: parseIn,
     git: parseGit,
     undo: parseUndo,

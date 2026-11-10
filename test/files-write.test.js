@@ -393,3 +393,30 @@ test("move checks both paths, and never replaces a file", async () => {
   assert.match((await errors("move ./a.txt to ../out.txt"))[0], /outside the project root/);
   assert.equal(await readProject("a.txt"), "var x\nvar y\n");
 });
+
+test("delete a file, and undo puts it back", async () => {
+  await fs.writeFile(path.join(root, "old.txt"), "text\n");
+  await ok("delete ./old.txt");
+  await assert.rejects(fs.access(path.join(root, "old.txt")));
+  await fs.writeFile(path.join(root, "old.txt"), "text\n");
+  await ok("delete ./old.txt\nundo");
+  assert.equal(await readProject("old.txt"), "text\n");
+});
+
+test("delete checks the path, and takes one file", async () => {
+  await fs.mkdir(path.join(root, "folder"));
+  assert.deepEqual(await errors("delete ./nope.txt"), ["Cannot delete nope.txt: there is no such file"]);
+  assert.deepEqual(await errors("delete ./folder"), ["delete takes one file, and folder is not a file"]);
+  assert.deepEqual(await errors("delete ./*.txt"), ["Expected one file, found a list of 1. Use a for loop"]);
+  await fs.writeFile(path.join(root, ".env"), "SECRET=1\n");
+  assert.match((await errors("delete ./.env"))[0], /^A script cannot change hidden files/);
+  await fs.writeFile(path.join(root, "x.talk"), "tool a\nend\n");
+  assert.match((await errors("delete ./x.talk"))[0], /^A script cannot change \.talk files/);
+});
+
+test("delete removes a link itself, not the file it points to", async () => {
+  await fs.symlink(path.join(root, "a.txt"), path.join(root, "link.txt"));
+  await ok("delete ./link.txt");
+  await assert.rejects(fs.lstat(path.join(root, "link.txt")));
+  assert.equal(await readProject("a.txt"), "var x\nvar y\n");
+});

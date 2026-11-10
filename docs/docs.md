@@ -329,7 +329,7 @@ replace 'retries: 3' with 'retries: 5' in ./src/config.js
 move ./out.txt to ./notes/out.txt
 ```
 
-`move` never writes over a file that is already there. For a file in git, `git move` does the same, and git sees the rename.
+`delete ./out.txt` deletes one file, and `undo` brings it back. `move` never writes over a file that is already there. For a file in git, `git move` does the same, and git sees the rename.
 
 You can name the file first, too. That reads well when you change several things in one file:
 

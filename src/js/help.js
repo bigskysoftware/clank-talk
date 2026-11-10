@@ -108,6 +108,12 @@ export const HELP = [
     examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'all good' end", "set hits to find 'TODO' in ./src/**/*.js\nprint hits's length"],
   },
   {
+    name: "delete", kind: "command",
+    syntax: "delete <file>",
+    description: "Delete one file. It has the checks of a write, and it takes one file, not a folder or a glob. undo puts the file back. A link is deleted itself, not the file it points to. To commit the removal: git commit [<file>] with <message>.",
+    examples: ["delete ./tmp/old-notes.md"],
+  },
+  {
     name: "move", kind: "command",
     syntax: "move <file> to <file>",
     description: "Move or rename one file. It has the checks of a write for both paths, and it never replaces a file: the new path must be free. undo takes it back. For a file in git, use git move, so the history follows it.",

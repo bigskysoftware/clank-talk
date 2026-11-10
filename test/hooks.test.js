@@ -48,6 +48,7 @@ test("change covers every kind of file change", async () => {
     ["read ./prod.cfg\nremove lines 1 to 1 of ./prod.cfg", "no remove"],
     ["read ./prod.cfg\nreplace lines 1 to 1 of ./prod.cfg with 'y'", "no replace"],
     ["move ./prod.cfg to ./other.txt", "no move"],
+    ["delete ./prod.cfg", "no delete"],
   ];
   for (const [source, message] of cases) {
     const [e] = await errors(source);
@@ -100,7 +101,7 @@ test("errors in a hook point at AGENTS.talk", async () => {
 
 test("hook rules", async () => {
   await agentsTalk("before banana\nend");
-  assert.equal((await errors("print 1"))[0].message, "Unknown step 'banana' for a hook. Use read, write, append, replace, put, remove, move, change, undo, run, git, fetch, start, stop, or a tool name");
+  assert.equal((await errors("print 1"))[0].message, "Unknown step 'banana' for a hook. Use read, write, append, replace, put, remove, move, delete, change, undo, run, git, fetch, start, stop, or a tool name");
   await agentsTalk("after write\n  reject 'x'\nend");
   assert.equal((await errors("print 1"))[0].message, "'reject' is only allowed in a 'before' hook");
   assert.equal((await errors("reject 'x'"))[0].message, "'reject' is only allowed in a 'before' hook");

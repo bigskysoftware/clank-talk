@@ -28,7 +28,7 @@ const UNDO_LIMIT = 20;
 // the steps a hook can watch, apart from tool names
 // git operations that change files or branches; "deny writes" denies them
 const GIT_WRITES = ["switch", "commit", "merge", "rebase", "move", "delete"];
-const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "change", "undo", "run", "git", "fetch", "start", "stop"];
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -1002,6 +1002,11 @@ async function runCommand(command, state, tools, maxSteps) {
       return null;
     }
     throw new ScriptError("Expected a file, or a variable with text, found " + describe(target), command);
+  }
+
+  if (command.type === "delete") {
+    await deleteFile(await evaluate(command.file, state), state, command);
+    return null;
   }
 
   if (command.type === "move") {
@@ -3384,6 +3389,26 @@ async function checkWritable(file, state, node) {
       node,
     );
   }
+}
+
+// delete <file>: one file, with the checks of a write; undo puts it back
+// a link is removed itself, not the file it points to
+async function deleteFile(file, state, node) {
+  await checkWritable(file, state, node);
+  const real = await realPath(file, state, node);
+  if (real === null) {
+    throw new ScriptError("Cannot delete " + file.path + ": there is no such file", node);
+  }
+  if (!(await fs.stat(real)).isFile()) {
+    throw new ScriptError("delete takes one file, and " + file.path + " is not a file", node);
+  }
+  const step = changeStep("delete", file, {});
+  await changeHooks("before", step, state, node);
+  const text = await fs.readFile(real, "utf8");
+  await fs.rm(file.absolute);
+  state.seen.delete(real);
+  state.execution.changes.push({ path: file.path, before: text, after: null });
+  await changeHooks("after", step, state, node);
 }
 
 // move <file> to <file>: one file, with the checks of a write for both paths; undo can take it back
