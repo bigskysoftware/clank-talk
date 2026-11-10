@@ -1,5 +1,7 @@
 <div class="features">
 
+<img class="page-robot" src="img/clanktalk-robot.png" alt="A friendly robot">
+
 <p><a href="./">Home</a> | <a href="reference.html">Docs for Agents</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
 
 # ClankTalk Docs
@@ -182,7 +184,11 @@ increment total by 5
 set $last_total to total
 ```
 
-A plain name is local to the script. A name that starts with `$` is a global, and sticks around between scripts. Use a name before you set it and you get an error, with a guess if it looks like a typo: `Did you mean 'total'?`. A global that was never set is just `null`. Names can have hyphens, like `build-dir`, so put spaces around a minus: `total - tax`. Most commands put their value in `it`, also known as `the result`:
+A plain name is local to the script. A name that starts with `$` is a global, and sticks around between scripts. Names can have hyphens, like `build-dir`, so put spaces around a minus: `total - tax`.
+
+Use a name before you set it and you get an error, with a guess if it looks like a typo: `Did you mean 'total'?`. A global that was never set is just `null`.
+
+Most commands put their value in `it`, also known as `the result`:
 
 ```talk
 read @/README.md
@@ -329,7 +335,7 @@ replace 'retries: 3' with 'retries: 5' in ./src/config.js
 move ./out.txt to ./notes/out.txt
 ```
 
-`delete ./out.txt` deletes one file, and `undo` brings it back. `move` never writes over a file that is already there. For a file in git, `git move` does the same, and git sees the rename.
+`move` never writes over a file that is already there. For a file in git, `git move` does the same, and git sees the rename. And `delete ./notes/out.txt` deletes one file; `undo` brings it back.
 
 You can name the file first, too. That reads well when you change several things in one file:
 
@@ -531,7 +537,7 @@ before git
 end
 ```
 
-A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. Commands inside a hook don't run hooks, so a hook can't trip over itself.
+A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `move`, `delete`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, any tool by name, or `change`, which is any file change. `the <step>` holds the details, like `the write's path`. Commands inside a hook don't run hooks, so a hook can't trip over itself.
 
 ### Audit
 
@@ -575,7 +581,7 @@ Be honest with yourself about a few things:
 
 * A `run` without `in a sandbox` is where the ClankTalk sandbox ends. The program can do anything you can do.
 * The sandbox limits files and the network. It doesn't limit CPU or memory.
-* On Linux, the sandbox is weaker: it protects hidden files only at the top of your project, and only the ones that exist when the program starts. We test on macOS. If you use Linux, please test it, and tell us.
+* On Linux, the sandbox is weaker: it protects hidden files and `.talk` files only at the top of your project, and only the ones that exist when the program starts. CI tests the sandbox on macOS and Ubuntu.
 * A web page or a tool's output can hold text that tries to steer your agent. ClankTalk keeps the damage small, but it can't stop your agent from believing what it reads.
 
 </div>

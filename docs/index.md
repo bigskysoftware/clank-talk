@@ -15,6 +15,32 @@ if the result's code is not 0
 end
 ```
 
+```talk
+git diff
+print it
+
+ask 'Commit these changes?' with 'yes' or 'no'
+if the result is 'yes'
+  git commit [./src/app.js] with 'Fix retries'
+end
+```
+
+```talk
+set hits to find 'TODO' in ./src/**/*.js
+
+for line in hits
+  print line
+end
+```
+
+```talk
+fetch https://api.example.com/status as json
+
+if the result's ok is not true
+  ask 'The API is down. Deploy anyway?'
+end
+```
+
 </div>
 <img src="img/clanktalk-robot.png" alt="A friendly robot">
 </div>
@@ -61,8 +87,9 @@ args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
 </div>
 </div>
 <script src="js/install.js"></script>
+<script src="js/hero.js"></script>
 <p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
-<p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable, Agent & harness agnostic tool language. Your agents gets the tools they need to do real work. You get readable, auditable actions, sandboxes, security hooks, undo, and the final say in your agentic security profile.</p>
+<p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable, Agent & harness agnostic tool language. Your agents get the tools they need to do real work. You get readable, auditable actions, sandboxes, security hooks, undo, and the final say in your agentic security profile.</p>
 </div>
 
 <div class="features showcase">
@@ -72,7 +99,6 @@ args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
 ClankTalk is an xTalk language, inspired by [hyperscript](https://hyperscript.org).
 
 It reads like English, so you can tell what your agent did at a glance.  Bash... not so much.
-
 
 <div class="compare">
 
@@ -97,32 +123,39 @@ end
 ```
 
 </div>
+<script src="js/compare.js"></script>
 
 ## A Customizable Agent Sandbox
 
 Giving an agent a shell is giving it the keys to your kingdom. ClankTalk gives it a controlled & observable language instead.
 
-The runtime is pure JavaScript
+The runtime is pure JavaScript:
 
 - File access stays inside the project root
 - Secrets and config that runs code, like `.env` and `.git/`, are off limits
 - Fetch asks you before it talks to a new host
-- Runaway loops step budgets and stop
+- Runaway loops hit a step budget and stop
 
 ```talk escape.talk
 write 'hello' to ../../etc/hosts
-# error: Path is outside the project root: ../../etc/hosts
+# error: outside the project root
 ```
 
-## Declarative Tools
+## Your Tools, In AGENTS.talk
 
-Give your agents project specific tools that minimize the need for scripting.
+Sometimes your agent really does need to run something, like your test suite or a dev server. Fine!
 
-// TODO example
+Define a tool in `AGENTS.talk`. The agent can call it. The agent can't change it. Everything else stays off limits.
+
+```talk AGENTS.talk
+tool site_server
+  start 'npm run dev' as 'site' in a sandbox
+end
+```
 
 ## Real OS Sandboxes For Real Programs
 
-When available & needed, tools can run programs in OS level sandboxes
+When available & needed, tools can run programs in OS level sandboxes.
 
 ```talk AGENTS.talk
 tool run_tests
@@ -132,9 +165,9 @@ end
 
 ## Agent Security Sovereignty
 
-Your agent security policy is code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step. 
+Your agent security policy is code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step.
 
-Allow it, reject it, or ask you.
+Allow it, reject it, or ask you. Only you answer `ask`, never the agent. If nobody answers, the answer is no.
 
 ```talk AGENTS.talk
 before git
@@ -147,7 +180,17 @@ before git
 end
 ```
 
-Only you answer `ask`, never the agent. If nobody answers, the answer is no.
+## Full Audit
+
+Ever wonder what your agent is actually doing? Wonder no more.
+
+Every step that touches the world is written to `talk/audit/`: what ran, what it touched, and where. Your agent can't change it.
+
+```text talk/audit/2026-11-09.log
+10:42:01  replace  src/config.js   undo saved
+10:42:01  tool     run_tests
+10:42:09  run      npm test        code 0, 7.9 s
+```
 
 ## Undo
 
@@ -162,36 +205,12 @@ undo changes to ./src/config.js
 
 ## Git, Without The Footguns
 
-Git is built in, with the parts that run programs turned off. Your agent commits only the files it names, merges only by fast-forward, and pushes only when you say yes.
+Git is built in, with the parts that run programs turned off. Your agent commits only the files it names, and merges only by fast-forward.
 
 ```talk fix.talk
 git switch to new branch 'fix-retries'
 git commit [./src/config.js] with 'More retries'
 git push
-# dialog: Push branch 'fix-retries' to origin?  yes / no
-```
-
-// TODO I moved this up
-## Your Tools, In AGENTS.talk
-
-Sometimes your agent really does need to run something, like your test suite or a dev server. Fine!
-
-Define a tool in `AGENTS.talk`. The agent can call it. The agent can't change it. Everything else stays off limits.
-
-```talk AGENTS.talk
-tool site_server
-  start 'npm run dev' as 'site' in a sandbox
-end
-```
-
-## Share Your Tools
-
-Tools are just ClankTalk, so they're easy to read and easy to share. Pull in a whole set with `import`.
-
-You pick the imports. Your agent doesn't, and it can't touch a `.talk` file.
-
-```talk AGENTS.talk
-import ./tools/deploy.talk
 ```
 
 ## Works With Your Agent
@@ -202,16 +221,14 @@ ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with 
 claude --tools "" --allowedTools mcp__clank-talk
 ```
 
-## Full Audit
+## Share Your Tools
 
-Ever wonder what your agent is actually doing? Wonder no more.
+Tools are just ClankTalk, so they're easy to read and easy to share. Pull in a whole set with `import`.
 
-Every step that touches the world is written to `talk/audit/`: what ran, what it touched, and where. Your agent can't change it.
+You pick the imports. Your agent doesn't, and it can't touch a `.talk` file.
 
-```text talk/audit/2026-11-09.log
-10:42:01  replace  src/config.js   undo saved
-10:42:01  tool     run_tests
-10:42:09  run      npm test        code 0, 7.9 s
+```talk AGENTS.talk
+import ./tools/deploy.talk
 ```
 
 ## Coming Soon
