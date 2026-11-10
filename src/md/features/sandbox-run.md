@@ -27,7 +27,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
   - system folders: `/usr`, `/bin`, `/sbin`, `/System`, `/Library`, `/etc`, `/opt`, `/dev`, and its own temp folder
   - the project
   - the install folder of the program that runs, found on `PATH`: for example `~/.nvm/versions/node/v22` for `node` or `npm`
-  - Proposed (built): the install folder is never `/`, the home folder, or a folder above it. Then it is only the program's own folder: `/bin` for `/bin/sh`, `~/bin` for `~/bin/tool`. Why: `/bin/sh` gave `/`, so a sandboxed shell could read the whole disk.
+  - Approved (built): the install folder is never `/`, the home folder, or a folder above it. Then it is only the program's own folder: `/bin` for `/bin/sh`, `~/bin` for `~/bin/tool`. Why: `/bin/sh` gave `/`, so a sandboxed shell could read the whole disk.
   - the cache folders of known tools, read only: `~/.npm`, `~/.cache`, `~/.m2/repository`, `~/.gradle/caches`, `~/.gradle/wrapper`, `~/.cargo/registry`, `~/.rustup/toolchains`, `~/go/pkg`, `~/Library/Caches`
   - what `with reads of` adds
 - Approved: secret files are blocked even inside an allowed folder: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.netrc`, `~/.docker`, `~/.kube`, `~/.npmrc`, `~/.m2/settings.xml`, `~/.gradle/gradle.properties`, `~/.cargo/credentials`, `~/.cargo/credentials.toml`, `~/.pypirc`, and `.env` files in the project.
