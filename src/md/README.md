@@ -42,6 +42,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 - [features/fetch.md](features/fetch.md): HTTP, with allowed hosts
 - [features/background.md](features/background.md): background processes, and wait
 - [features/sandbox-run.md](features/sandbox-run.md): an OS sandbox for run and start
+- [features/policy.md](features/policy.md): harness policy that AGENTS.talk cannot widen
 - [infrastructure/tooling.md](infrastructure/tooling.md): language, tests, layout
 - [infrastructure/parser.md](infrastructure/parser.md): parser output, errors, tree shape
 - [infrastructure/security.md](infrastructure/security.md): all security decisions, deferred items
