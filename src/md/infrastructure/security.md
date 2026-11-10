@@ -29,7 +29,7 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - Glob results are checked one by one.
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
 - Writes use the same checks. For a new file, the nearest folder that exists must be inside the root after symlinks, before any folder is made. Thus a symlinked folder cannot lead a new file outside the root.
-- Proposed (built): a write through a link that points to nothing is an error. The write would follow the link to a path that no check saw (outside the root, a `.talk` file, a hidden file).
+- Approved (built): a write through a link that points to nothing is an error. The write would follow the link to a path that no check saw (outside the root, a `.talk` file, a hidden file).
 
 ## Hidden files and folders
 
