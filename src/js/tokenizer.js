@@ -244,17 +244,26 @@ export function tokenize(source) {
 
     // raw string: """...""" has no escapes, no ${} and no indent removal
     // only a line break right after the opening quotes is dropped
+    // it can open with more quotes, and then ends at the same count, so it can hold three quotes
     if (source.startsWith('"""', i)) {
-      advance();
-      advance();
-      advance();
+      let fence = "";
+      while (source[i] === '"') {
+        fence += '"';
+        advance();
+      }
       let value = "";
       let closed = false;
       while (i < source.length) {
-        if (source.startsWith('"""', i)) {
-          advance();
-          advance();
-          advance();
+        // in a run of quotes, the last ones close the string, so the text can end with a quote
+        if (source.startsWith(fence, i)) {
+          let run = 0;
+          while (source[i + run] === '"') {
+            run++;
+          }
+          value += '"'.repeat(run - fence.length);
+          for (let n = 0; n < run; n++) {
+            advance();
+          }
           closed = true;
           break;
         }
@@ -262,7 +271,8 @@ export function tokenize(source) {
         advance();
       }
       if (!closed) {
-        push("error", "Unterminated raw string", startLine, startColumn);
+        const needs = fence.length === 3 ? "Unterminated raw string" : "Unterminated raw string: it opens with " + fence.length + " quotes, so it ends at " + fence.length + " quotes";
+        push("error", needs, startLine, startColumn);
         continue;
       }
       if (value.startsWith("\r\n")) {

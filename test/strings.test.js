@@ -104,3 +104,11 @@ test('a raw string can be on one line', async () => {
 test('an unterminated raw string is an error', async () => {
   assert.deepEqual(await errors('print """oops'), ['Unterminated raw string', 'Expected a value']);
 });
+
+test('a raw string with more quotes ends at the same count, so it can hold three quotes', async () => {
+  const q3 = '"'.repeat(3);
+  const q4 = '"'.repeat(4);
+  assert.deepEqual(await output('print ' + q4 + 'say ' + q3 + 'hi' + q3 + q4), ['say ' + q3 + 'hi' + q3]);
+  assert.deepEqual(await output('print ' + q4 + '\n  x\n' + q4), ['  x\n']);
+  assert.deepEqual(await errors('print ' + q4 + 'oops' + q3), ['Unterminated raw string: it opens with 4 quotes, so it ends at 4 quotes', 'Expected a value']);
+});
