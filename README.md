@@ -2,7 +2,7 @@
 
 A sandboxed scripting language for AI agents. You give your agent ClankTalk, in place of a shell.
 
-```talk
+```applescript
 in @/src/config.js
   replace 'retries: 3' with 'retries: 5'
 
@@ -49,7 +49,7 @@ ClankTalk writes an audit log to `talk/audit/` in your project. Add it to your `
 
 Then give your agent tools in an `AGENTS.talk` at the root of your project:
 
-```talk
+```applescript
 # Runs the tests.
 tool run_tests
   run 'npm test' in a sandbox with local network
