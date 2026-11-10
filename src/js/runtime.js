@@ -251,6 +251,7 @@ async function execute(source, options, execution) {
     return finish(execution, "failed", policyErrors);
   }
   const secrets = await loadSecrets(root, agents.allowedSecrets);
+  secrets.errors.push(...checkSecretUses(agents));
   if (secrets.errors.length > 0) {
     return finish(execution, "failed", secrets.errors);
   }
@@ -385,7 +386,7 @@ async function loadSecrets(root, allowed) {
   }
   const local = await readEnvFile(nodePath.join(root, ".env.local"));
   const base = await readEnvFile(nodePath.join(root, ".env"));
-  for (const { name, hosts, where } of allowed) {
+  for (const { name, hosts, run, where } of allowed) {
     let entry = secrets.get(name);
     if (entry === undefined) {
       let value = process.env[name];
@@ -401,12 +402,57 @@ async function loadSecrets(root, allowed) {
       if (value !== null && value.length < SECRET_MIN_LENGTH) {
         errors.push({ message: "The value of secret " + name + " is shorter than " + SECRET_MIN_LENGTH + " characters, so it cannot be kept out of the output. Use a longer value, or remove the allow line.", ...where });
       }
-      entry = { name, hosts: [], value };
+      entry = { name, hosts: [], run: false, value };
       secrets.set(name, entry);
     }
     entry.hosts.push(...hosts);
+    if (run) {
+      entry.run = true;
+    }
   }
   return { secrets, errors };
+}
+
+// load errors: a name in both "allow env" and "allow secret", and "using secret" with no "allow secret ... for run"
+function checkSecretUses(agents) {
+  const errors = [];
+  for (const { name, where } of agents.allowedSecrets) {
+    if (agents.allowedEnv.includes(name)) {
+      errors.push({ message: name + " is in both 'allow env' and 'allow secret'. Remove it from 'allow env', so only the runs that are provided it get it.", ...where });
+    }
+  }
+  const forRun = agents.allowedSecrets.filter((allowed) => allowed.run).map((allowed) => allowed.name);
+  for (const definition of Object.values(agents.definitions)) {
+    for (const node of findNodes(definition, [])) {
+      if ((node.type !== "run" && node.type !== "start") || node.secrets.length === 0) {
+        continue;
+      }
+      for (const name of node.secrets) {
+        if (!forRun.includes(name)) {
+          errors.push({ message: "The tool " + definition.name + " is provided secret " + name + ", but AGENTS.talk has no 'allow secret " + name + " for run'.", line: node.line, column: node.column, file: definition.file });
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+// the environment for a run or start: "allow env", and the secrets it is provided with "using secret"
+function programEnv(command, state) {
+  const env = allowedEnvFor(state);
+  for (const name of command.secrets) {
+    const entry = state.secrets.get(name);
+    if (entry.value === null) {
+      throw new ScriptError("No value for secret " + name + ". Put it in the environment, in .env.local or in .env.", command);
+    }
+    env[name] = entry.value;
+  }
+  return env;
+}
+
+// the end of an audit line for a step that sends secrets: "  (secret A, B)"
+function secretNote(names) {
+  return names.length === 0 ? "" : "  (secret " + names.join(", ") + ")";
 }
 
 // KEY=value lines, as dotenv reads them: # comments, "export ", quotes; a missing file is empty
@@ -482,8 +528,22 @@ function secretUseMessage(secret, where, state) {
       }
     }
   }
+  let run = false;
+  for (const name of names) {
+    const entry = state.secrets.get(name);
+    if (entry !== undefined && entry.run) {
+      run = true;
+    }
+  }
+  const places = [];
+  if (hosts.length > 0) {
+    places.push("in fetch headers or body to " + hosts.join(", "));
+  }
+  if (run) {
+    places.push("in a tool, with: run ... using secret " + names[0]);
+  }
   const start = where === null ? "A secret cannot be used here: " : "A secret cannot go into " + where + ": ";
-  return start + names.join(", ") + ". Use it in fetch headers or body to " + hosts.join(", ") + ".";
+  return start + names.join(", ") + ". Use it " + places.join(", or ") + ".";
 }
 
 // the text with each allowed secret's value as <secret NAME>
@@ -857,7 +917,7 @@ async function loadAgentsTalk(root, hostTools) {
       }
       if (definition.type === "allowSecret") {
         if (file.name === AGENTS_TALK) {
-          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, where });
+          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, where });
         } else {
           result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
         }
@@ -1730,11 +1790,12 @@ async function runProgram(command, state) {
   step.args = args;
   const sandbox = await sandboxValues(command, state);
   step.sandbox = sandbox;
+  step.secrets = [...command.secrets];
   checkDenied("run", state, command);
   checkSandboxRequired("run", sandbox, state, command);
   await runHooks("before", ["run"], step, state, command);
 
-  const env = allowedEnvFor(state);
+  const env = programEnv(command, state);
   let limit = state.timeLimit;
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
@@ -1753,7 +1814,7 @@ async function runProgram(command, state) {
     }
   }
 
-  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s");
+  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + secretNote(command.secrets));
   // the output can hold a secret's value, for example from "env"
   result.output = redact(result.output, state);
 
@@ -2357,13 +2418,14 @@ async function startProcess(command, state) {
   step.name = name;
   const sandbox = await sandboxValues(command, state);
   step.sandbox = sandbox;
+  step.secrets = [...command.secrets];
   checkDenied("start", state, command);
   checkSandboxRequired("start", sandbox, state, command);
   await runHooks("before", ["start"], step, state, command);
 
   let spawnProgramName = program;
   let spawnArgs = args;
-  let env = allowedEnvFor(state);
+  let env = programEnv(command, state);
   let tmp = null;
   if (sandbox !== null) {
     const wrapped = await sandboxCommand(program, args, sandbox, env, true, state, command);
@@ -2404,7 +2466,7 @@ async function startProcess(command, state) {
   // newest last, so the list can show newest first
   state.processes.delete(name);
   state.processes.set(name, record);
-  auditStep(state, "start", name, sandboxText(sandbox) + [program, ...args].join(" "));
+  auditStep(state, "start", name, sandboxText(sandbox) + [program, ...args].join(" ") + secretNote(command.secrets));
   return new ProcessInfo(record, state);
 }
 
@@ -2612,8 +2674,7 @@ async function runFetch(command, state) {
       result = text;
     }
   }
-  const secretNote = secrets.length === 0 ? "" : "  (secret " + secrets.join(", ") + ")";
-  auditStep(state, "fetch", method + " " + current.href, response.status + ", " + Buffer.byteLength(text) + " bytes" + secretNote);
+  auditStep(state, "fetch", method + " " + current.href, response.status + ", " + Buffer.byteLength(text) + " bytes" + secretNote(secrets));
   state.result = result;
   await runHooks("after", ["fetch"], step, state, command);
   return result;
@@ -2661,7 +2722,8 @@ function checkSecretHosts(secrets, url, state, node) {
   for (const name of secrets) {
     const entry = state.secrets.get(name);
     if (!isAllowedFetchHost(host, entry.hosts)) {
-      throw new ScriptError("A secret cannot go to " + host + ": " + name + ". It can go only to " + entry.hosts.join(", ") + ".", node);
+      const allowed = entry.hosts.length === 0 ? "a run or start in a tool that is provided it" : entry.hosts.join(", ");
+      throw new ScriptError("A secret cannot go to " + host + ": " + name + ". It can go only to " + allowed + ".", node);
     }
   }
 }

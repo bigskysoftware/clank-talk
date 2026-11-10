@@ -1715,13 +1715,40 @@ export function parse(source, options = {}) {
     return { type: "duration", value, ms: DURATION_UNITS[unit.value], line: start.line, column: start.column };
   }
 
-  // run <program> [with <arg>, <arg>] [within <duration>], only inside a tool
+  // using secret NAME, NAME | using secrets NAME, NAME: after run or start, before "in a sandbox"
+  // gives the list of names, an empty list with no "using", or null on an error
+  function parseUsing() {
+    if (!isWord("using")) {
+      return [];
+    }
+    i++;
+    if (!isWord("secret") && !isWord("secrets")) {
+      error("Expected 'secret' or 'secrets', as in: using secret NPM_TOKEN");
+      return null;
+    }
+    i++;
+    const names = [];
+    while (true) {
+      const name = parseName();
+      if (name === null) {
+        return null;
+      }
+      names.push(name);
+      if (!isOp(",")) {
+        break;
+      }
+      i++;
+    }
+    return names;
+  }
+
+  // run <program> [with <arg>, <arg>] [using secret NAME] [in a sandbox ...] [within <duration>], only inside a tool
   function parseRun(token) {
     if (!inTool) {
       errors.push({ message: "'run' is only allowed in a tool", line: token.line, column: token.column });
       return null;
     }
-    const program = parseBefore(["with", "in", "within"], parseExpression);
+    const program = parseBefore(["with", "using", "in", "within"], parseExpression);
     if (program === null) {
       return null;
     }
@@ -1730,7 +1757,7 @@ export function parse(source, options = {}) {
       i++;
       args = [];
       while (true) {
-        const arg = parseBefore(["in", "within"], parseExpression);
+        const arg = parseBefore(["using", "in", "within"], parseExpression);
         if (arg === null) {
           return null;
         }
@@ -1740,6 +1767,10 @@ export function parse(source, options = {}) {
         }
         i++;
       }
+    }
+    const secrets = parseUsing();
+    if (secrets === null) {
+      return null;
     }
     let sandbox = null;
     if (isWord("in")) {
@@ -1756,7 +1787,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "run", program, args, sandbox, within, line: token.line, column: token.column };
+    return { type: "run", program, args, secrets, sandbox, within, line: token.line, column: token.column };
   }
 
   // in a sandbox [with network, local network, writes to <path>, reads of <path>], after run or start
@@ -1841,7 +1872,7 @@ export function parse(source, options = {}) {
       errors.push({ message: "'start' is only allowed in a tool", line: token.line, column: token.column });
       return null;
     }
-    const program = parseBefore(["with", "as", "in"], parseExpression);
+    const program = parseBefore(["with", "as", "using", "in"], parseExpression);
     if (program === null) {
       return null;
     }
@@ -1850,7 +1881,7 @@ export function parse(source, options = {}) {
       i++;
       args = [];
       while (true) {
-        const arg = parseBefore(["as", "in"], parseExpression);
+        const arg = parseBefore(["as", "using", "in"], parseExpression);
         if (arg === null) {
           return null;
         }
@@ -1866,8 +1897,12 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    const name = parseBefore(["in"], parseExpression);
+    const name = parseBefore(["using", "in"], parseExpression);
     if (name === null) {
+      return null;
+    }
+    const secrets = parseUsing();
+    if (secrets === null) {
       return null;
     }
     let sandbox = null;
@@ -1877,7 +1912,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "start", program, args, name, sandbox, line: token.line, column: token.column };
+    return { type: "start", program, args, name, secrets, sandbox, line: token.line, column: token.column };
   }
 
   // at the top of AGENTS.talk:
@@ -1924,7 +1959,7 @@ export function parse(source, options = {}) {
     return { type: "allowEnv", names, line: token.line, column: token.column };
   }
 
-  // allow secret NAME for fetch to 'api.github.com', '*.github.com'
+  // allow secret NAME for fetch to 'api.github.com', '*.github.com' | allow secret NAME for run
   // see src/md/features/secrets.md
   function parseAllowSecret(token) {
     i++;
@@ -1937,8 +1972,13 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
+    // allow secret NAME for run: a run or start that is provided it, with "using secret NAME"
+    if (isWord("run")) {
+      i++;
+      return { type: "allowSecret", name, hosts: [], run: true, line: token.line, column: token.column };
+    }
     if (!isWord("fetch")) {
-      error("Expected 'fetch', as in: allow secret " + name + " for fetch to 'api.github.com'");
+      error("Expected 'fetch' or 'run', as in: allow secret " + name + " for fetch to 'api.github.com'");
       return null;
     }
     i++;
@@ -1951,7 +1991,7 @@ export function parse(source, options = {}) {
     if (hosts === null) {
       return null;
     }
-    return { type: "allowSecret", name, hosts, line: token.line, column: token.column };
+    return { type: "allowSecret", name, hosts, run: false, line: token.line, column: token.column };
   }
 
   // 'api.github.com', '*.npmjs.org': hosts in quotes, lower case

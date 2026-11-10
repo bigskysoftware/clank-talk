@@ -1,6 +1,6 @@
 # Secrets
 
-Built: `secret NAME` with fetch. Not built yet: `allow secret NAME for run`.
+Built: `secret NAME` with fetch, and `run ... using secret NAME`.
 
 Agents must use secrets (API keys, tokens) without seeing their values.
 
@@ -42,6 +42,28 @@ fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer
 - Approved (built): a secret in the fetch URL is an error, because URLs go into the audit, hooks and errors. Later: maybe, with redaction.
 - Approved (built): any other use is an error: files (`write`, `append`, `replace`, `put`), programs (`run` and `start` arguments, git), `ask`, checks (`is`, `contains`, `starts with`, `matches`, `is empty`, `exists` and the others, because each tells one bit), and conversions (`as text`, `as json`, `length`, indexes). The error says where the secret can go: `A secret cannot go into write: GITHUB_TOKEN. Use it in fetch headers or body to api.github.com.` `on error` can catch it.
 - Approved (built): every conversion to text checks for a secret, and only `print`, `+`, `${}` and fetch handle one. A place that the code misses gives an error, and does not leak the value. Why not `<secret NAME>` text: written to a file in silence, it is a quiet bug.
+
+### Programs
+
+- Approved (built): `allow secret NPM_TOKEN for run` in AGENTS.talk, and `using secret NPM_TOKEN` (or `using secrets A, B`) on a `run` or `start` in a tool. Only a run or start that is provided the secret gets it, as an environment variable with the same name. Order: program, `with` arguments, `using`, `in a sandbox`, `within`.
+
+```talk
+# AGENTS.talk
+allow secret NPM_TOKEN for run
+
+tool publish
+  run 'npm publish' using secret NPM_TOKEN
+end
+```
+
+- Approved (built): why not every run: a tool such as `run_tests` runs code that the agent can change, and that code can send the token out.
+- Approved (built): a sandbox is not required. The secret goes into the environment, with or without a sandbox, the same as `allow env` values. A policy can require a sandbox. Why: we trust users to get this right, and document the risks.
+- Risk: a program with a secret and the network can send the secret anywhere.
+- Risk: a program that runs code the agent can change (tests, build scripts, `npm` lifecycle scripts) can leak the secret. Provide secrets only to programs whose code the agent cannot change.
+- Approved (built): a name in both `allow env` and `allow secret` fails the load: `NPM_TOKEN is in both 'allow env' and 'allow secret'. Remove it from 'allow env', so only the runs that are provided it get it.`
+- Approved (built): `using secret NAME` with no `allow secret NAME for run` fails the load: `The tool publish is provided secret NPM_TOKEN, but AGENTS.talk has no 'allow secret NPM_TOKEN for run'.` A fetch-only line gives the same error. A tool in an imported file can have `using secret`; the `allow` line must be in AGENTS.talk.
+- Approved (built): a missing value is an error when the run happens. A name can have one line for fetch and one for run.
+- Approved (built): the audit shows the names on `run` and `start`: `run  npm publish  code 0, 4.2 s  (secret NPM_TOKEN)`. The `run` and `start` steps in hooks have `secrets`, the list of names.
 
 ### Leaks back
 

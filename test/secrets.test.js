@@ -47,11 +47,13 @@ before(async () => {
   });
   await new Promise((resolve) => otherServer.listen(0, "127.0.0.1", resolve));
   otherBase = "http://127.0.0.1:" + otherServer.address().port;
-  await fs.writeFile(path.join(root, ".env"), "TOKEN=" + TOKEN + "\n");
+  await fs.writeFile(path.join(root, ".env"), "TOKEN=" + TOKEN + "\nRUN_TOKEN=run-abcdefgh12\nRUN_OTHER=other-abcdefgh\n");
   await fs.writeFile(path.join(root, "AGENTS.talk"), [
     "allow env PATH",
     "allow fetch from '127.0.0.1', 'localhost'",
     "allow secret TOKEN for fetch to '127.0.0.1'",
+    "allow secret RUN_TOKEN for run",
+    "allow secret RUN_OTHER for run",
     "",
     "tool echo_it with text",
     "  run 'echo' with text",
@@ -59,6 +61,22 @@ before(async () => {
     "",
     "tool show_env_file",
     "  run 'cat' with '.env'",
+    "end",
+    "",
+    "tool show_run_token",
+    "  run 'printenv' with 'RUN_TOKEN' using secret RUN_TOKEN",
+    "end",
+    "",
+    "tool show_both",
+    "  run 'env' using secrets RUN_TOKEN, RUN_OTHER",
+    "end",
+    "",
+    "tool show_no_token",
+    "  run 'printenv' with 'RUN_TOKEN'",
+    "end",
+    "",
+    "tool start_run_token",
+    "  start 'printenv' with 'RUN_TOKEN' as 'env-printer' using secret RUN_TOKEN",
     "end",
   ].join("\n"));
 });
@@ -131,14 +149,14 @@ test("a secret needs an allow line and a value", async () => {
   }
 });
 
-test("allow secret is only for AGENTS.talk, and needs for fetch to", async () => {
+test("allow secret is only for AGENTS.talk, and needs for fetch to or for run", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-secrets-"));
   try {
     await fs.writeFile(path.join(dir, "AGENTS.talk"), "import ./more.talk");
     await fs.writeFile(path.join(dir, "more.talk"), "allow secret X for fetch to 'a.com'");
     assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["'allow secret' is only allowed in AGENTS.talk"]);
-    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow secret X for run");
-    assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["Expected 'fetch', as in: allow secret X for fetch to 'api.github.com'"]);
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow secret X for push");
+    assert.deepEqual((await run("print 1", { root: dir })).errors.map((e) => e.message), ["Expected 'fetch' or 'run', as in: allow secret X for fetch to 'api.github.com'"]);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -207,11 +225,71 @@ test("a hook sees the names of the secrets in a fetch", async () => {
 
 test("a secret's value shows as <secret NAME> in fetch responses, run output, print and errors", async () => {
   assert.deepEqual(await output(`fetch '${base}/echo' with headers: { Authorization: secret TOKEN }\nprint it`), ["got <secret TOKEN> "]);
-  assert.deepEqual(await output("show_env_file\nprint it's output"), ["TOKEN=<secret TOKEN>\n"]);
+  assert.deepEqual(await output("show_env_file\nprint it's output"), ["TOKEN=<secret TOKEN>\nRUN_TOKEN=<secret RUN_TOKEN>\nRUN_OTHER=<secret RUN_OTHER>\n"]);
   // a file read is not changed, so an edit cannot lose the token; print still hides it
   await fs.writeFile(path.join(root, "config.txt"), "key: " + TOKEN + "\n");
   assert.deepEqual(await output("print read ./config.txt"), ["key: <secret TOKEN>\n"]);
   assert.deepEqual(await output("replace 'key' with 'token' in ./config.txt"), []);
   assert.equal(await fs.readFile(path.join(root, "config.txt"), "utf8"), "token: " + TOKEN + "\n");
   assert.deepEqual(await errors("print (read ./config.txt) as number"), ["Expected a number, found 'token: <secret TOKEN>\n'"]);
+});
+
+// ----- allow secret NAME for run, and run ... using secret NAME -----
+
+test("a run that is provided a secret gets it in its environment, and others do not", async () => {
+  assert.deepEqual(await output("show_run_token\nprint it's output"), ["<secret RUN_TOKEN>\n"]);
+  const [both] = await output("show_both\nprint it's output");
+  assert.match(both, /^RUN_TOKEN=<secret RUN_TOKEN>$/m);
+  assert.match(both, /^RUN_OTHER=<secret RUN_OTHER>$/m);
+  assert.deepEqual(await output("show_no_token\nprint it's code"), ["1"]);
+});
+
+test("a start that is provided a secret gets it too", async () => {
+  const processes = new Map();
+  try {
+    assert.deepEqual(await output("start_run_token\nwait until (process 'env-printer')'s status is 'exited' within 5 seconds\nprint (process 'env-printer')'s output", { processes }), ["<secret RUN_TOKEN>\n"]);
+  } finally {
+    for (const record of processes.values()) {
+      record.child.kill();
+    }
+  }
+});
+
+test("the audit and hooks see the names of the secrets that a run is provided", async () => {
+  const audit = { scripts: 0, records: [] };
+  await output("show_run_token", { audit });
+  const ran = audit.records.find((record) => record.kind === "run");
+  assert.match(ran.details, /  \(secret RUN_TOKEN\)$/);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-secrets-"));
+  try {
+    await fs.writeFile(path.join(dir, ".env"), "RUN_TOKEN=run-abcdefgh12\n");
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow env PATH\nallow secret RUN_TOKEN for run\n\nbefore run\n  if the run's secrets is not empty\n    reject 'no: ' + the run's secrets\n  end\nend\n\ntool t\n  run 'printenv' using secret RUN_TOKEN\nend");
+    assert.deepEqual((await run("t", { root: dir })).errors.map((e) => e.message), ['no: ["RUN_TOKEN"]']);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a run-only secret cannot go anywhere else", async () => {
+  assert.deepEqual(await errors("write secret RUN_TOKEN to ./out.txt"), ["A secret cannot go into write: RUN_TOKEN. Use it in a tool, with: run ... using secret RUN_TOKEN."]);
+  assert.deepEqual(await errors(`fetch '${base}/' with headers: { Authorization: secret RUN_TOKEN }`), ["A secret cannot go to 127.0.0.1: RUN_TOKEN. It can go only to a run or start in a tool that is provided it."]);
+});
+
+test("load errors for secrets in a run", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-secrets-"));
+  const loadErrors = async (agents) => {
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), agents);
+    return (await run("print 1", { root: dir })).errors.map((e) => e.message);
+  };
+  try {
+    assert.deepEqual(await loadErrors("allow env PATH, NPM_TOKEN\nallow secret NPM_TOKEN for run"), ["NPM_TOKEN is in both 'allow env' and 'allow secret'. Remove it from 'allow env', so only the runs that are provided it get it."]);
+    assert.deepEqual(await loadErrors("tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend"), ["The tool publish is provided secret NPM_TOKEN, but AGENTS.talk has no 'allow secret NPM_TOKEN for run'."]);
+    assert.deepEqual(await loadErrors("allow secret NPM_TOKEN for fetch to 'registry.npmjs.org'\n\ntool publish\n  run 'npm publish' using secret NPM_TOKEN\nend"), ["The tool publish is provided secret NPM_TOKEN, but AGENTS.talk has no 'allow secret NPM_TOKEN for run'."]);
+    assert.deepEqual(await loadErrors("tool publish\n  run 'npm publish' using NPM_TOKEN\nend"), ["Expected 'secret' or 'secrets', as in: using secret NPM_TOKEN"]);
+    // a missing value is an error only when the run happens
+    assert.deepEqual(await loadErrors("allow secret NPM_TOKEN_NOT_SET for run\n\ntool publish\n  run 'npm publish' using secret NPM_TOKEN_NOT_SET\nend"), []);
+    assert.deepEqual((await run("publish", { root: dir })).errors.map((e) => e.message), ["No value for secret NPM_TOKEN_NOT_SET. Put it in the environment, in .env.local or in .env."]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
