@@ -11,7 +11,7 @@ import { readFileSync, watch } from "node:fs";
 import { createHash } from "node:crypto";
 import nodePath from "node:path";
 import { run, stopAllProcesses, VERSION } from "./clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS } from "./host.js";
+import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput } from "./host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -115,7 +115,8 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text });
+      scope.output.text = keptOutput(result);
     } finally {
       if (timer !== null) {
         clearInterval(timer);

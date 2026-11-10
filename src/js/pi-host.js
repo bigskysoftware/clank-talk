@@ -2,7 +2,7 @@
 // pi.js is the entry file. It gives this module pi's TypeBox, so the tests can run without pi.
 
 import { run, stopAllProcesses } from "./clank-talk.js";
-import { SYNTAX, formatResult, AGENT_NAME, agentScope, MAX_STEPS } from "./host.js";
+import { SYNTAX, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput } from "./host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -71,7 +71,9 @@ export function clankTalkExtension(pi, Type) {
         maxSteps: MAX_STEPS,
         onStep: progressFor(onUpdate),
         signal,
+        previousOutput: scope.output.text,
       });
+      scope.output.text = keptOutput(result);
       return {
         content: [{ type: "text", text: formatResult(result, params.script, session.root) }],
         details: { status: result.status, steps: result.steps },

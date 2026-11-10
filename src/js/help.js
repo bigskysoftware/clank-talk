@@ -210,6 +210,12 @@ export const HELP = [
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
+    name: "previous", kind: "expression",
+    syntax: "the previous output",
+    description: "All the print output of the last script, as text. The host shows at most 2000 lines or 50 KB, and cuts the middle of longer output; this has all of it. Each script replaces it, so to keep it: set $log to the previous output.",
+    examples: ["print lines 1001 to 1500 of the previous output", "set failures to find 'not ok' in the previous output"],
+  },
+  {
     name: "audit", kind: "expression",
     syntax: "the audit | audit as json (in AGENTS.talk)",
     description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to talk/audit/<date>.log, which scripts cannot change; 'audit as json' in AGENTS.talk writes JSON Lines instead.",

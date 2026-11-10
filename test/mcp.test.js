@@ -132,6 +132,22 @@ test('an error shows the script line, with an arrow at the column', async () => 
   assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:10 Expected a number, found 'x'\n  2 | \tprint 2 * 'x'\n    | \t        ^");
 });
 
+test('long output is cut, and the next script can read all of it as the previous output', async () => {
+  const response = await call("repeat 3000 times\n  print 'line'\nend");
+  const text = response.result.content[0].text;
+  assert.match(text, /\n\.\.\. 1000 lines cut\. All 3000 lines are in: the previous output\. To keep them for later: set \$log to the previous output\n/);
+  assert.equal(text.split("\n").length, 2001);
+  const next = await call("print length of lines of the previous output");
+  assert.equal(next.result.content[0].text, "3000");
+  // that script's output is now the previous output
+  assert.equal((await call("print the previous output")).result.content[0].text, "3000");
+});
+
+test('one very long line is cut too', async () => {
+  const long = await call("set t to 'ab'\nrepeat 16 times\n  set t to t + t\nend\nprint t");
+  assert.match(long.result.content[0].text, /^(ab)+\n\.\.\. the rest is cut\. The full text is in: the previous output/);
+});
+
 test('warnings show before errors, with an arrow', async () => {
   const response = await call("set t to 'abc'\nreplace 'x' with 'y' in t");
   assert.equal(response.result.isError, false);

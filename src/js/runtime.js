@@ -225,6 +225,8 @@ async function execute(source, options, execution) {
     fetchHosts: options.fetchHosts || new Set(),
     // background processes by name; a host keeps the Map for a session, and stops them at the end
     processes: options.processes || new Map(),
+    // the full print output of the last script, from the host; null before the first script
+    previousOutput: options.previousOutput === undefined ? null : options.previousOutput,
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -1217,6 +1219,9 @@ async function evaluate(node, state) {
       return null;
     }
     return new ProcessInfo(record);
+  }
+  if (type === "previousOutput") {
+    return state.previousOutput;
   }
   if (type === "processes") {
     return processList(state);

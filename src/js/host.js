@@ -10,6 +10,43 @@ import { changedFiles } from "./diff.js";
 // the step budget for each call
 export const MAX_STEPS = 10_000;
 
+// the most print output that goes to the model: the same limits as pi's own tools
+// above them, the host cuts the output at a place it chooses, so ClankTalk cuts first, and says where the rest is
+export const OUTPUT_MAX_LINES = 2000;
+export const OUTPUT_MAX_BYTES = 50 * 1024;
+
+// long print output: the start and the end, and a line that says where the rest is
+export function cutOutput(text) {
+  const lines = text.split("\n");
+  if (lines.length <= OUTPUT_MAX_LINES && Buffer.byteLength(text) <= OUTPUT_MAX_BYTES) {
+    return text;
+  }
+  let head = takeLines(lines, OUTPUT_MAX_LINES / 2, OUTPUT_MAX_BYTES / 2);
+  let tail = takeLines([...lines].reverse(), OUTPUT_MAX_LINES / 2, OUTPUT_MAX_BYTES / 2).reverse();
+  const where = "All " + lines.length + " lines are in: the previous output. To keep them for later: set $log to the previous output";
+  // one very long line: show the start of it
+  if (head.length === 0) {
+    return lines[0].slice(0, OUTPUT_MAX_BYTES / 4) + "\n... the rest is cut. The full text is in: the previous output. To keep it for later: set $log to the previous output";
+  }
+  const cut = lines.length - head.length - tail.length;
+  const note = "... " + cut + " lines cut. " + where;
+  return [...head, note, ...tail].join("\n");
+}
+
+// lines from the start of the list, up to a count and a size
+function takeLines(lines, maxLines, maxBytes) {
+  const kept = [];
+  let bytes = 0;
+  for (const line of lines) {
+    bytes += Buffer.byteLength(line) + 1;
+    if (kept.length >= maxLines || bytes > maxBytes) {
+      break;
+    }
+    kept.push(line);
+  }
+  return kept;
+}
+
 // three double quotes, for raw strings in the text below
 const Q3 = '"'.repeat(3);
 
@@ -60,7 +97,7 @@ export async function describeTool(root) {
 export function formatResult(result, script, root) {
   const sections = [];
   if (result.output.length > 0) {
-    sections.push(result.output.join("\n"));
+    sections.push(cutOutput(result.output.join("\n")));
   }
   if (result.warnings && result.warnings.length > 0) {
     sections.push("--- warnings ---\n" + formatProblems(result.warnings, script, root));
@@ -126,17 +163,34 @@ function pointAt(source, line, column) {
 // an agent name: letters, digits, -, _ and ., at most 40
 export const AGENT_NAME = /^[A-Za-z0-9_.-]{1,40}$/;
 
-// the per-agent part of a session: $ globals, the files it read (for the stale-write check), and its undo list
+// the per-agent part of a session: $ globals, the files it read (for the stale-write check), its undo list,
+// and the full output of its last script (output.text, for "the previous output")
 // with no name, the session's own; background processes, fetch approvals and the audit stay shared
 export function agentScope(session, agent) {
   if (agent === undefined) {
-    return { globals: session.globals, seen: session.seen, undo: session.undo };
+    if (!session.output) {
+      session.output = { text: null };
+    }
+    return { globals: session.globals, seen: session.seen, undo: session.undo, output: session.output };
   }
   if (!session.agents) {
     session.agents = new Map();
   }
   if (!session.agents.has(agent)) {
-    session.agents.set(agent, { globals: Object.create(null), seen: new Map(), undo: [] });
+    session.agents.set(agent, { globals: Object.create(null), seen: new Map(), undo: [], output: { text: null } });
   }
   return session.agents.get(agent);
+}
+
+// the most that "the previous output" keeps; above it, the start and the end
+const PREVIOUS_MAX_CHARACTERS = 5 * 1024 * 1024;
+
+// the full print output of a script, for "the previous output" in the next one
+export function keptOutput(result) {
+  const text = result.output.join("\n");
+  if (text.length <= PREVIOUS_MAX_CHARACTERS) {
+    return text;
+  }
+  const half = PREVIOUS_MAX_CHARACTERS / 2;
+  return text.slice(0, half) + "\n... (cut: the output was more than 5 MB) ...\n" + text.slice(-half);
 }

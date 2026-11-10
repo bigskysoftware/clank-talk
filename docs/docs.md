@@ -189,6 +189,12 @@ read @/README.md
 print it
 ```
 
+Printed a lot? Your agent sees the start and the end, and a note in the middle. The rest isn't lost. The next script gets all of it as `the previous output`:
+
+```talk
+set failures to find 'not ok' in the previous output
+```
+
 ### Expressions
 
 `the` is optional. Use it where it reads better. There are three ways to get a property, and they all mean the same thing:

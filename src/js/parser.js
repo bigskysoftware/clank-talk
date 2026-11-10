@@ -446,6 +446,11 @@ export function parse(source, options = {}) {
         i++;
         return node("processes", next, {});
       }
+      // the previous output: the full print output of the last script, which the host can cut
+      if (next !== undefined && next.type === "word" && next.value === "previous" && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "output") {
+        i += 2;
+        return node("previousOutput", next, {});
+      }
       // the undo list: the scripts that undo can take back
       if (next !== undefined && next.type === "word" && next.value === "undo" && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "list") {
         i += 2;
