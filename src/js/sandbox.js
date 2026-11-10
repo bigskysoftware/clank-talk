@@ -297,7 +297,7 @@ export async function bwrapArgs(plan, cwd) {
     if (isHidden || name.endsWith(".talk") || name === "talk") {
       const path = nodePath.join(plan.root, name);
       if (name.startsWith(".env")) {
-        args.push("--tmpfs", path);
+        args.push(...(await hideArgs(path)));
       } else {
         args.push("--ro-bind", path, path);
       }
@@ -305,10 +305,20 @@ export async function bwrapArgs(plan, cwd) {
   }
   // secrets: hide them, even inside an allowed folder
   for (const path of plan.secrets) {
-    args.push("--tmpfs", path);
+    args.push(...(await hideArgs(path)));
   }
   args.push("--chdir", cwd);
   return args;
+}
+
+// bwrap arguments that hide a secret: an empty folder over a folder, /dev/null over a file
+// (--tmpfs needs a folder); nothing for a path that is not there
+async function hideArgs(path) {
+  const stats = await fs.stat(path).catch(() => null);
+  if (stats === null) {
+    return [];
+  }
+  return stats.isDirectory() ? ["--tmpfs", path] : ["--ro-bind", "/dev/null", path];
 }
 
 /**

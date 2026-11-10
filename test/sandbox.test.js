@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { sandboxKind, installDirs, sandboxPlan, macosProfile, wrapCommand, selfTest } from "../src/js/sandbox.js";
+import { sandboxKind, installDirs, sandboxPlan, macosProfile, bwrapArgs, wrapCommand, selfTest } from "../src/js/sandbox.js";
 
 // the real sandbox tests cannot run inside a sandbox: a sandbox cannot start inside another
 const realMac = process.platform === "darwin" && process.env.CLANK_TALK_SANDBOXED !== "1";
@@ -78,5 +78,23 @@ test("on macOS: a sandboxed program can write the project, but not .git, a hidde
   } finally {
     await fs.rm(root, { recursive: true, force: true });
     await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("bwrap hides a secret file with /dev/null and a secret folder with an empty folder", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-bwrap-"));
+  try {
+    await fs.writeFile(path.join(root, ".env"), "SECRET=1");
+    await fs.mkdir(path.join(root, ".ssh"));
+    await fs.writeFile(path.join(root, ".netrc"), "machine x");
+    const plan = { network: false, reads: [], writes: [], root, tmp: root, allowedChanges: [], secrets: [path.join(root, ".ssh"), path.join(root, ".netrc"), path.join(root, ".aws")] };
+    const args = (await bwrapArgs(plan, root)).join(" ");
+    assert.match(args, new RegExp("--ro-bind /dev/null " + path.join(root, ".env")));
+    assert.match(args, new RegExp("--tmpfs " + path.join(root, ".ssh")));
+    assert.match(args, new RegExp("--ro-bind /dev/null " + path.join(root, ".netrc")));
+    assert.doesNotMatch(args, /\.aws/);
+    assert.doesNotMatch(args, new RegExp("--tmpfs " + path.join(root, ".env")));
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
   }
 });

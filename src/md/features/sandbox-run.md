@@ -40,6 +40,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 
 - Approved: macOS: `sandbox-exec` with a generated profile. Apple marks it deprecated, but it ships with macOS. Check it for each macOS version.
 - Approved: Linux: `bubblewrap` (`bwrap`), if it is installed. If not, the error says to install it. We test on macOS only, and ask Linux users to test.
+- Approved (built, not tested on Linux): bwrap hides a secret folder with an empty folder (`--tmpfs`) and a secret file, such as `.env` or `.netrc`, with `/dev/null` (`--ro-bind /dev/null`), because `--tmpfs` needs a folder. A secret that is not there is left out.
 - Approved: Windows and other OSs: an error.
 
 ## Proof before trust
