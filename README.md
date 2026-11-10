@@ -59,10 +59,10 @@ end
 ## Docs
 
 - [Docs for humans](https://clank.talk/docs.html)
-- [Docs for agents](https://clank.talk/reference.html), the same text your agent gets from `help`
+- [Docs for agents](https://clank.talk/reference.html)
 
 ClankTalk is under construction. Expect things to change.
 
 ## License
 
-BSD-3-Clause
+[BSD-3-Clause](LICENSE)
