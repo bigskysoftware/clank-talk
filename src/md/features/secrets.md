@@ -1,6 +1,6 @@
 # Secrets
 
-Proposed. Nothing here is built. For the human to review.
+Syntax approved. Not built yet. The rules without an "Approved" mark are still proposed.
 
 Agents must use secrets (API keys, tokens) without seeing their values.
 
@@ -47,9 +47,9 @@ fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer
 
 - Proposed: the audit records the secret's name, never its value. `fetch GET https://api.github.com/user  (secret GITHUB_TOKEN)`.
 
-## Open questions for the human
+## Decisions
 
-- The syntax: `secret NAME` as a value, and `allow secret NAME for ...` in AGENTS.talk.
-- Should a `run` tool get secrets only through `allow secret ... for run`, and no longer through `allow env`? (`allow env` would then be for plain settings, like PATH.)
-- The keychain: later, or never?
-- How this meets taint: a secret is the first taint label. See [taint.md](taint.md).
+- Approved: the syntax: `secret NAME` as a value, and `allow secret NAME for fetch to <host>` or `allow secret NAME for run` in AGENTS.talk.
+- Approved: `allow env` stays as it is: the opt-in for any environment variable that `run` passes on. `allow secret ... for run` is a second way, for values from `.env`, with redaction.
+- Approved: the OS keychain comes later.
+- Approved: no taint yet. Secrets are built on their own, not as a taint label. See [taint.md](taint.md).
