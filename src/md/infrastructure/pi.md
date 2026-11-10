@@ -1,6 +1,6 @@
 # pi host
 
-Status: first version built. Code: `src/js/pi.js` (the entry), `src/js/pi-host.js`, and `src/js/host.js` (shared with the MCP server). Plan and research: `tmp/pi-plugin.md`.
+Status: first version built. Code: `src/js/clank-talk-pi.js` (the entry), `src/js/pi-host.js`, and `src/js/host.js` (shared with the MCP server). Plan and research: `tmp/pi-plugin.md`.
 
 ## Why
 
@@ -15,8 +15,8 @@ Status: first version built. Code: `src/js/pi.js` (the entry), `src/js/pi-host.j
 - Approved (built): one session for the pi session, as in the MCP server: `$` globals, reads, undo, agents, fetch approvals, processes and the audit. `session_shutdown` stops the background processes.
 - Approved (built): `executionMode: "sequential"`, because calls share the session. Esc cancels the script through pi's `signal`. Progress goes to `onUpdate`, at most every 500 ms.
 - Approved (built): the description does not list the tools from AGENTS.talk, because pi registers the tool before it knows the project. It says `help tools` lists them.
-- Approved (built): `package.json` has `"pi": { "extensions": ["./src/js/pi.js"] }`, the `pi-package` keyword (for the pi package gallery), and `typebox` as an optional peer dependency with the range `*`: pi supplies it, and its docs say not to bundle it. It is not on npm. Install from git: `pi install -l git:github.com/bigskysoftware/clank-talk`, or try it with `pi -e`. The docs recommend the project install (`-l`): a user install makes every pi session ClankTalk-only.
-- `pi.js` imports `Type` from `typebox`, which pi maps to its own copy. The tests call `clankTalkExtension(pi, Type)` with a fake pi and a fake Type.
+- Approved (built): `package.json` has `"pi": { "extensions": ["./src/js/clank-talk-pi.js"] }`, the `pi-package` keyword (for the pi package gallery), and `typebox` as an optional peer dependency with the range `*`: pi supplies it, and its docs say not to bundle it. It is not on npm. Install from git: `pi install -l git:github.com/bigskysoftware/clank-talk`, or try it with `pi -e`. The docs recommend the project install (`-l`): a user install makes every pi session ClankTalk-only.
+- `clank-talk-pi.js` imports `Type` from `typebox`, which pi maps to its own copy. The tests call `clankTalkExtension(pi, Type)` with a fake pi and a fake Type.
 
 ## Not yet
 
@@ -25,5 +25,5 @@ Status: first version built. Code: `src/js/pi.js` (the entry), `src/js/pi-host.j
 
 ## Limits
 
-- The extension runs in pi's process, with full user rights. Another extension can register tools or get around the guard. Load no other extensions when it matters: `pi --no-extensions -e ./src/js/pi.js`.
+- The extension runs in pi's process, with full user rights. Another extension can register tools or get around the guard. Load no other extensions when it matters: `pi --no-extensions -e ./src/js/clank-talk-pi.js`.
 - A slow, synchronous step blocks pi's screen. The MCP server runs in its own process.
