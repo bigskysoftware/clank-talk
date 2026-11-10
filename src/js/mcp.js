@@ -9,7 +9,7 @@
 
 import readline from "node:readline";
 import fs from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, watch } from "node:fs";
 import nodePath from "node:path";
 import { run, listTools, stopAllProcesses, VERSION } from "./clank-talk.js";
 import { syntaxSummary } from "./help.js";
@@ -164,7 +164,8 @@ export async function handleMessage(message, session) {
     return reply(id, {
       // answer with the version the client asks for
       protocolVersion: params.protocolVersion || "2025-06-18",
-      capabilities: { tools: {} },
+      // listChanged: the server tells the client when AGENTS.talk changes the tools
+      capabilities: { tools: { listChanged: true } },
       serverInfo: { name: "clank-talk", version: VERSION },
     });
   }
@@ -174,11 +175,13 @@ export async function handleMessage(message, session) {
   }
 
   if (message.method === "tools/list") {
+    // remember what the client saw, so a change to AGENTS.talk can be noticed
+    session.toolsDescription = await describeTool(session.root);
     return reply(id, {
       tools: [
         {
           name: TOOL_NAME,
-          description: await describeTool(session.root),
+          description: session.toolsDescription,
           inputSchema: {
             type: "object",
             properties: { script: { type: "string", description: "The ClankTalk script to run" } },
@@ -295,6 +298,39 @@ function askFor(session) {
   };
 }
 
+// a .talk file changed: if the tool description changed too, tell the client to list the tools again
+// only after the client listed them once; gives true if it sent the notification
+export async function toolsChanged(session) {
+  if (session.toolsDescription === undefined || !session.send) {
+    return false;
+  }
+  const description = await describeTool(session.root);
+  if (description === session.toolsDescription) {
+    return false;
+  }
+  session.toolsDescription = description;
+  session.send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
+  return true;
+}
+
+// watch the project for changes to .talk files; the audit folder is not a .talk file
+function watchTalkFiles(session) {
+  let timer = null;
+  try {
+    watch(session.root, { recursive: true }, (event, name) => {
+      if (!name || !String(name).endsWith(".talk")) {
+        return;
+      }
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        toolsChanged(session).catch((err) => process.stderr.write("clank-talk: " + err.message + "\n"));
+      }, 200);
+    });
+  } catch (err) {
+    process.stderr.write("clank-talk: cannot watch .talk files, so a change to AGENTS.talk needs a reconnect: " + err.message + "\n");
+  }
+}
+
 // a log that humans can read: each script as written, then what happened
 // the host writes it, not the script, so the sandbox does not apply
 async function writeLog(file, script, result, root) {
@@ -351,6 +387,7 @@ export function main(args) {
   session.send = (message) => {
     process.stdout.write(JSON.stringify(message) + "\n");
   };
+  watchTalkFiles(session);
 
   const input = readline.createInterface({ input: process.stdin });
   input.on("line", async (line) => {

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { handleMessage } from "../src/js/mcp.js";
+import { handleMessage, toolsChanged } from "../src/js/mcp.js";
 
 let root;
 let session;
@@ -25,7 +25,7 @@ function call(script, id = 1) {
 test("initialize answers with the client's protocol version", async () => {
   const response = await handleMessage({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }, session);
   assert.equal(response.result.protocolVersion, "2025-06-18");
-  assert.deepEqual(response.result.capabilities, { tools: {} });
+  assert.deepEqual(response.result.capabilities, { tools: { listChanged: true } });
   assert.equal(response.result.serverInfo.name, "clank-talk");
 });
 
@@ -178,4 +178,17 @@ test('ask: decline is null, and a client with no elicitation is never asked', as
   session.send = (message) => sent.push(message);
   assert.equal((await call("ask 'Name?'\nprint it")).result.content[0].text, 'null');
   assert.deepEqual(sent, []);
+});
+
+test('a change to AGENTS.talk sends tools/list_changed, once', async () => {
+  const sent = [];
+  session.send = (message) => sent.push(message);
+  // before the client lists the tools, there is nothing to tell
+  assert.equal(await toolsChanged(session), false);
+  await handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, session);
+  assert.equal(await toolsChanged(session), false);
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), '# Lints the code.\ntool lint\nend');
+  assert.equal(await toolsChanged(session), true);
+  assert.deepEqual(sent, [{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
+  assert.equal(await toolsChanged(session), false);
 });
