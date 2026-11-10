@@ -37,7 +37,7 @@ test("string escapes", () => {
 
 test("unterminated string is an error token", () => {
   const tokens = tokenize("say 'oops");
-  assert.deepEqual(tokens[1], { type: "error", value: "Unterminated string", line: 1, column: 5 });
+  assert.deepEqual(tokens[1], { type: "error", value: "Unterminated string", line: 1, column: 5, start: 4, end: 9 });
 });
 
 test("tokenizing goes on after an error", () => {
@@ -76,7 +76,7 @@ test("quoted paths can hold spaces", () => {
 
 test("unterminated quoted path is an error token", () => {
   const tokens = tokenize('read ./"oops');
-  assert.deepEqual(tokens[1], { type: "error", value: "Unterminated path", line: 1, column: 6 });
+  assert.deepEqual(tokens[1], { type: "error", value: "Unterminated path", line: 1, column: 6, start: 5, end: 12 });
 });
 
 test("@ without / is an error token", () => {
@@ -134,7 +134,7 @@ test("two character operators", () => {
 
 test("unexpected character is an error token", () => {
   const tokens = tokenize("say ~");
-  assert.deepEqual(tokens[1], { type: "error", value: "Unexpected character '~'", line: 1, column: 5 });
+  assert.deepEqual(tokens[1], { type: "error", value: "Unexpected character '~'", line: 1, column: 5, start: 4, end: 5 });
 });
 
 test("line and column", () => {

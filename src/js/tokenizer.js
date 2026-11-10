@@ -206,14 +206,17 @@ export function tokenize(source) {
     return value;
   }
 
+  // start and end are offsets in the source, so tools such as the site highlighter can find the token's text
+  let tokenStart = 0;
   function push(type, value, startLine, startColumn) {
-    tokens.push({ type, value, line: startLine, column: startColumn });
+    tokens.push({ type, value, line: startLine, column: startColumn, start: tokenStart, end: i });
   }
 
   while (i < source.length) {
     const c = source[i];
     const startLine = line;
     const startColumn = column;
+    tokenStart = i;
 
     // whitespace
     if (isSpace(c)) {
