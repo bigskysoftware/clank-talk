@@ -1939,7 +1939,8 @@ async function evaluateNode(node, state) {
         text = text instanceof Secret ? Secret.join(text, part) : text + part;
         continue;
       }
-      const value = await asText(await evaluate(part, state), state, part);
+      // a file is its path, as with +
+      const value = joinPart(await evaluate(part, state));
       if (text instanceof Secret || value instanceof Secret) {
         text = Secret.join(text, value);
       } else {
@@ -2114,8 +2115,12 @@ async function evaluateNode(node, state) {
       const answer = await patternJob({ kind: "test", source: right.source, text: toText(await asText(left, state, node)) }, state, node);
       return answer.matches;
     }
-    // text operators use the text of a file or a line
-    if (TEXT_OPERATORS.includes(node.operator)) {
+    // + joins a file as its path, and a line as its text; 'text of' gives a file's text
+    if (node.operator === "+") {
+      left = joinPart(left);
+      right = joinPart(right);
+    } else if (TEXT_OPERATORS.includes(node.operator)) {
+      // other text operators use the text of a file or a line
       left = await asText(left, state, node);
       right = await asText(right, state, node);
     }
@@ -4195,7 +4200,18 @@ function convert(node, value) {
 // symlinks are followed. Nothing outside the root can be read.
 
 // operators that use the text of a file or a line
-const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "is in", "is not in", "+"];
+const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "is in", "is not in"];
+
+// a part of + or ${}: a file is its path, a line is its text, other values stay as they are
+function joinPart(value) {
+  if (value instanceof FileRef) {
+    return value.path;
+  }
+  if (value instanceof Line) {
+    return value.text;
+  }
+  return value;
+}
 
 // a file or a line gives its text, any other value stays as it is
 async function asText(value, state, node) {

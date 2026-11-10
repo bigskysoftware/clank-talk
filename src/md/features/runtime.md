@@ -47,7 +47,8 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 - The host gives `root`. `@/` is relative to `root`. `./` and `../` are relative to `cwd` (default: `root`).
 - A file has `name`, `path` (relative to the root, with `/`), `text`, `lines`, `size` (bytes) and `modified` (ISO date).
 - A line has `number` (from 1) and `text`. As text, a line is its content. A final line break does not make an extra line. A `\r` at the end of a line is removed.
-- `contains`, `does not contain`, `starts with`, `ends with`, `is in`, `+`, `is empty` and `${}` use the text of a file or a line.
+- `contains`, `does not contain`, `starts with`, `ends with`, `is in` and `is empty` use the text of a file or a line.
+- Approved (built): `+` and `${}` join a file as its path, such as `src/a.js`, and a line as its text. To join the text of a file, write it: `'x' + file's text`. Why: a path is what a reader expects, and the text of a file that the agent wrote must not slip into a `run` argument, a URL or a message. Before, they gave the text of the file.
 - `print` shows a file as its path. A list of files prints as a list of paths.
 - `read <file>` puts the text in the result. `read <file>` is also an expression. Its argument is only a value with access, so `read ./a.txt + '!'` reads `./a.txt` and then adds `'!'`.
 - A missing file is an error for `read`. `exists` is false for it.

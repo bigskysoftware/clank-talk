@@ -289,3 +289,11 @@ test(".env and .env.* files cannot be read, also through a link, and globs leave
     await fs.rm(path.join(root, "env-link.txt"));
   }
 });
+
+test("+ and ${} give a file's path; its text is explicit", async () => {
+  assert.deepEqual(await output("print 'file: ' + ./src/a.js"), ["file: src/a.js"]);
+  assert.deepEqual(await output("set f to ./src/a.js\nprint 'file: ${f}'"), ["file: src/a.js"]);
+  assert.deepEqual(await output("print ./src/a.js + ' ' + @/src/b.js"), ["src/a.js src/b.js"]);
+  assert.deepEqual(await output("print 'text: ' + ./src/a.js's text"), ["text: var a = 1\n"]);
+  assert.deepEqual(await output("print 'line: ' + line 1 of ./notes.txt"), ["line: first"]);
+});
