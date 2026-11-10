@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { run, parse } from "../src/js/clank-talk.js";
-import { HELP } from "../src/js/help.js";
+import { HELP, referenceMarkdown, syntaxSummary } from "../src/js/help.js";
 
 let root;
 
@@ -72,4 +72,23 @@ test("a word on the next line is not part of help", async () => {
 test("help puts its text in the result too", async () => {
   const result = await run("help then\nprint the result starts with '<command> then <command>'", { root });
   assert.equal(result.output[1], "true");
+});
+
+test('the reference has every entry, with its examples', () => {
+  const md = referenceMarkdown();
+  for (const entry of HELP) {
+    assert.ok(md.includes('### ' + entry.name + '\n'), entry.name);
+    for (const example of entry.examples) {
+      assert.ok(md.includes('```talk\n' + example + '\n```'), entry.name);
+    }
+  }
+  assert.ok(md.indexOf('## Commands') < md.indexOf('## Expressions'));
+  assert.ok(md.indexOf('## Expressions') < md.indexOf('## AGENTS.talk'));
+});
+
+test('the syntax summary has one line for each entry', () => {
+  const summary = syntaxSummary();
+  for (const entry of HELP) {
+    assert.ok(summary.includes('  ' + entry.syntax + '   '), entry.name);
+  }
 });

@@ -393,3 +393,53 @@ export function helpFor(word, tools) {
   }
   return lines.join("\n");
 }
+// the groups of the reference, in order
+const GROUPS = [
+  { title: "Commands", match: (entry) => entry.kind === "command" && entry.where !== "AGENTS.talk" },
+  { title: "Expressions", match: (entry) => entry.kind === "expression" },
+  { title: "AGENTS.talk", match: (entry) => entry.where === "AGENTS.talk" },
+];
+
+/**
+ * The full reference, as Markdown, for the site: every command and expression, with examples.
+ * The same entries make "help", so the two cannot drift apart.
+ */
+export function referenceMarkdown() {
+  const lines = [
+    "# ClankTalk Reference",
+    "",
+    "Every command and expression, with examples. This page is made from the same table as `help` in a script, so the two always agree. For the story, read the [docs](docs.html).",
+    "",
+  ];
+  for (const group of GROUPS) {
+    lines.push("## " + group.title, "");
+    for (const entry of HELP) {
+      if (!group.match(entry)) {
+        continue;
+      }
+      lines.push("### " + entry.name, "", "`" + entry.syntax + "`", "", entry.description, "");
+      for (const example of entry.examples) {
+        lines.push("```talk", example, "```", "");
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The short form for an agent's tool description: one line for each entry, with its syntax
+ * and the first sentence of its description.
+ */
+export function syntaxSummary() {
+  const lines = [];
+  for (const group of GROUPS) {
+    lines.push(group.title + ":");
+    for (const entry of HELP) {
+      if (group.match(entry)) {
+        lines.push("  " + entry.syntax + "   " + firstSentence(entry.description));
+      }
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
+}

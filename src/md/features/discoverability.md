@@ -25,3 +25,12 @@ Approved:
 - A test that every command word has a help entry. The command table is inside the parser now.
 - Generate the MCP tool description from the same table.
 - TODO: split the docs in two. Docs for humans (docs/, in the hyperscript tone) and docs for agents (help, the MCP description: short, exact, every rule). Now docs/docs.md tries to do both.
+## One source for agent docs
+
+- Approved: the help table in `src/js/help.js` is the one source for agent docs. It makes three things:
+  - `help` and `help <word>` in scripts
+  - the Reference page on the site (`referenceMarkdown()`, built by `docs/build.js` into `_site/reference.html`; not in git)
+  - the syntax summary in the MCP tool description (`syntaxSummary()`: the syntax and the first sentence of each entry)
+- Approved: the MCP tool description also has a short hand-written part: what ClankTalk is, strings and access in one paragraph, and the rules for the agent (refused changes, line edits, ask, sandbox).
+- Approved: the human docs (`docs/docs.md`) tell the story, and link to the Reference for the exact syntax.
+- Thus: put the most important rule of each entry in its first sentence, because the tool description shows only that.

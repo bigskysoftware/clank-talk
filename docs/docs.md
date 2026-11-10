@@ -1,6 +1,6 @@
 <div class="features">
 
-<p><a href="./">Home</a></p>
+<p><a href="./">Home</a> | <a href="reference.html">Reference</a></p>
 
 # ClankTalk Docs
 

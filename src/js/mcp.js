@@ -12,6 +12,7 @@ import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import nodePath from "node:path";
 import { run, listTools, stopAllProcesses, VERSION } from "./clank-talk.js";
+import { syntaxSummary } from "./help.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -21,55 +22,26 @@ const MAX_STEPS = 10_000;
 // send progress this often while a script runs
 const PROGRESS_EVERY_MS = 500;
 
-const SYNTAX = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
+// three double quotes, for raw strings in the text below
+const Q3 = '"'.repeat(3);
 
-Basics:
-  print <value>                         output to you
-  set x to <value>     increment x [by n]     decrement x [by n]
-  if <condition> ... end
-  for item in <list> [index i] ... end
-  repeat 3 times ... end    repeat while <condition> ... end    repeat until <condition> ... end
-  break    continue    then (separates commands on one line)
-  on error ... end   anywhere in a script or tool; the error's message; continue goes on after the failed command, stop (the default) ends with the error
-  # a comment
+// the hand-written part of the tool description: what ClankTalk is, and what the summary cannot say
+const INTRO = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
+Each block ends with 'end'. A new line or 'then' separates commands. # starts a comment.
+Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactly, with no escapes and no \${}: use it for code edits.
+x's y, x.y and y of x are the same. 'the' is optional. it, or the result, is the value from the last command.`;
 
-Values: 'text', "text", 'Hi \${name}' (\\\${ for a plain \${), 12, 3.5, true, false, null, [1, 2], {a: 1}
-  Strings can span lines. Common indent is removed.
-  """raw text""": no escapes, no \${}, and the indent is kept exactly. Use it for code edits.
-  x's y, x.y and y of x are the same: lines of the result's output.  "the" is optional: the file's text
-  it / the result: the value from the last command
-  $name: a global that stays between calls
-
-Operators: + - * / mod (mixing needs parentheses), is, is not, < > <= >=, is less than ...,
-  contains, does not contain, starts with, ends with, is in, exists, is empty, and, or, not, no,
-  as json, as pretty json, as number, as text
-
-Files (paths: ./x and ../x from the current folder, @/x from the project root):
-  ./src/**/*.js gives a list of files. A file has name, path, text, lines, first, last, size, modified.
-  A line has number and text. Text has lines too. first of and last of: a list's items, or the lines of a file or text. Text operators work on files and lines.
-  lines 10 to 20 of <file or text>: a range by line number. print shows each line with its number.
-  replace lines 5 to 7 of <file> with <text>    put <text> before|after line 5 of <file>    remove lines 5 to 7 of <file>
-  A line edit needs a read of the file first. The result is the old lines. Line numbers shift after an edit.
-  read <file>          set x to read <file>
-  write <value> to <file>      append <value> to <file>
-  replace 'old' with 'new' in <file or variable>   the result lists each replacement
-  find 'text' in <file, files or text>   the result is the lines that contain it; print shows path:number: text
-  undo   undo 3   undo changes to <file>   print the undo list   (file changes of earlier scripts in this session)
-  ask 'question' [with 'yes' or 'no'] [within 5 minutes]   the human answers, not you; null means no answer
-  fetch 'https://...' [as json | as response] [with method: 'POST', headers: {...}, body: x]   a new host asks the human first
-  process 'name'   (the output of process 'site', the status of process 'site')   the processes   stop process 'name'   (tools start them)
-  wait 2 seconds    wait until <condition> [within 10 seconds]   (errors in the condition count as false)
-
-Git (hardened; the result is git's output as text):
-  git status    git diff [<files>]    git log [<count>]    git show <commit>    git branches    git branch
-  git switch to [new branch] <branch>    git commit <files> with <message>   (commits only those files)    git merge <branch>   (fast-forward only)
-  git push   (current branch to origin; the human approves it in a dialog, unless AGENTS.talk allows it)
-  git delete branch <branch>   (only a merged branch)
+const RULES = `Rules:
   You cannot change .talk files, @/talk/, or hidden files and folders (.env, .git/), unless AGENTS.talk allows them.
   If a change is refused because of AGENTS.talk, tell the human the line to add. Do not try another way to make the change.
+  A line edit (replace lines, put, remove) needs a read of the file first. Line numbers shift after an edit.
+  ask goes to the human, never to you. null means no answer: treat it as no.
   Tools can run programs in an OS sandbox ('in a sandbox'). If a sandboxed program fails for a missing read, write or network, tell the human what the tool needs.
 
-help lists everything. help <word> shows one command, expression or tool, with examples: help replace`;
+help lists everything. help <word> shows one command or expression, with examples: help replace`;
+
+// the syntax summary comes from the help table, so it cannot drift from help
+const SYNTAX = INTRO + "\n\n" + syntaxSummary() + "\n\n" + RULES;
 
 // build the tool description: the syntax, then the tools from AGENTS.talk
 async function describeTool(root) {
