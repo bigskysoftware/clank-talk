@@ -23,6 +23,9 @@ Each layer can only narrow the one above it, never widen it.
 ## Loading
 
 - Approved: the harness starts the server with `--policy <file>`. The file lives with the harness, outside the project.
+- Approved: a custom harness that embeds the runtime passes the policy as text: `run(script, { policy: { name, source } })`. The harness is trusted, so there is no hash check, but the audit still records the hash. Both ways load through the same code.
+- Approved: sessions can have different policies. One MCP server process is one session, so the harness starts each session's server with its own `--policy`. With the runtime API, the policy goes with each `run()` call. The runtime keeps no policy between runs.
+- Approved: the MCP client cannot supply a policy (for example in `initialize`): the client is not the harness owner's code in every setup, and a policy that can arrive that way can also silently not arrive.
 - Approved: the policy loads before AGENTS.talk. Scripts cannot read or change it (it is outside the project root).
 - Approved: `--policy-hash <sha256>`: the server refuses to start if the policy file does not match. The harness passes the hash it shipped with.
 - Approved: the audit header of each script records the policy's name and a short hash: `== 10:42:01  script 12  done  14 steps  (policy acme-secure 3f9a2c1b) ==`. Thus a session run without the policy, or with a changed one, is visible in the audit.

@@ -10,6 +10,7 @@
 import readline from "node:readline";
 import fs from "node:fs/promises";
 import { readFileSync, watch } from "node:fs";
+import { createHash } from "node:crypto";
 import nodePath from "node:path";
 import { run, listTools, stopAllProcesses, VERSION } from "./clank-talk.js";
 import { syntaxSummary } from "./help.js";
@@ -236,7 +237,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -376,9 +377,37 @@ function replyError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
+// read the policy file named by --policy, and check it against --policy-hash if given
+// gives { policy: { name, source } or null } or { error }; a changed policy file stops the server
+export function readPolicy(args) {
+  const index = args.indexOf("--policy");
+  if (index === -1) {
+    return { policy: null };
+  }
+  const file = args[index + 1];
+  if (!file) {
+    return { error: "--policy needs a file" };
+  }
+  let source;
+  try {
+    source = readFileSync(nodePath.resolve(file), "utf8");
+  } catch (err) {
+    return { error: "cannot read the policy " + file + ": " + err.message };
+  }
+  const hashIndex = args.indexOf("--policy-hash");
+  if (hashIndex !== -1) {
+    const expected = (args[hashIndex + 1] || "").toLowerCase();
+    const actual = createHash("sha256").update(source).digest("hex");
+    if (expected !== actual) {
+      return { error: "the policy " + file + " does not match --policy-hash. It was changed, so the server does not start" };
+    }
+  }
+  return { policy: { name: nodePath.basename(file), source } };
+}
+
 /**
  * Start the server on stdin and stdout.
- * @param {string[]} args  command line arguments: [--root <dir>]
+ * @param {string[]} args  command line arguments: [--root <dir>] [--log <file>] [--policy <file> [--policy-hash <sha256>]]
  */
 export function main(args) {
   let root = process.cwd();
@@ -394,8 +423,15 @@ export function main(args) {
     log = nodePath.resolve(args[logIndex + 1]);
   }
 
+  // --policy <file> [--policy-hash <sha256>]: the harness's policy for this session; see src/md/features/policy.md
+  const policy = readPolicy(args);
+  if (policy.error) {
+    process.stderr.write("clank-talk: " + policy.error + "\n");
+    process.exit(1);
+  }
+
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, log };
+  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, policy: policy.policy, log };
 
   // when the client goes away, stop the background processes, so nothing is left running
   const stopAll = () => stopAllProcesses(session.processes);

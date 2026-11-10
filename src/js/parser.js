@@ -24,6 +24,7 @@ export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "bra
  * @param {Object} [options]
  * @param {string[]} [options.tools]        names of the tools in AGENTS.talk
  * @param {boolean} [options.definitions]   true for AGENTS.talk: only definitions at the top level
+ * @param {boolean} [options.policy]        true for a policy file: definitions, plus policy lines
  * @returns {{ script: Object, errors: ParseError[] }}
  */
 export function parse(source, options = {}) {
@@ -1774,10 +1775,148 @@ export function parse(source, options = {}) {
     return { type: "hook", when: token.value, name: name.value, body, line: token.line, column: token.column };
   }
 
+  // one line of a policy, after its first word:
+  //   policy 'name'
+  //   require sandbox for run, start
+  //   limit fetch to 'host', ...    limit env to NAME, ...    limit changes to @/path, ...
+  //   deny git push | deny start | deny fetch | deny run | deny writes
+  //   audit also to '/path/'
+  function parsePolicyLine(token) {
+    const at = { line: token.line, column: token.column };
+    if (token.value === "policy") {
+      const name = current();
+      if (name === undefined || name.type !== "string") {
+        error("Expected a name in quotes, such as policy 'acme-secure'");
+        return null;
+      }
+      i++;
+      return { type: "policyName", name: name.value, ...at };
+    }
+    if (token.value === "require") {
+      if (!isWord("sandbox")) {
+        error("Expected 'sandbox for run, start'");
+        return null;
+      }
+      i++;
+      if (!isWord("for")) {
+        error("Expected 'for'");
+        return null;
+      }
+      i++;
+      const commands = [];
+      while (isWord("run") || isWord("start")) {
+        commands.push(current().value);
+        i++;
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+      if (commands.length === 0) {
+        error("Expected run, start, or both");
+        return null;
+      }
+      return { type: "requireSandbox", commands, ...at };
+    }
+    if (token.value === "limit") {
+      const what = current();
+      if (what === undefined || !["fetch", "env", "changes"].includes(what.value)) {
+        error("Expected fetch, env or changes");
+        return null;
+      }
+      i++;
+      if (!isWord("to")) {
+        error("Expected 'to'");
+        return null;
+      }
+      i++;
+      // fetch: hosts in quotes; env: names; changes: paths
+      const wanted = { fetch: "string", env: "word", changes: "path" }[what.value];
+      const values = [];
+      while (true) {
+        const value = current();
+        if (value === undefined || value.type !== wanted) {
+          error("Expected " + { string: "a host in quotes", word: "a name", path: "a path, such as @/.github/" }[wanted]);
+          return null;
+        }
+        i++;
+        values.push(what.value === "fetch" ? value.value.toLowerCase() : value.value);
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+      return { type: "limit", what: what.value, values, ...at };
+    }
+    if (token.value === "deny") {
+      let what = null;
+      if (isWord("git")) {
+        i++;
+        if (!isWord("push")) {
+          error("Expected 'push'");
+          return null;
+        }
+        what = "git push";
+      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes")) {
+        what = current().value;
+      } else {
+        error("Expected git push, start, fetch, run or writes");
+        return null;
+      }
+      i++;
+      return { type: "deny", what, ...at };
+    }
+    // audit also to '<folder>'
+    i++;
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const folder = current();
+    if (folder === undefined || folder.type !== "string") {
+      error("Expected a folder in quotes, such as '/var/log/clank-talk/'");
+      return null;
+    }
+    i++;
+    return { type: "auditAlso", folder: folder.value, ...at };
+  }
+
   // AGENTS.talk: only definitions at the top level
   function parseDefinitions() {
     const definitions = [];
     while (!atEnd()) {
+      // a policy: policy 'name', require ..., limit ..., deny ..., audit also to ...; see src/md/features/policy.md
+      if (isWord("policy") || isWord("require") || isWord("limit") || isWord("deny") || (isWord("audit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "also")) {
+        const token = current();
+        if (!options.policy) {
+          error("'" + token.value + "' is only allowed in a policy file");
+          i++;
+          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import") && !isWord("before") && !isWord("after")) {
+            i++;
+          }
+          continue;
+        }
+        i++;
+        const definition = parsePolicyLine(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        } else {
+          while (!atEnd() && !isWord("policy") && !isWord("require") && !isWord("limit") && !isWord("deny") && !isWord("audit") && !isWord("before") && !isWord("after")) {
+            i++;
+          }
+        }
+        continue;
+      }
+      // a policy has no tools, imports or allows: it sets limits; the user's AGENTS.talk has the tools
+      if (options.policy && (isWord("tool") || isWord("import") || isWord("allow"))) {
+        error("'" + current().value + "' is not allowed in a policy file: a policy sets limits, and AGENTS.talk has the tools");
+        i++;
+        while (!atEnd() && !isWord("policy") && !isWord("require") && !isWord("limit") && !isWord("deny") && !isWord("audit") && !isWord("before") && !isWord("after")) {
+          i++;
+        }
+        continue;
+      }
       if (isWord("allow")) {
         const token = current();
         i++;

@@ -13,6 +13,7 @@ import fs from "node:fs/promises";
 import nodePath from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const DEFAULT_MAX_STEPS = 10_000;
 const AGENTS_TALK = "AGENTS.talk";
@@ -115,6 +116,7 @@ function lineLabel(line) {
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
+ * @param {Object} [options.policy]                 the harness's policy: { name, source }, ClankTalk text; see src/md/features/policy.md
  * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
  * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to talk/audit/
  * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
@@ -167,10 +169,27 @@ async function execute(source, options, execution) {
   const maxSteps = options.maxSteps || DEFAULT_MAX_STEPS;
   const root = nodePath.resolve(options.root || process.cwd());
 
+  // the policy from the harness loads first; see src/md/features/policy.md
+  const policy = loadPolicy(options.policy);
+  if (policy.errors.length > 0) {
+    return finish(execution, "failed", policy.errors);
+  }
+
   const agents = await loadAgentsTalk(root, tools);
   if (agents.errors.length > 0) {
     return finish(execution, "failed", agents.errors);
   }
+  // policy hooks run first, and AGENTS.talk cannot remove them
+  const policyHookErrors = [];
+  for (const hook of policy.hooks) {
+    if (!HOOK_STEPS.includes(hook.name) && !Object.hasOwn(agents.definitions, hook.name) && !Object.hasOwn(tools, hook.name)) {
+      policyHookErrors.push({ message: "Unknown step '" + hook.name + "' for a hook. Use " + HOOK_STEPS.join(", ") + ", or a tool name", line: hook.line, column: hook.column, file: policy.file });
+    }
+  }
+  if (policyHookErrors.length > 0) {
+    return finish(execution, "failed", policyHookErrors);
+  }
+  agents.hooks = [...policy.hooks, ...agents.hooks];
 
   const toolNames = Object.keys(tools).concat(Object.keys(agents.definitions));
   const { script, errors } = parse(source, { tools: toolNames });
@@ -232,6 +251,8 @@ async function execute(source, options, execution) {
     auditFormat: agents.auditFormat,
     // the name of the agent that sent the script, or null; the audit records it
     agent: options.agent || null,
+    // the harness's policy: name, short hash and rules, or null
+    policy: policy.policy,
   };
   state.audit.scripts++;
   state.auditScript = state.audit.scripts;
@@ -305,6 +326,40 @@ function toolList(state, hostTools) {
     list.push({ name, params: [], description: "A tool from the host." });
   }
   return list;
+}
+
+// the harness's policy: { name, source } from options.policy, or nothing
+// gives { policy: { name, hash, rules } or null, hooks, file, errors }
+// the policy is trusted text from the harness, outside the project; see src/md/features/policy.md
+function loadPolicy(given) {
+  const result = { policy: null, hooks: [], file: null, errors: [] };
+  if (given === undefined || given === null) {
+    return result;
+  }
+  const file = given.name || "policy.talk";
+  result.file = file;
+  const { script, errors } = parse(given.source, { definitions: true, policy: true });
+  for (const e of errors) {
+    result.errors.push({ ...e, file });
+  }
+  if (errors.length > 0) {
+    return result;
+  }
+  const hash = createHash("sha256").update(given.source).digest("hex").slice(0, 8);
+  const rules = [];
+  let name = file;
+  for (const definition of script.definitions) {
+    if (definition.type === "policyName") {
+      name = definition.name;
+    } else if (definition.type === "hook") {
+      definition.file = file;
+      result.hooks.push(definition);
+    } else {
+      rules.push({ ...definition, file });
+    }
+  }
+  result.policy = { name, hash, rules };
+  return result;
 }
 
 // read and parse @/AGENTS.talk and the files it imports
@@ -2023,13 +2078,15 @@ async function writeAudit(state, source, status, errors) {
     let name = localDate(now) + ".log";
     if (state.auditFormat === "json") {
       name = localDate(now) + ".jsonl";
-      text += JSON.stringify({ type: "script", time: now.toISOString(), script: state.auditScript, agent: state.agent, status, steps: state.execution.steps, source, errors }) + "\n";
+      const policyInfo = state.policy === null ? null : { name: state.policy.name, hash: state.policy.hash };
+      text += JSON.stringify({ type: "script", time: now.toISOString(), script: state.auditScript, agent: state.agent, policy: policyInfo, status, steps: state.execution.steps, source, errors }) + "\n";
       for (const record of state.auditSteps) {
         text += JSON.stringify({ type: "step", ...record }) + "\n";
       }
     } else {
       const who = state.agent === null ? "" : " (agent " + state.agent + ")";
-      text += "== " + clock(now) + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps ==\n";
+      const under = state.policy === null ? "" : "  (policy " + state.policy.name + " " + state.policy.hash + ")";
+      text += "== " + clock(now) + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps" + under + " ==\n";
       text += source.trim() + "\n--\n";
       for (const record of state.auditSteps) {
         text += auditLine(record) + "\n";
