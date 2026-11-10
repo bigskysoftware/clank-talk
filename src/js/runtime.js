@@ -2268,8 +2268,8 @@ async function programAndArgs(command, state) {
   } else {
     program = toText(value);
     for (const arg of command.args) {
-      args.push(toText(await asText(await evaluate(arg, state), state, arg)));
-      written.push(arg.type === "string");
+      args.push(argText(await evaluate(arg, state), state));
+      written.push(startsWritten(arg));
     }
   }
   if (!program) {
@@ -2277,6 +2277,34 @@ async function programAndArgs(command, state) {
   }
   checkOptionArgs(args, written, command, state);
   return { program, args };
+}
+
+// a file is its path from the folder where the program runs, such as ./src/a.js or ../b.txt
+// so it never starts with "-"; the path was checked to be inside the project when the file value was made
+function argText(value, state) {
+  if (value instanceof FileRef) {
+    const relative = nodePath.relative(state.cwd, value.absolute).split(nodePath.sep).join("/");
+    if (relative === "") {
+      return ".";
+    }
+    return relative.startsWith("../") || relative === ".." ? relative : "./" + relative;
+  }
+  return toText(value);
+}
+
+// the start of the argument is written out in the .talk file: 'x', 'x' + name, or 'x${name}'
+// then the agent's value cannot be the start, so it cannot make an option
+function startsWritten(arg) {
+  if (arg.type === "string") {
+    return arg.value !== "";
+  }
+  if (arg.type === "binary" && arg.operator === "+") {
+    return startsWritten(arg.left);
+  }
+  if (arg.type === "template") {
+    return typeof arg.parts[0] === "string" && arg.parts[0] !== "";
+  }
+  return false;
 }
 
 // an argument that is not written out in the .talk file must not start with "-",

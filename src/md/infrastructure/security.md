@@ -70,7 +70,7 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 - Deferred: before `run`, the runtime asks the human if the agent changed files since the last approval. Taint tracks the changes.
 - An OS sandbox for `run` comes later, as a plugin.
 - `run` is where the ClankTalk sandbox ends. Document this for users.
-- Approved (built): an argument that is not a string written out in the tool must not start with `-`. Thus an agent value `--rulesdir=./evil` cannot reach `eslint` as an option. After a written-out `'--'`, the arguments are not checked. For `run 'mvn test'`, all parts are written out. The same check applies to `start`.
+- Approved (built): an argument that does not start with text written out in the tool must not start with `-`. `'-Dtest=' + name` starts with written-out text, so it is fine. A file value is its `./` path, so it is fine too. Thus an agent value `--rulesdir=./evil` cannot reach `eslint` as an option. After a written-out `'--'`, the arguments are not checked. For `run 'mvn test'`, all parts are written out. The same check applies to `start`.
 - Approved (built): a bare program name (no `/`) is found through `PATH` at run time. If the file found is inside the project, the run fails, because the agent can change that file. A relative or empty `PATH` entry counts as inside the project. Otherwise the full path that was found runs, so the program cannot change between the check and the run. A path written out in the tool, such as `run './node_modules/.bin/jest'`, is allowed. Not on Windows. The same check applies to `start`.
 - Deferred: typed parameters (`with file as path`).
 

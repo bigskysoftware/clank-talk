@@ -204,3 +204,17 @@ test("the option error names the file of the tool", async () => {
   const r = await result("echo '-x'");
   assert.match(r.errors[0].message, /^The argument '-x' starts with '-', and it is not written out in talk\/echo\.talk\./);
 });
+
+test("a file value is its path, not its text", async () => {
+  await fs.mkdir(path.join(root, "src"));
+  await fs.writeFile(path.join(root, "src", "a.js"), "--secret-text");
+  await agentsTalk(`tool echo with file\n  run '${NODE}' with '-e', 'console.log(process.argv[1])', file\nend`);
+  assert.deepEqual(await output("echo ./src/a.js\nprint it.output"), ["./src/a.js\n"]);
+  assert.deepEqual(await output("echo @/src/a.js\nprint it.output"), ["./src/a.js\n"]);
+});
+
+test("an argument that starts with written-out text can start with '-'", async () => {
+  await agentsTalk(`tool echo with name\n  run '${NODE}' with '-e', 'console.log(process.argv[1])', '--', '-Dtest=' + name\nend\ntool echo2 with name\n  run '${NODE}' with '-e', 'console.log(process.argv[1])', '' + name\nend`);
+  assert.deepEqual(await output("echo 'Foo'\nprint it.output"), ["-Dtest=Foo\n"]);
+  assert.match((await result("echo2 '-x'")).errors[0].message, /^The argument '-x' starts with '-'/);
+});
