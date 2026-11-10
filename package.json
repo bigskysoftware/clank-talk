@@ -1,7 +1,10 @@
 {
   "name": "clank-talk",
   "version": "0.2.0",
-  "description": "TODO",
+  "description": "A sandboxed, readable scripting language for AI agents, used in place of a shell. Runs as an MCP server.",
+  "keywords": ["mcp", "agents", "sandbox", "scripting", "hyperscript", "claude"],
+  "homepage": "https://clank.talk",
+  "bugs": "https://github.com/bigskysoftware/clank-talk/issues",
   "license": "BSD-3-Clause",
   "repository": {
     "type": "git",

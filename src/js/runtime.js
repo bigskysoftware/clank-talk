@@ -2003,7 +2003,7 @@ function auditLine(record) {
   if (record.from !== "script") {
     details += (details === "" ? "" : ", ") + "from " + record.from;
   }
-  return record.time + "  " + record.kind.padEnd(8) + " " + cut(record.target, 40).padEnd(40) + "  " + details;
+  return (record.time + "  " + record.kind.padEnd(8) + " " + cut(record.target, 40).padEnd(40) + "  " + details).trimEnd();
 }
 
 // append this script's block to the day's file in talk/audit/; scripts cannot change @/talk/

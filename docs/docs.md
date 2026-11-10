@@ -44,7 +44,7 @@ ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server with one tool
   "mcpServers": {
     "clank-talk": {
       "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp", "--log", "tmp/clank-talk.log"]
+      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
     }
   }
 }
@@ -70,10 +70,10 @@ tool run_tests
 end
 ```
 
-Want to see what your agent is up to? Watch the log:
+Want to see what your agent is up to? Every step goes to an audit log in `talk/audit/`, one file a day. Add that folder to your `.gitignore`, and watch it:
 
 ```bash
-tail -f tmp/clank-talk.log
+tail -f talk/audit/*.log
 ```
 
 ## The Language
