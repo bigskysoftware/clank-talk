@@ -313,6 +313,9 @@ async function execute(source, options, execution) {
     // taint: the open frames, and the labels of the result; see src/js/taint.js
     taintFrames: [],
     resultLabels: taint.none(),
+    // file labels from @/talk/taint.json, by path; saved at the end if they changed
+    fileLabels: await taint.loadFiles(root),
+    fileLabelsChanged: false,
     // the .talk file of the tool or hook now running; null for the script
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
@@ -368,6 +371,13 @@ async function execute(source, options, execution) {
 
   execution.patterns.stop();
   recordUndo(state);
+  if (state.fileLabelsChanged) {
+    try {
+      await taint.saveFiles(root, state.fileLabels);
+    } catch (err) {
+      execution.warnings.push({ message: "Could not write " + taint.FILE_LABELS + ": " + err.message, line: 1, column: 1 });
+    }
+  }
   // the host shows the changed files to the agent; undo has its own copy of the text, so only the copy for the host is redacted
   execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
@@ -2023,6 +2033,11 @@ async function runGit(command, state) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
   auditStep(state, "git", args.join(" "), "");
+  // git move: the labels move with the file
+  if (command.operation === "move" && taint.moveFile(state.fileLabels, step.from, step.to)) {
+    state.fileLabelsChanged = true;
+    auditStep(state, "taint", step.to, "moved from " + step.from);
+  }
   // a .env file in git must not show in a diff either, since scripts cannot read it
   if (command.operation === "diff" || command.operation === "show") {
     result.output = hideSecretDiffs(result.output);
@@ -3051,7 +3066,10 @@ function localDate(date) {
 const FILE_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete"];
 function auditStep(state, kind, target, details) {
   let labels = taint.current(state);
-  if (FILE_STEPS.includes(kind)) {
+  // a taint step says its labels in its details
+  if (kind === "taint") {
+    labels = taint.none();
+  } else if (FILE_STEPS.includes(kind)) {
     labels = taint.without(labels, taint.PRIVATE);
   }
   const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact((details || "") + taint.note(labels), state), from: state.auditFrom };
@@ -3288,6 +3306,13 @@ async function restoreFile(path, text, state, node) {
     state.seen.set(await fs.realpath(file.absolute), text);
   }
   state.execution.changes.push({ path: file.path, before, after: text, undo: true });
+  // undo puts back old text; labels for other text no longer hold
+  const entry = state.fileLabels[file.path];
+  if (entry !== undefined && (text === null || entry.hash !== taint.hashText(text))) {
+    taint.deleteFile(state.fileLabels, file.path);
+    state.fileLabelsChanged = true;
+    auditStep(state, "taint", file.path, "cleared");
+  }
   await changeHooks("after", step, state, node);
 }
 
@@ -3845,6 +3870,13 @@ async function readText(file, state, node) {
   step.text = text;
   // file text is private: it must not leave the machine without a question
   taint.addLabel(state, taint.PRIVATE);
+  // a file that a script wrote with untrusted text is still untrusted
+  const known = taint.forFileText(state.fileLabels, file.path, text);
+  taint.add(state, known.labels);
+  if (known.dropped) {
+    state.fileLabelsChanged = true;
+    auditStep(state, "taint", file.path, "dropped: changed outside ClankTalk");
+  }
   auditRead(state, file.path);
   await runHooks("after", ["read"], step, state, node);
   return text;
@@ -3942,6 +3974,24 @@ async function writeText(file, text, append, state, node) {
   await fs.writeFile(real, after, "utf8");
   state.seen.set(await fs.realpath(real), after);
   state.execution.changes.push({ path: file.path, before, after });
+  // an append keeps what is in the file, so it keeps the file's labels too
+  let labels = taint.current(state);
+  if (append && before !== null) {
+    labels = taint.union(labels, taint.forFileText(state.fileLabels, file.path, before).labels);
+  }
+  fileLabelsAfter(state, file.path, after, labels);
+}
+
+// remember the untrusted labels of a file's new text, and audit a change
+function fileLabelsAfter(state, path, text, labels) {
+  const where = { time: new Date().toISOString().slice(0, 16).replace("T", " "), session: state.session, script: state.auditScript };
+  const change = taint.afterWrite(state.fileLabels, path, text, labels, where);
+  if (change === null) {
+    return;
+  }
+  state.fileLabelsChanged = true;
+  const entry = state.fileLabels[path];
+  auditStep(state, "taint", path, change === "set" ? taint.describe(taint.entryLabels(entry)) : "cleared");
 }
 
 // the checks before a script changes a file: one file, writes not denied, not protected, not hidden
@@ -3984,6 +4034,10 @@ async function deleteFile(file, state, node) {
   await fs.rm(file.absolute);
   state.seen.delete(real);
   state.execution.changes.push({ path: file.path, before: text, after: null });
+  if (taint.deleteFile(state.fileLabels, file.path)) {
+    state.fileLabelsChanged = true;
+    auditStep(state, "taint", file.path, "cleared");
+  }
   await changeHooks("after", step, state, node);
 }
 
@@ -4012,6 +4066,11 @@ async function moveFile(from, to, state, node) {
   // two changes, so undo puts the text back at the old path, and removes the new one
   state.execution.changes.push({ path: from.path, before: text, after: null });
   state.execution.changes.push({ path: to.path, before: null, after: text });
+  // the labels move with the file
+  if (taint.moveFile(state.fileLabels, from.path, to.path)) {
+    state.fileLabelsChanged = true;
+    auditStep(state, "taint", to.path, "moved from " + from.path);
+  }
   await changeHooks("after", step, state, node);
 }
 

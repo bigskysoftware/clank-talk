@@ -220,3 +220,79 @@ test("untrusted text in a git commit message or a branch name asks the human", a
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+// ----- file labels and talk/taint.json -----
+
+test("a file written with untrusted text stays untrusted, also in a new session", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-files-"));
+  const go = async (script, options = {}) => {
+    const result = await run(script, { root: dir, ...options });
+    assert.deepEqual(result.errors, []);
+    return result.output;
+  };
+  const entries = async () => JSON.parse(await fs.readFile(path.join(dir, "talk", "taint.json"), "utf8"));
+  try {
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
+    const audit = { scripts: 0, records: [] };
+    await go(`set page to fetch '${base}/'\nwrite page to ./page.txt`, { audit, session: "test-1" });
+    const entry = (await entries())["page.txt"];
+    assert.deepEqual(entry.labels, [{ label: "untrusted", from: [base + "/"] }]);
+    assert.equal(entry.session, "test-1");
+    assert.equal(entry.script, 1);
+    assert.equal(entry.hash.length, 64);
+    const taintStep = audit.records.find((record) => record.kind === "taint");
+    assert.equal(taintStep.target, "page.txt");
+    assert.equal(taintStep.details, "untrusted from " + base + "/");
+    // a new run, with no shared state, reads the label from talk/taint.json
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
+    // an append and a replace keep the label
+    await go("append 'more' to ./page.txt");
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
+    await go("replace 'more' with 'MORE' in ./page.txt");
+    assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
+    // move takes the label along; delete removes it
+    await go("move ./page.txt to ./moved.txt");
+    assert.deepEqual(await go("print (read ./moved.txt) is untrusted"), ["true"]);
+    assert.equal((await entries())["page.txt"], undefined);
+    await go("delete ./moved.txt");
+    assert.deepEqual(await entries(), {});
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a full rewrite with no untrusted text clears the label; an outside change drops it", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-files-"));
+  const go = async (script, options = {}) => {
+    const result = await run(script, { root: dir, ...options });
+    assert.deepEqual(result.errors, []);
+    return result.output;
+  };
+  try {
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
+    await go(`write (fetch '${base}/') to ./a.txt`);
+    await go("write 'plain' to ./a.txt");
+    assert.deepEqual(await go("print (read ./a.txt) is untrusted"), ["false"]);
+    await go(`write (fetch '${base}/') to ./b.txt`);
+    // a human edits the file: the hash does not match, so the entry is dropped
+    await fs.writeFile(path.join(dir, "b.txt"), "edited by hand\n");
+    const audit = { scripts: 0, records: [] };
+    assert.deepEqual(await go("print (read ./b.txt) is untrusted", { audit }), ["false"]);
+    assert.deepEqual(audit.records.filter((record) => record.kind === "taint").map((record) => record.details), ["dropped: changed outside ClankTalk"]);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "talk", "taint.json"), "utf8")), {});
+    // scripts cannot change talk/taint.json
+    assert.equal((await run("write '{}' to @/talk/taint.json", { root: dir })).status, "failed");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("talk/taint.json lists its entries sorted by path", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-files-"));
+  try {
+    await taint.saveFiles(dir, { "z.txt": { hash: "1" }, "a.txt": { hash: "2" } });
+    assert.deepEqual(Object.keys(JSON.parse(await fs.readFile(path.join(dir, "talk", "taint.json"), "utf8"))), ["a.txt", "z.txt"]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

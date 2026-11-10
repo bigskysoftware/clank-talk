@@ -8,6 +8,10 @@
 //
 // A set of labels is a Map: label name -> list of origins (URLs or tool names).
 
+import fs from "node:fs/promises";
+import nodePath from "node:path";
+import { createHash } from "node:crypto";
+
 export const PRIVATE = "private";
 export const UNTRUSTED = "untrusted";
 
@@ -165,9 +169,108 @@ export function note(labels) {
   if (labels.size === 0) {
     return "";
   }
+  return "  (" + describe(labels) + ")";
+}
+
+// "private, untrusted from https://a, https://b"
+export function describe(labels) {
   const parts = [];
   for (const [label, origins] of labels) {
     parts.push(origins.length === 0 ? label : label + " from " + origins.join(", "));
   }
-  return "  (" + parts.join(", ") + ")";
+  return parts.join(", ");
+}
+
+// ----- file labels -----
+//
+// A file that a script wrote with untrusted text remembers its labels, in @/talk/taint.json:
+//   { "notes.md": { "hash": "...", "labels": [{ "label": "untrusted", "from": ["https://..."] }],
+//                   "time": "2026-11-10 10:42", "session": "claude-code-4f2a", "script": 12 } }
+// Only files with a label beyond private are there. Scripts cannot change @/talk/.
+// If a file's text no longer matches its hash, it changed outside ClankTalk, and the entry is dropped.
+
+export const FILE_LABELS = "talk/taint.json";
+
+export function hashText(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+// the entries, by path; a missing or broken file is empty
+export async function loadFiles(root) {
+  try {
+    const files = JSON.parse(await fs.readFile(nodePath.join(root, FILE_LABELS), "utf8"));
+    if (files !== null && typeof files === "object" && !Array.isArray(files)) {
+      return files;
+    }
+  } catch (err) {
+    // no file yet
+  }
+  return Object.create(null);
+}
+
+// the entries are sorted by path, so the file is easy to read and to compare
+export async function saveFiles(root, files) {
+  const sorted = {};
+  for (const path of Object.keys(files).sort()) {
+    sorted[path] = files[path];
+  }
+  const absolute = nodePath.join(root, FILE_LABELS);
+  await fs.mkdir(nodePath.dirname(absolute), { recursive: true });
+  await fs.writeFile(absolute, JSON.stringify(sorted, null, 2) + "\n", "utf8");
+}
+
+// labels from an entry, as a Map
+export function entryLabels(entry) {
+  const labels = new Map();
+  for (const item of entry.labels || []) {
+    labels.set(item.label, [...(item.from || [])]);
+  }
+  return labels;
+}
+
+// the text of a file: its entry's labels, "dropped" if the text changed outside ClankTalk, or none
+export function forFileText(files, path, text) {
+  const entry = files[path];
+  if (entry === undefined) {
+    return { labels: none(), dropped: false };
+  }
+  if (entry.hash !== hashText(text)) {
+    delete files[path];
+    return { labels: none(), dropped: true };
+  }
+  return { labels: entryLabels(entry), dropped: false };
+}
+
+// after a write: keep the untrusted labels with the new text; gives "set", "cleared" or null for no change
+export function afterWrite(files, path, text, labels, where) {
+  const kept = new Map();
+  if (labels.has(UNTRUSTED)) {
+    kept.set(UNTRUSTED, labels.get(UNTRUSTED));
+  }
+  if (kept.size === 0) {
+    if (files[path] === undefined) {
+      return null;
+    }
+    delete files[path];
+    return "cleared";
+  }
+  files[path] = { hash: hashText(text), labels: forHook(kept), ...where };
+  return "set";
+}
+
+export function moveFile(files, from, to) {
+  if (files[from] === undefined) {
+    return false;
+  }
+  files[to] = files[from];
+  delete files[from];
+  return true;
+}
+
+export function deleteFile(files, path) {
+  if (files[path] === undefined) {
+    return false;
+  }
+  delete files[path];
+  return true;
 }
