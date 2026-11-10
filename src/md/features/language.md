@@ -32,6 +32,8 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `write <value> to <file>` and `append <value> to <file>`.
 - `as json` parses text to an object, and formats an object to text.
 - Approved: `lines <from> to <to> of <file or text>` gives a range of lines, by line number (from 1), with both ends included. `lines` alone is still a plain word.
+- Approved (built): `line <n> of <file or text>` gives one line, with `number` and `text`. A number past the end is an error: `Line 9 is past the end of a.txt (3 lines)`. `line` alone stays a plain word, such as a loop variable.
+- Approved: put a line in a variable first, then use its fields on the next line: `set first to line 1 of ./a.txt` then `set name to first's text`. Not `(line 1 of ./a.txt)'s text`. The help and the docs show the two-line form.
 - Approved: edits by line number. `replace lines 5 to 7 of <file> with <text>`, `put <text> before line 5 of <file>`, `put <text> after line 5 of <file>`, `remove lines 5 to 7 of <file>`.
 - Approved (built): `replace lines ... with <text>` is always a line edit, and never takes an `in`: `of` names the file. Thus an `in` after it starts a new command, such as an `in ... do` block on the next line.
 - Approved: `find <text> in <file, list of files, or text>`. The result is the lines that contain the text, as plain text with letter case. A line from a file has `file`. `print` shows `path:number: text`. `find` reads each file, so read hooks run and line edits can follow. Later, maybe: patterns, and no letter case.

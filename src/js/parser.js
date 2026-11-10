@@ -499,6 +499,26 @@ export function parse(source, options = {}) {
       i = savedIndex;
       errors.length = savedErrorCount;
     }
+    // line <n> of <file or text>: one line, by number
+    // "line" alone is a plain word, such as a loop variable, so this is a line only if "of" follows the number
+    if (isWord("line")) {
+      const lineToken = current();
+      const savedIndex = i;
+      const savedErrorCount = errors.length;
+      i++;
+      const number = parseBefore(["of"], parseMath);
+      if (number !== null && isWord("of")) {
+        i++;
+        const target = parseAccess();
+        if (target === null) {
+          return null;
+        }
+        return node("line", lineToken, { number, target });
+      }
+      // not a line: go back, and forget errors from the try
+      i = savedIndex;
+      errors.length = savedErrorCount;
+    }
 
 // read as an expression: set readme to read @/README.md
     if (isWord("read")) {

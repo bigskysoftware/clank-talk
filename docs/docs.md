@@ -243,6 +243,13 @@ print lines 10 to 20 of ./notes.txt
 print the last of ./notes.txt
 ```
 
+Need just one? Grab it by number, then use it on the next line:
+
+```talk
+set title to line 1 of ./notes.txt
+print title's text
+```
+
 `find` gives you the lines that contain some text, in one file or many. Each line knows its file, so `print` shows `src/app.js:12: // TODO: fix`:
 
 ```talk

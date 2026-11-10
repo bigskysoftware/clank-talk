@@ -1081,16 +1081,22 @@ async function evaluate(node, state) {
   if (type === "path") {
     return await resolvePath(node.value, state, node);
   }
+  if (type === "line") {
+    const target = await evaluate(node.target, state);
+    const all = await linesOf(target, state, node);
+    const number = toNumber(await evaluate(node.number, state), node.number);
+    if (!Number.isInteger(number) || number < 1) {
+      throw new ScriptError("Line numbers start at 1, found " + describe(number), node.number);
+    }
+    if (number > all.length) {
+      const where = target instanceof FileRef ? target.path : "the text";
+      throw new ScriptError("Line " + number + " is past the end of " + where + " (" + all.length + (all.length === 1 ? " line)" : " lines)"), node);
+    }
+    return all[number - 1];
+  }
   if (type === "lines") {
     const target = await evaluate(node.target, state);
-    let all;
-    if (target instanceof FileRef) {
-      all = splitLines(await readText(target, state, node));
-    } else if (typeof target === "string") {
-      all = splitLines(target);
-    } else {
-      throw new ScriptError("Expected a file or text, found " + describe(target), node);
-    }
+    const all = await linesOf(target, state, node);
     const from = toNumber(await evaluate(node.from, state), node);
     const to = toNumber(await evaluate(node.to, state), node);
     // line numbers start at 1, both ends are included, and a range past the end stops at the last line
@@ -3238,6 +3244,17 @@ function toNumber(value, node) {
     return Number(value);
   }
   throw new ScriptError("Expected a number, found " + describe(value), node);
+}
+
+// the lines of a file or a text, each with number and text
+async function linesOf(target, state, node) {
+  if (target instanceof FileRef) {
+    return splitLines(await readText(target, state, node));
+  }
+  if (typeof target === "string") {
+    return splitLines(target);
+  }
+  throw new ScriptError("Expected a file or text, found " + describe(target), node);
 }
 
 // split text into Line objects, numbered from 1

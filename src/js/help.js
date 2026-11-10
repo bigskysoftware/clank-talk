@@ -261,9 +261,9 @@ export const HELP = [
   },
   {
     name: "lines", kind: "expression",
-    syntax: "lines of <file or text> | lines <a> to <b> of <file or text>",
-    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses line numbers, both ends included.",
-    examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js"],
+    syntax: "lines of <file or text> | lines <a> to <b> of <file or text> | line <n> of <file or text>",
+    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses line numbers, both ends included. 'line <n> of' gives one line; a number past the end is an error. Put the line in a variable first, then use its fields on the next line.",
+    examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js", "set first to line 1 of ./a.txt\nset name to first's text"],
   },
   {
     name: "first", kind: "expression",

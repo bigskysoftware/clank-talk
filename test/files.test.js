@@ -226,3 +226,14 @@ test("exists is false for a link to outside the root, whether the file is there 
     await fs.rm(path.join(root, "gone.txt"));
   }
 });
+
+test("line n of a file or text: one line, and an error past the end", async () => {
+  assert.deepEqual(await output("print line 2 of ./notes.txt"), ["TODO: second"]);
+  assert.deepEqual(await output("set n to 1\nset first to line n of ./notes.txt\nprint first's text"), ["first"]);
+  assert.deepEqual(await output("read ./notes.txt\nset first to line 1 of the result\nprint first's number"), ["1"]);
+  assert.deepEqual(await output("for line in lines of ./notes.txt\n  print line's number\nend"), ["1", "2"]);
+  const result = await run("print line 3 of ./notes.txt", { root });
+  assert.deepEqual(result.errors.map((e) => e.message), ["Line 3 is past the end of notes.txt (2 lines)"]);
+  const zero = await run("print line 0 of 'a'", { root });
+  assert.deepEqual(zero.errors.map((e) => e.message), ["Line numbers start at 1, found 0"]);
+});
