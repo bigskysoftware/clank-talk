@@ -2246,6 +2246,13 @@ function auditRead(state, path) {
   }
 }
 
+// one line for the text audit: a line break, a tab or another control character shows as \n, \t, \u001b
+// thus a script cannot fake a header or a step with a line break in a value
+const ESCAPES = { "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+function oneLine(text) {
+  return String(text).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, (ch) => ESCAPES[ch] || "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"));
+}
+
 function cut(text, width) {
   return text.length > width ? text.slice(0, width - 3) + "..." : text;
 }
@@ -2255,7 +2262,7 @@ function auditLine(record) {
   if (record.from !== "script") {
     details += (details === "" ? "" : ", ") + "from " + record.from;
   }
-  return (record.time + "  " + record.kind.padEnd(8) + " " + cut(record.target, 40).padEnd(40) + "  " + details).trimEnd();
+  return (record.time + "  " + record.kind.padEnd(8) + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(details)).trimEnd();
 }
 
 // append this script's block to the day's file in talk/audit/; scripts cannot change @/talk/
@@ -2281,12 +2288,13 @@ async function writeAudit(state, source, status, errors) {
       const who = state.agent === null ? "" : " (agent " + state.agent + ")";
       const under = state.policy === null ? "" : "  (policy " + state.policy.name + " " + state.policy.hash + ")";
       text += "== " + clock(now) + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps" + under + " ==\n";
-      text += source.trim() + "\n--\n";
+      // the script is indented, so no line of it can look like a header (==) or the end of the script (--)
+      text += source.trim().split("\n").map((line) => ("  " + oneLine(line)).trimEnd()).join("\n") + "\n--\n";
       for (const record of state.auditSteps) {
         text += auditLine(record) + "\n";
       }
       for (const error of errors) {
-        text += "!! " + error.line + ":" + error.column + " " + error.message.split("\n")[0] + "\n";
+        text += "!! " + error.line + ":" + error.column + " " + oneLine(error.message.split("\n")[0]) + "\n";
       }
       text += "\n";
     }

@@ -27,13 +27,14 @@ The runtime records every step that touches the world outside the script, so a h
 ## Formats
 
 - Approved: the default is text, for humans. One block for each script: a header with the time, the script number, the status and the steps; the script as written; then one line for each step: time, kind, target, details, with padded columns. Long values are cut with `...`. Errors come last.
+- Proposed (built): the script is indented by 2 spaces, and a line break or other control character in a value shows as `\n`, `\t` or `\u001b`. Thus only the audit itself writes a line that starts with `==` or is `--`, and a script cannot fake a header or a step.
 - Approved: `audit as json` in AGENTS.talk writes JSON Lines (`.jsonl`) instead: one line for each step, and one line for each script.
 
 ```
 == 10:42:01  script 12  done  14 steps ==
-in @/src/config.js
-  replace 'retries: 3' with 'retries: 5'
-run_tests
+  in @/src/config.js
+    replace 'retries: 3' with 'retries: 5'
+  run_tests
 --
 10:42:01  replace  src/config.js         undo saved
 10:42:01  tool     run_tests
