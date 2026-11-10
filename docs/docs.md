@@ -299,6 +299,8 @@ stop process 'site'
 TODO (Carson): notes.
 
 - `run` works only in a tool, never uses a shell, and passes on only the variables in `allow env`.
+- You write the program in the tool; the agent gives only the arguments. A value that the agent gives cannot start with `-`, unless it comes after a `'--'` that you wrote.
+- In `run 'npm test ${name}'`, the value of `name` is one argument, also with spaces in it.
 - A tool call is a value, so its answer can have a name.
 - `start` keeps a program running; the agent can wait for it, read its output and stop it. The session's end stops them all.
 - Share tools: put them in a `.talk` file, and `import ./talk/git.talk`.
@@ -315,6 +317,9 @@ allow changes to @/.github/, @/.gitignore
 ```
 
 TODO (Carson): scripts cannot change `.talk` files (so the agent cannot change its tools) or hidden files (`.env`, `.git/`, `.github/`); the agent tells you the line to add. `.env` files cannot even be read.
+
+- Scripts cannot read `.env`, `.env.*` or `.envrc`, in any folder.
+- Scripts cannot change a file that is not UTF-8 text, so a binary file is safe from a `replace`.
 
 ### Programs in an OS Sandbox
 
@@ -344,6 +349,8 @@ git merge 'fix-parser'
 ```
 
 TODO (Carson): commit takes only named files; merge only fast-forwards; rebase is all or nothing; push sends the current branch, never with force; hooks, pagers and filters are off.
+
+- If the project is a subfolder of a repo, `git status`, `diff`, `show` and `log` cover only the project.
 
 ### Fetch
 
@@ -449,6 +456,9 @@ end
 
 TODO (Carson): your security policy is code you can read; `before` hooks can `reject` a step; a hook can watch any step or tool.
 
+- A hook for a tool reads its step by the tool's name: `the deploy's args`.
+- A hook cannot change the step, and cannot run a program, also through a tool.
+
 <h3 id="audit">Audit</h3>
 
 ```text
@@ -487,6 +497,8 @@ TODO (Carson): the honest limits.
 - The sandbox limits files and the network, not CPU or memory.
 - On Linux, the sandbox protects hidden files and `.talk` files only at the top of the project, and only those that exist when the program starts.
 - Web pages and tool output can try to steer your agent. ClankTalk keeps the damage small, but cannot stop the agent from believing what it reads.
+- Secrets are safe only in `.env` files. A copy of a secret in another file is ordinary text that a script can read and change.
+- `git push` to a remote folder outside the project runs that repo's hooks. A remote folder inside the project is refused.
 
 </div>
 
