@@ -25,6 +25,8 @@ const DESCRIBE_LENGTH = 80;
 const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
+// git operations that change files or branches; "deny writes" denies them
+const GIT_WRITES = ["switch", "commit", "merge", "delete"];
 const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
@@ -178,6 +180,10 @@ async function execute(source, options, execution) {
   const agents = await loadAgentsTalk(root, tools);
   if (agents.errors.length > 0) {
     return finish(execution, "failed", agents.errors);
+  }
+  const policyErrors = checkPolicy(policy.policy, agents);
+  if (policyErrors.length > 0) {
+    return finish(execution, "failed", policyErrors);
   }
   // policy hooks run first, and AGENTS.talk cannot remove them
   const policyHookErrors = [];
@@ -361,11 +367,152 @@ function loadPolicy(given) {
   result.policy = { name, hash, rules };
   return result;
 }
+// AGENTS.talk must stay inside the policy; each problem is a load error that names both lines
+// see src/md/features/policy.md
+function checkPolicy(policy, agents) {
+  const errors = [];
+  if (policy === null) {
+    return errors;
+  }
+  const limits = Object.create(null);
+  const denied = Object.create(null);
+  let sandboxRule = null;
+  for (const rule of policy.rules) {
+    if (rule.type === "limit") {
+      limits[rule.what] = rule;
+    } else if (rule.type === "deny") {
+      denied[rule.what] = rule;
+    } else if (rule.type === "requireSandbox") {
+      sandboxRule = rule;
+    }
+  }
+  const outside = (shown, rule) => {
+    return "'" + shown + "' is outside the policy: " + ruleAt(rule) + " limits " + rule.what + " to " + rule.values.join(", ");
+  };
+  for (const { definition, where } of agents.allows) {
+    if (definition.type === "allowFetch" && limits.fetch) {
+      for (const host of definition.hosts) {
+        if (!isFetchHostInside(host, limits.fetch.values)) {
+          errors.push({ message: outside("allow fetch from '" + host + "'", limits.fetch), ...where });
+        }
+      }
+    }
+    if (definition.type === "allowEnv" && limits.env) {
+      for (const name of definition.names) {
+        if (!limits.env.values.includes(name)) {
+          errors.push({ message: outside("allow env " + name, limits.env), ...where });
+        }
+      }
+    }
+    if (definition.type === "allowChanges" && limits.changes) {
+      for (const shown of definition.paths) {
+        const path = plainPath(shown);
+        if (!limits.changes.values.some((limit) => path === plainPath(limit) || path.startsWith(plainPath(limit) + "/"))) {
+          errors.push({ message: outside("allow changes to " + shown, limits.changes), ...where });
+        }
+      }
+    }
+    if (definition.type === "allowGitPush" && denied["git push"]) {
+      errors.push({ message: "'allow git push' is not allowed: " + ruleAt(denied["git push"]) + " denies git push", ...where });
+    }
+  }
+  // tools and hooks in AGENTS.talk cannot use what the policy denies
+  for (const definition of [...Object.values(agents.definitions), ...agents.hooks]) {
+    for (const node of findNodes(definition, [])) {
+      const where = { line: node.line, column: node.column, file: definition.file };
+      for (const what of deniedUses(node)) {
+        if (denied[what]) {
+          errors.push({ message: "This uses " + what + ", and " + ruleAt(denied[what]) + " denies " + what, ...where });
+        }
+      }
+      if (sandboxRule !== null && sandboxRule.commands.includes(node.type) && (node.sandbox === null || node.sandbox === undefined)) {
+        errors.push({ message: "This " + node.type + " needs 'in a sandbox': " + ruleAt(sandboxRule) + " requires it", ...where });
+      }
+    }
+  }
+  return errors;
+}
+
+// where a policy rule is, for an error: "acme.talk 3:1"
+function ruleAt(rule) {
+  return rule.file + " " + rule.line + ":" + rule.column;
+}
+
+// @/.github/ and ./.github give .github
+function plainPath(shown) {
+  return shown.replace(/^@\//, "").replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+// a host or a *. pattern from "allow fetch from" is inside the policy's "limit fetch to"
+function isFetchHostInside(host, limits) {
+  if (host.startsWith("*.")) {
+    return limits.some((limit) => limit.startsWith("*.") && host.slice(1).endsWith(limit.slice(1)));
+  }
+  return isAllowedFetchHost(host, limits);
+}
+
+// every node with a type under a node, for the load checks
+function findNodes(node, found) {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      findNodes(item, found);
+    }
+  } else if (node !== null && typeof node === "object") {
+    if (typeof node.type === "string") {
+      found.push(node);
+    }
+    for (const value of Object.values(node)) {
+      findNodes(value, found);
+    }
+  }
+  return found;
+}
+
+// what a node uses that a policy can deny: git push, start, fetch, run, writes
+function deniedUses(node) {
+  if (node.type === "git") {
+    if (node.operation === "push") {
+      return ["git push"];
+    }
+    return GIT_WRITES.includes(node.operation) ? ["writes"] : [];
+  }
+  if (["start", "fetch", "run"].includes(node.type)) {
+    return [node.type];
+  }
+  if (["write", "append", "replaceLines", "removeLines", "put", "undo"].includes(node.type)) {
+    return ["writes"];
+  }
+  return [];
+}
+
+// at run time: a thing the policy denies is an error, whatever AGENTS.talk says
+function checkDenied(what, state, node) {
+  if (state.policy === null) {
+    return;
+  }
+  for (const rule of state.policy.rules) {
+    if (rule.type === "deny" && rule.what === what) {
+      throw new ScriptError("The policy '" + state.policy.name + "' denies " + what + " in this session (" + ruleAt(rule) + ")", node);
+    }
+  }
+}
+
+// at run time: "require sandbox for run, start" makes a run or start with no sandbox an error
+function checkSandboxRequired(what, sandbox, state, node) {
+  if (state.policy === null || sandbox !== null) {
+    return;
+  }
+  for (const rule of state.policy.rules) {
+    if (rule.type === "requireSandbox" && rule.commands.includes(what)) {
+      throw new ScriptError("The policy '" + state.policy.name + "' requires 'in a sandbox' for " + what + " (" + ruleAt(rule) + ")", node);
+    }
+  }
+}
 
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], auditFormat: "text", hooks: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], auditFormat: "text", hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -405,6 +552,9 @@ async function loadAgentsTalk(root, hostTools) {
         }
         continue;
       }
+    if (definition.type.startsWith("allow") && file.name === AGENTS_TALK) {
+      result.allows.push({ definition, where });
+    }
       if (definition.type === "allowEnv") {
         if (file.name === AGENTS_TALK) {
           result.allowedEnv.push(...definition.names);
@@ -1158,6 +1308,8 @@ async function runProgram(command, state) {
   step.args = args;
   const sandbox = await sandboxValues(command, state);
   step.sandbox = sandbox;
+  checkDenied("run", state, command);
+  checkSandboxRequired("run", sandbox, state, command);
   await runHooks("before", ["run"], step, state, command);
 
   const env = allowedEnvFor(state);
@@ -1227,6 +1379,11 @@ async function runGit(command, state) {
   step.operation = command.operation;
   const args = await gitArgs(command, state, step);
   step.args = args;
+  if (command.operation === "push") {
+    checkDenied("git push", state, command);
+  } else if (GIT_WRITES.includes(command.operation)) {
+    checkDenied("writes", state, command);
+  }
   await runHooks("before", ["git"], step, state, command);
 
   const env = gitEnv(process.env);
@@ -1623,6 +1780,8 @@ async function startProcess(command, state) {
   step.name = name;
   const sandbox = await sandboxValues(command, state);
   step.sandbox = sandbox;
+  checkDenied("start", state, command);
+  checkSandboxRequired("start", sandbox, state, command);
   await runHooks("before", ["start"], step, state, command);
 
   let spawnProgramName = program;
@@ -1752,6 +1911,7 @@ const FETCH_MAX_REDIRECTS = 5;
 // fetch <url> [as json | response | text] [with method, headers, body] [within <duration>]
 // see src/md/features/fetch.md
 async function runFetch(command, state) {
+  checkDenied("fetch", state, command);
   const url = parseUrl(toText(await evaluate(command.url, state)), command.url);
 
   let method = "GET";
@@ -1895,6 +2055,10 @@ async function readLimited(response, url, node) {
 // a local or private address must be named in AGENTS.talk
 async function checkFetchHost(url, state, node) {
   const host = url.hostname.toLowerCase();
+  const limit = state.policy === null ? undefined : state.policy.rules.find((rule) => rule.type === "limit" && rule.what === "fetch");
+  if (limit !== undefined && !isAllowedFetchHost(host, limit.values)) {
+    throw new ScriptError("fetch refused: " + host + " is outside the policy '" + state.policy.name + "' (" + ruleAt(limit) + ")", node);
+  }
   if (isAllowedFetchHost(host, state.allowedFetch)) {
     return;
   }
@@ -2097,6 +2261,13 @@ async function writeAudit(state, source, status, errors) {
       text += "\n";
     }
     await fs.appendFile(nodePath.join(folder, name), text);
+    // "audit also to" in the policy: a copy outside the project, where project tools cannot reach it
+    for (const rule of state.policy === null ? [] : state.policy.rules) {
+      if (rule.type === "auditAlso") {
+        await fs.mkdir(rule.folder, { recursive: true });
+        await fs.appendFile(nodePath.join(rule.folder, name), text);
+      }
+    }
   } catch (err) {
     state.execution.warnings.push({ message: "Could not write the audit: " + err.message, line: 1, column: 1 });
   }
@@ -2231,6 +2402,7 @@ async function currentText(path, state) {
 async function restoreFile(path, text, state, node) {
   const file = new FileRef(nodePath.resolve(state.root, path), state.root);
   checkInsideRoot(file.absolute, state, node, path);
+  checkDenied("writes", state, node);
   if (await isProtected(file, state, node)) {
     throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
   }
@@ -2745,6 +2917,7 @@ async function writeText(file, text, append, state, node) {
   if (!(file instanceof FileRef)) {
     throw new ScriptError("Expected a file, found " + describe(file), node);
   }
+  checkDenied("writes", state, node);
   if (await isProtected(file, state, node)) {
     throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
   }
