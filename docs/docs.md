@@ -504,6 +504,44 @@ A fetch can send your project's data anywhere, so the first fetch to a new host 
 allow fetch from 'api.github.com', '*.npmjs.org', 'localhost'
 ```
 
+### Secrets
+
+TODO (Carson): intro. Your agent can use an API key without ever seeing it.
+
+```talk
+# AGENTS.talk
+allow secret GITHUB_TOKEN for fetch to 'api.github.com'
+```
+
+```talk
+fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer ' + secret GITHUB_TOKEN }
+print it's login
+```
+
+TODO (Carson): prose for these points.
+
+- Where values come from: the environment, then `.env.local`, then `.env`.
+- `print secret GITHUB_TOKEN` shows `<secret GITHUB_TOKEN>`. Any other use is an error.
+- The value goes only to the hosts in the `allow` line.
+- A value that comes back (in output, a response, an error, the audit) shows as `<secret GITHUB_TOKEN>`.
+
+A program in a tool can get a secret too:
+
+```talk
+# AGENTS.talk
+allow secret NPM_TOKEN for run
+
+tool publish
+  run 'npm publish' using secret NPM_TOKEN
+end
+```
+
+TODO (Carson): the risks, in your words.
+
+- A program with a secret and the network can send it anywhere.
+- Only give secrets to programs whose code the agent can't change. `npm publish` runs scripts from `package.json`, and the agent can change that file.
+- Limits: the runtime hides only the exact text. A file that holds a token is not hidden from a script.
+
 ### Asking You
 
 `ask` puts a question to you, and waits, two minutes at most, unless you say `within`. Only you answer, never the agent. If nobody answers, it gives `null`, which means no:

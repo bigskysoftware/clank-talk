@@ -234,7 +234,6 @@ import ./tools/deploy.talk
 ## Coming Soon
 
 - **Taint tracking:** values remember where they came from, so data from the web can't sneak into places it shouldn't
-- **Secrets:** your agent uses an API key by name, and never sees it
 
 <div class="construction">
 
