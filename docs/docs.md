@@ -189,7 +189,7 @@ read @/README.md
 print it
 ```
 
-Printed a lot? Your agent sees the start and the end, and a note in the middle. The rest isn't lost. The next script gets all of it as `the previous output`:
+Printed a lot? Your agent sees the start and the end (up to 1000 lines, or less with `limit output to 400 lines` in `AGENTS.talk`), and a note in the middle. The rest isn't lost. The next script gets all of it as `the previous output`:
 
 ```talk
 set failures to find 'not ok' in the previous output

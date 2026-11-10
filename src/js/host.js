@@ -10,23 +10,32 @@ import { changedFiles } from "./diff.js";
 // the step budget for each call
 export const MAX_STEPS = 10_000;
 
-// the most print output that goes to the model: the same limits as pi's own tools
-// above them, the host cuts the output at a place it chooses, so ClankTalk cuts first, and says where the rest is
-export const OUTPUT_MAX_LINES = 2000;
-export const OUTPUT_MAX_BYTES = 50 * 1024;
+// the most print output that goes to the model, unless AGENTS.talk or a policy sets less ("limit output to")
+// above it, a host such as pi cuts the output at a place it chooses, so ClankTalk cuts first, and says where the rest is
+export const OUTPUT_MAX_LINES = 1000;
+export const OUTPUT_MAX_BYTES = 30 * 1024;
 
 // long print output: the start and the end, and a line that says where the rest is
-export function cutOutput(text) {
+// limit is { lines, bytes } from the run, with null for none; it can only make the host's limit smaller
+export function cutOutput(text, limit = null) {
+  let maxLines = OUTPUT_MAX_LINES;
+  let maxBytes = OUTPUT_MAX_BYTES;
+  if (limit !== null && limit.lines !== null) {
+    maxLines = Math.min(maxLines, limit.lines);
+  }
+  if (limit !== null && limit.bytes !== null) {
+    maxBytes = Math.min(maxBytes, limit.bytes);
+  }
   const lines = text.split("\n");
-  if (lines.length <= OUTPUT_MAX_LINES && Buffer.byteLength(text) <= OUTPUT_MAX_BYTES) {
+  if (lines.length <= maxLines && Buffer.byteLength(text) <= maxBytes) {
     return text;
   }
-  let head = takeLines(lines, OUTPUT_MAX_LINES / 2, OUTPUT_MAX_BYTES / 2);
-  let tail = takeLines([...lines].reverse(), OUTPUT_MAX_LINES / 2, OUTPUT_MAX_BYTES / 2).reverse();
+  let head = takeLines(lines, Math.ceil(maxLines / 2), maxBytes / 2);
+  let tail = takeLines([...lines].reverse(), Math.floor(maxLines / 2), maxBytes / 2).reverse();
   const where = "All " + lines.length + " lines are in: the previous output. To keep them for later: set $log to the previous output";
   // one very long line: show the start of it
   if (head.length === 0) {
-    return lines[0].slice(0, OUTPUT_MAX_BYTES / 4) + "\n... the rest is cut. The full text is in: the previous output. To keep it for later: set $log to the previous output";
+    return lines[0].slice(0, maxBytes / 4) + "\n... the rest is cut. The full text is in: the previous output. To keep it for later: set $log to the previous output";
   }
   const cut = lines.length - head.length - tail.length;
   const note = "... " + cut + " lines cut. " + where;
@@ -97,7 +106,7 @@ export async function describeTool(root) {
 export function formatResult(result, script, root) {
   const sections = [];
   if (result.output.length > 0) {
-    sections.push(cutOutput(result.output.join("\n")));
+    sections.push(cutOutput(result.output.join("\n"), result.outputLimit || null));
   }
   if (result.warnings && result.warnings.length > 0) {
     sections.push("--- warnings ---\n" + formatProblems(result.warnings, script, root));

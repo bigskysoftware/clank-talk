@@ -267,3 +267,23 @@ test('scripts cannot import', async () => {
   const [e] = await errors('import ./a.talk');
   assert.equal(e.message, "Unknown command 'import'");
 });
+
+test("limit output: one line only, with whole numbers above 0", async () => {
+  await agentsTalk("limit output to 10 lines\nlimit output to 5 lines");
+  assert.equal((await errors("print 1"))[0].message, "Only one 'limit output' line is allowed");
+  await agentsTalk("limit output to 0 lines");
+  assert.equal((await errors("print 1"))[0].message, "Expected a whole number above 0, such as: limit output to 400 lines");
+  await agentsTalk("limit output to 10 pages");
+  assert.equal((await errors("print 1"))[0].message, "Expected 'lines' or 'KB', such as: limit output to 400 lines or 20 KB");
+  await agentsTalk("limit output to 10 lines or 2 KB");
+  const result = await run("print 1", { root });
+  assert.deepEqual(result.outputLimit.lines, 10);
+  assert.deepEqual(result.outputLimit.bytes, 2048);
+});
+
+test("limit output: the smaller of AGENTS.talk and the policy wins", async () => {
+  await agentsTalk("limit output to 50 lines");
+  const result = await run("print 1", { root, policy: { name: "p.talk", source: "policy 'p'\nlimit output to 7 lines or 3 KB" } });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual({ lines: result.outputLimit.lines, bytes: result.outputLimit.bytes }, { lines: 7, bytes: 3072 });
+});

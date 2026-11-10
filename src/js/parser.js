@@ -2025,10 +2025,60 @@ export function parse(source, options = {}) {
     return { type: "auditAlso", folder: folder.value, ...at };
   }
 
+  // limit output to 400 lines [or 20 KB]: the most print output the agent sees, in AGENTS.talk or a policy
+  // see src/md/infrastructure/host.md
+  function parseOutputLimit(token) {
+    i++;
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const limit = { type: "outputLimit", lines: null, bytes: null, line: token.line, column: token.column };
+    while (true) {
+      // a number token holds its digits as text
+      const number = current();
+      const value = number === undefined || number.type !== "number" ? NaN : Number(number.value);
+      if (!Number.isInteger(value) || value < 1) {
+        error("Expected a whole number above 0, such as: limit output to 400 lines");
+        return null;
+      }
+      i++;
+      if (isWord("lines") && limit.lines === null) {
+        limit.lines = value;
+      } else if ((isWord("KB") || isWord("kb")) && limit.bytes === null) {
+        limit.bytes = value * 1024;
+      } else {
+        error("Expected 'lines' or 'KB', such as: limit output to 400 lines or 20 KB");
+        return null;
+      }
+      i++;
+      if (!isWord("or")) {
+        break;
+      }
+      i++;
+    }
+    return limit;
+  }
+
   // AGENTS.talk: only definitions at the top level
   function parseDefinitions() {
     const definitions = [];
     while (!atEnd()) {
+      // limit output to ...: both AGENTS.talk and a policy can have it
+      if (isWord("limit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "output") {
+        const token = current();
+        i++;
+        const definition = parseOutputLimit(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        } else {
+          while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import") && !isWord("before") && !isWord("after") && !isWord("limit")) {
+            i++;
+          }
+        }
+        continue;
+      }
       // a policy: policy 'name', require ..., limit ..., deny ..., audit also to ...; see src/md/features/policy.md
       if (isWord("policy") || isWord("require") || isWord("limit") || isWord("deny") || (isWord("audit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "also")) {
         const token = current();

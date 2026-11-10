@@ -212,7 +212,7 @@ export const HELP = [
   {
     name: "previous", kind: "expression",
     syntax: "the previous output",
-    description: "All the print output of the last script, as text. The host shows at most 2000 lines or 50 KB, and cuts the middle of longer output; this has all of it. Each script replaces it, so to keep it: set $log to the previous output.",
+    description: "All the print output of the last script, as text. The host shows at most 1000 lines or 30 KB (less with 'limit output to' in AGENTS.talk), and cuts the middle of longer output; this has all of it. Each script replaces it, so to keep it: set $log to the previous output.",
     examples: ["print lines 1001 to 1500 of the previous output", "set failures to find 'not ok' in the previous output"],
   },
   {
@@ -226,6 +226,12 @@ export const HELP = [
     syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow git push | allow fetch from '<host>', ...",
     description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow git push' lets git push go without asking the human. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com.",
     examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore"],
+  },
+  {
+    name: "limit", kind: "command", where: "AGENTS.talk",
+    syntax: "limit output to <n> lines [or <n> KB]",
+    description: "Only at the top of AGENTS.talk, or in a policy. The most print output the agent sees from one script; the host cuts the middle of longer output, and the previous output has all of it. It can only make the host's limit (1000 lines or 30 KB) smaller.",
+    examples: ["limit output to 400 lines", "limit output to 400 lines or 20 KB"],
   },
 
   // ----- expressions -----

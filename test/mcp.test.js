@@ -135,12 +135,27 @@ test('an error shows the script line, with an arrow at the column', async () => 
 test('long output is cut, and the next script can read all of it as the previous output', async () => {
   const response = await call("repeat 3000 times\n  print 'line'\nend");
   const text = response.result.content[0].text;
-  assert.match(text, /\n\.\.\. 1000 lines cut\. All 3000 lines are in: the previous output\. To keep them for later: set \$log to the previous output\n/);
-  assert.equal(text.split("\n").length, 2001);
+  assert.match(text, /\n\.\.\. 2000 lines cut\. All 3000 lines are in: the previous output\. To keep them for later: set \$log to the previous output\n/);
+  assert.equal(text.split("\n").length, 1001);
   const next = await call("print length of lines of the previous output");
   assert.equal(next.result.content[0].text, "3000");
   // that script's output is now the previous output
   assert.equal((await call("print the previous output")).result.content[0].text, "3000");
+});
+
+test('limit output in AGENTS.talk makes the cut smaller, and never larger', async () => {
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 10 lines');
+  try {
+    const text = (await call("repeat 30 times\n  print 'line'\nend")).result.content[0].text;
+    assert.equal(text.split("\n").length, 11);
+    assert.match(text, /\.\.\. 20 lines cut\. All 30 lines/);
+    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 5000 lines or 100 KB');
+    assert.equal((await call("repeat 1500 times\n  print 'line'\nend")).result.content[0].text.split("\n").length, 1001);
+    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 1 KB');
+    assert.match((await call("repeat 300 times\n  print 'line'\nend")).result.content[0].text, /lines cut\. All 300 lines/);
+  } finally {
+    await fs.rm(path.join(root, 'AGENTS.talk'));
+  }
 });
 
 test('one very long line is cut too', async () => {

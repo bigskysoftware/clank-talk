@@ -44,6 +44,7 @@ require sandbox for run, start
 limit fetch to 'api.github.com', '*.acme.internal'
 limit env to PATH, HOME, JAVA_HOME
 limit changes to @/.github/
+limit output to 400 lines or 20 KB
 
 # things that are off, whatever AGENTS.talk says
 deny git push
@@ -68,6 +69,7 @@ end
 - Approved (built): `deny writes` denies file changes (`write`, `append`, line edits, `replace` in a file, `undo`) and git changes (`switch`, `commit`, `merge`, `delete`). It does not cover programs: a program in a sandbox can write in the project. For a read-only session, also `deny run` and `deny start`.
 - Approved (built): the rules apply at load time to AGENTS.talk tools and hooks, and again at run time to each step. Thus a script cannot get around them.
 - Approved (built): under `limit fetch`, a host outside the limit is refused. The human is not asked.
+- Approved (built): `limit output to <n> lines [or <n> KB]` makes the print output that the agent sees smaller. The smallest of the host, AGENTS.talk and the policy wins. See [host.md](../infrastructure/host.md).
 
 ## Errors
 

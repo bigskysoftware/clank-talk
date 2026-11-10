@@ -265,6 +265,9 @@ async function execute(source, options, execution) {
     // the harness's policy: name, short hash and rules, or null
     policy: policy.policy,
   };
+  // the smaller of the output limits in AGENTS.talk and the policy; the host has its own too
+  const policyLimit = policy.policy === null ? null : policy.policy.rules.find((rule) => rule.type === "outputLimit") || null;
+  execution.outputLimit = smallerLimit(agents.outputLimit, policyLimit);
   state.audit.scripts++;
   state.auditScript = state.audit.scripts;
 
@@ -519,7 +522,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], auditFormat: "text", hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -567,6 +570,16 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedEnv.push(...definition.names);
         } else {
           result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "outputLimit") {
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'limit output' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (result.outputLimit !== null) {
+          result.errors.push({ message: "Only one 'limit output' line is allowed", ...where });
+        } else {
+          result.outputLimit = definition;
         }
         continue;
       }
@@ -686,10 +699,27 @@ async function loadTalkFile(absolute, root, chain, files, errors) {
   }
 }
 
+// two output limits, { lines, bytes } with null for none: the smaller of each part
+function smallerLimit(a, b) {
+  if (a === null) {
+    return b;
+  }
+  if (b === null) {
+    return a;
+  }
+  const smaller = (x, y) => (x === null ? y : y === null ? x : Math.min(x, y));
+  return { lines: smaller(a.lines, b.lines), bytes: smaller(a.bytes, b.bytes) };
+}
+
 function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
-  return { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
+  const result = { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
+  // only when AGENTS.talk or the policy sets one; the host uses it to cut long output
+  if (execution.outputLimit) {
+    result.outputLimit = execution.outputLimit;
+  }
+  return result;
 }
 
 // ----- commands -----
