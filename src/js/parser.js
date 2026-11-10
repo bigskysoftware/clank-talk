@@ -1070,8 +1070,9 @@ export function parse(source, options = {}) {
     if (replacement === null) {
       return null;
     }
-    // replace lines 5 to 7 of <file> with <text>: an edit by line number
-    if (old.type === "lines" && !isWord("in")) {
+    // replace lines 5 to 7 of <file> with <text>: an edit by line number; "of" names the file,
+    // so it never takes an "in", and an "in" after it starts a new command
+    if (old.type === "lines") {
       return { type: "replaceLines", range: old, text: replacement, line: token.line, column: token.column };
     }
     // in an "in <target> do ... end" block, the block names the target, and an "in" here starts a new command

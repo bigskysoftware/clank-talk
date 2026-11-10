@@ -213,3 +213,11 @@ test("a script that nests too deep is an error, not a stack overflow", () => {
   assert.match(parse(blocks).errors[0].message, /^The script nests more than 100 levels deep/);
   assert.deepEqual(parse("print " + "(".repeat(50) + "1" + ")".repeat(50)).errors, []);
 });
+
+test("an in block on the line after a line edit is a new command", () => {
+  const source = "replace lines 1 to 1 of ./a.txt with 'x'\nin ./a.txt do\n  find 'two'\nend";
+  const { script, errors } = parse(source);
+  assert.deepEqual(errors, []);
+  assert.equal(script.commands.length, 2);
+  assert.equal(script.commands[0].type, "replaceLines");
+});
