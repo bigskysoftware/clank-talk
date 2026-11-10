@@ -2,7 +2,7 @@
   "name": "clank-talk",
   "version": "0.2.0",
   "description": "A sandboxed, readable scripting language for AI agents, used in place of a shell. Runs as an MCP server.",
-  "keywords": ["mcp", "agents", "sandbox", "scripting", "hyperscript", "claude"],
+  "keywords": ["mcp", "agents", "sandbox", "scripting", "hyperscript", "claude", "pi-package"],
   "homepage": "https://clank.talk",
   "bugs": "https://github.com/bigskysoftware/clank-talk/issues",
   "license": "BSD-3-Clause",
@@ -20,6 +20,14 @@
   },
   "pi": {
     "extensions": ["./src/js/pi.js"]
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "typebox": {
+      "optional": true
+    }
   },
   "files": [
     "bin/",

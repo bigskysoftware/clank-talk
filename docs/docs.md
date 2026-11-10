@@ -100,6 +100,22 @@ Subagents get only the tools of the session, so they get ClankTalk too, and noth
 
 Each subagent can pass its name as `agent` when it calls ClankTalk. Then it gets its own undo list and its own `$` variables, so one helper can't undo another's work, and the audit says who did what.
 
+### pi
+
+ClankTalk is also a [pi](https://pi.dev) package. It runs inside pi, so `ask` and push approvals show up as pi dialogs, and it turns off every other tool for you. No flags to forget. Install it for one project:
+
+```bash
+pi install -l git:github.com/bigskysoftware/clank-talk
+```
+
+Or try it once, with no install:
+
+```bash
+pi -e git:github.com/bigskysoftware/clank-talk
+```
+
+Careful with a plain `pi install`, with no `-l`: then every pi session on your machine gets ClankTalk, and only ClankTalk.
+
 ## The Language
 
 A quick tour. The [docs for agents](reference.html) have the rest.
