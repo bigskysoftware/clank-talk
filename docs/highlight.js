@@ -74,6 +74,44 @@ export function highlightAudit(text) {
   }).join("\n");
 }
 
+// ----- JSON: keys, strings, numbers, and true, false and null -----
+
+const JSON_TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|\b(true|false|null)\b/g;
+
+export function highlightJson(code) {
+  let out = "";
+  let at = 0;
+  for (const match of code.matchAll(JSON_TOKEN)) {
+    out += escape(code.slice(at, match.index));
+    const [text, string, colon, number] = match;
+    if (string !== undefined) {
+      // a key is a string with a colon after it
+      out += colon !== undefined ? span("keyword", string) + escape(colon) : span("string", string);
+    } else if (number !== undefined) {
+      out += span("number", text);
+    } else {
+      out += span("keyword", text);
+    }
+    at = match.index + text.length;
+  }
+  return out + escape(code.slice(at));
+}
+
+// ----- Markdown: headings, list marks, inline code and bold -----
+
+export function highlightMarkdown(code) {
+  return code.split("\n").map((line) => {
+    if (/^#{1,6} /.test(line)) {
+      return span("keyword", line);
+    }
+    const list = /^(\s*)([-*+]|\d+\.)( .*)?$/.exec(line);
+    const head = list === null ? "" : escape(list[1]) + span("number", list[2]);
+    const rest = list === null ? line : list[3] || "";
+    const parts = rest.split(/(`[^`]*`|\*\*[^*]+\*\*)/);
+    return head + parts.map((part) => (part.startsWith("`") ? span("path", part) : part.startsWith("**") ? span("keyword", part) : escape(part))).join("");
+  }).join("\n");
+}
+
 // ----- bash, for the before-and-after examples -----
 
 const BASH_KEYWORDS = new Set(["for", "in", "do", "done", "if", "then", "elif", "else", "fi", "while", "until", "case", "esac", "function", "return", "local", "export"]);

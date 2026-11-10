@@ -195,6 +195,22 @@ pre {
   border: 1px solid var(--border); border-radius: 999px;
 }
 .areas a:hover { border-color: var(--accent); }
+/* docs typography: a calmer text color, more air between lines and sections, lighter inline code, and quieter links */
+.features:not(.showcase) { color: #2b2b2b; }
+.features:not(.showcase) h1 { margin: 0.6rem 0 1rem; font-size: 2.3rem; line-height: 1.15; letter-spacing: -0.02em; }
+.features:not(.showcase) h2 { margin-top: 3.6rem; font-size: 1.55rem; letter-spacing: -0.01em; }
+.features:not(.showcase) h3 { letter-spacing: -0.005em; }
+.features:not(.showcase) p, .features:not(.showcase) li { line-height: 1.7; }
+.features:not(.showcase) p { margin: 0 0 1.05rem; }
+.features:not(.showcase) ul { padding-left: 1.3rem; }
+.features:not(.showcase) li { margin: 0.3rem 0; }
+.features:not(.showcase) li::marker { color: var(--text-muted); }
+.features:not(.showcase) a { text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+.features:not(.showcase) a:hover { text-decoration-thickness: 2px; }
+.features:not(.showcase) :not(pre) > code { padding: 0.1em 0.35em; font-size: 0.86em; font-weight: 400; background: #f3f3f1; border: 1px solid #e4e4e0; }
+.features:not(.showcase) > pre { margin: 1.1rem 0 1.4rem; font-size: 0.88rem; line-height: 1.6; }
+/* the links at the top: smaller, so the title leads */
+.features:not(.showcase) > p:first-of-type { font-size: 0.92rem; color: var(--text-muted); }
 .examples-label { margin: 0.8rem 0 0.2rem; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
 /* a syntax line in the docs for agents: light, so the examples stand out */
 .features pre:has(> code.language-text) { background: var(--bg-subtle); color: var(--text); border: 1px solid var(--border); }
@@ -209,12 +225,26 @@ pre {
   transform: translateX(-50%);
 }
 .compare .window { margin: 0.5rem 0; }
+/* in the docs, the slider stays in the text column, at a reading width */
+.features:not(.showcase) .compare { width: 100%; max-width: 420px; margin: 1.4rem auto; transform: none; }
 @media (max-width: 760px) {
   .compare { grid-template-columns: 1fr; }
 }
 
 /* install box, under the hero */
 .install { max-width: 680px; margin: 2rem auto 0; text-align: center; }
+/* in the docs, the install steps sit in an inset panel, with the picker centered at its top */
+.install-area {
+  margin: 1.5rem 0 2rem;
+  padding: 1.2rem 1.4rem 0.4rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+.install-docs { margin: 0 0 0.6rem; padding-bottom: 1rem; text-align: center; border-bottom: 1px solid var(--border); }
+.install-docs .install-label { font-weight: 600; color: var(--text); }
+.install-area .harness > h3:first-child { margin-top: 1rem; }
 .install-picker { position: relative; display: inline-flex; align-items: center; gap: 0.6rem; }
 .install-label { font-family: var(--font-heading); font-size: 0.95rem; color: #3a3a3a; }
 .install-button {
@@ -258,6 +288,9 @@ pre {
   color: var(--code-text); background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.3); border-radius: var(--radius);
 }
+/* a Copy button on a code block in the docs */
+.copy-wrap { position: relative; }
+.copy-wrap pre { padding-right: 5rem; }
 .install-note { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.4rem; }
 
 /* the home page: features two to a row, one column on phones */
@@ -314,13 +347,33 @@ pre {
 }
 .compare:has(.compare-range:focus-visible) .compare-bar::after { outline: 2px solid var(--accent, #4a90d9); }
 
+/* under construction: a band of hazard stripes on top, warm paper below */
 .construction {
+  position: relative;
   margin-top: 3rem;
-  padding: 0.2rem 1.2rem;
-  background: #fffbe6;
-  border: 1px solid #e8d44d;
-  border-radius: var(--radius);
+  padding: 1.15rem 1.3rem 0.85rem;
+  overflow: hidden;
+  font-size: 0.95rem;
+  color: #5c4413;
+  background: #fff8ea;
+  border: 1px solid #ecd3a0;
+  border-radius: 8px;
 }
+.construction::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 7px;
+  background: repeating-linear-gradient(-45deg, #f2b33d 0 10px, #2b2b2b 10px 20px);
+}
+/* the space above the text is the stripes plus the same space as below it */
+.construction { padding: calc(7px + 1rem) 1.5rem 1rem; text-align: center; }
+.features .construction p { margin: 0.25rem 0; line-height: 1.5; }
+.construction p:first-child { font-size: 1.2rem; font-weight: 600; }
+.construction p:first-child::before { content: "\1F6A7"; margin-right: 0.6em; }
+.construction p:first-child::after { content: "\1F6A7"; margin-left: 0.6em; }
 
 /* footer */
 .footer {

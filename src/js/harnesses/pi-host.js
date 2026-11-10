@@ -3,7 +3,7 @@
 
 import { run, stopAllProcesses } from "../clank-talk.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -24,7 +24,8 @@ export function clankTalkExtension(pi, Type) {
   pi.registerFlag("clank-policy-hash", { description: "The sha256 of the policy file; if it does not match, ClankTalk refuses every call", type: "string" });
 
   pi.on("session_start", async (_event, ctx) => {
-    session = newSession(ctx.cwd);
+    // the root: CLANK_TALK_ROOT, or the folder where pi starts
+    session = newSession(projectRoot(null, ctx.cwd));
     // pi gives the flag values only after loading, so the policy is read here
     const file = pi.getFlag("clank-policy");
     const hash = pi.getFlag("clank-policy-hash");
@@ -32,7 +33,7 @@ export function clankTalkExtension(pi, Type) {
     session.policy = loaded.policy || null;
     session.policyError = loaded.error || null;
     // register the tool again, now with the tools from this project's AGENTS.talk in its description
-    registerClankTalk(await describeTool(ctx.cwd));
+    registerClankTalk(await describeTool(session.root));
     // ClankTalk is the only tool the model sees
     pi.setActiveTools([TOOL_NAME]);
   });
@@ -68,7 +69,7 @@ export function clankTalkExtension(pi, Type) {
       executionMode: "sequential",
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         if (session === null) {
-          session = newSession(ctx.cwd);
+          session = newSession(projectRoot(null, ctx.cwd));
         }
         if (session.policyError) {
           return { content: [{ type: "text", text: "ClankTalk does not run: " + session.policyError }], details: {}, isError: true };

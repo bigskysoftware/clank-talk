@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { handleMessage, toolsChanged } from "../src/js/harnesses/mcp.js";
-import { staleCodeWarning, codeHashes } from "../src/js/host.js";
+import { staleCodeWarning, codeHashes, projectRoot, parentAgentsTalk, rootWarning, formatResult } from "../src/js/host.js";
 
 let root;
 let session;
@@ -32,6 +32,26 @@ test("initialize answers with the client's protocol version", async () => {
 
 test("notifications get no answer", async () => {
   assert.equal(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, session), null);
+});
+
+test("the root comes from --root, then CLANK_TALK_ROOT, then the folder where the host starts", () => {
+  assert.equal(projectRoot("/a/given", "/a/cwd", { CLANK_TALK_ROOT: "/a/env" }), "/a/given");
+  assert.equal(projectRoot(null, "/a/cwd", { CLANK_TALK_ROOT: "/a/env" }), "/a/env");
+  assert.equal(projectRoot(null, "/a/cwd", {}), "/a/cwd");
+});
+
+test("a root with no AGENTS.talk, under a folder that has one, gets a warning in each result and the description", async () => {
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "tool lint\nend");
+  const sub = path.join(root, "src", "deep");
+  await fs.mkdir(sub, { recursive: true });
+  assert.equal(parentAgentsTalk(sub, root), root);
+  assert.equal(parentAgentsTalk(root, root), null);
+  const warning = rootWarning(sub, root);
+  assert.match(warning.message, /^No AGENTS\.talk in .*src\/deep, but .* has one\. .*CLANK_TALK_ROOT=.*--root /);
+  // the search stops at the home folder
+  assert.equal(parentAgentsTalk(sub, sub), null);
+  const text = formatResult({ output: ["1"], errors: [], warnings: [], changes: [], status: "done" }, "print 1", sub);
+  assert.match(text, /--- warnings ---\nNo AGENTS\.talk in /);
 });
 
 test("tools/list has one tool, with the AGENTS.talk tools in its description", async () => {

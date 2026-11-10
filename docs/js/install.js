@@ -1,7 +1,8 @@
-// the install box on the home page: pick an agent, see its setup, copy it
+// the install picker: pick an agent, see its setup, copy it
+// on the home page it shows one code block; in the docs it shows one section (.harness)
 const button = document.querySelector(".install-button");
 const menu = document.querySelector(".install-menu");
-const blocks = document.querySelectorAll(".install-code pre");
+const blocks = document.querySelectorAll(".install-code pre, .harness");
 const copy = document.querySelector(".install-copy");
 
 // simple highlighting for the shell, JSON and TOML snippets, with the site's token colors
@@ -24,7 +25,7 @@ function highlight(text) {
   return lines.join("\n");
 }
 
-for (const block of blocks) {
+for (const block of document.querySelectorAll(".install-code pre")) {
   const code = block.querySelector("code");
   code.innerHTML = highlight(code.textContent);
 }
@@ -70,7 +71,26 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-copy.addEventListener("click", async () => {
+// in the docs: a Copy button on each code block of the install steps; a "$ " prompt is not copied
+for (const pre of document.querySelectorAll(".harness pre")) {
+  const wrap = document.createElement("div");
+  wrap.className = "copy-wrap";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "install-copy";
+  button.textContent = "Copy";
+  button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(pre.textContent.replace(/^\$ /gm, ""));
+    button.textContent = "Copied";
+    setTimeout(() => {
+      button.textContent = "Copy";
+    }, 1500);
+  });
+  pre.before(wrap);
+  wrap.append(pre, button);
+}
+
+copy?.addEventListener("click", async () => {
   const block = document.querySelector(".install-code pre:not([hidden])");
   await navigator.clipboard.writeText(block.textContent);
   copy.textContent = "Copied";

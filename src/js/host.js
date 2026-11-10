@@ -5,9 +5,55 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import nodePath from "node:path";
+import os from "node:os";
 import { listTools } from "./clank-talk.js";
 import { syntaxSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
+
+// ----- the project root -----
+// see src/md/infrastructure/host.md
+
+// the root: --root (given), then CLANK_TALK_ROOT, then the folder where the host starts
+export function projectRoot(given, cwd, env = process.env) {
+  return nodePath.resolve(given || env.CLANK_TALK_ROOT || cwd);
+}
+
+function hasAgentsTalk(dir) {
+  try {
+    return statSync(nodePath.join(dir, "AGENTS.talk")).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// when the root has no AGENTS.talk: the nearest parent folder that has one, up to the home folder; else null
+// the root never changes on its own, because a higher root gives scripts more files
+export function parentAgentsTalk(root, home = os.homedir()) {
+  if (hasAgentsTalk(root)) {
+    return null;
+  }
+  let dir = nodePath.resolve(root);
+  while (dir !== home) {
+    const parent = nodePath.dirname(dir);
+    if (parent === dir) {
+      return null;
+    }
+    dir = parent;
+    if (hasAgentsTalk(dir)) {
+      return dir;
+    }
+  }
+  return null;
+}
+
+// a warning for each result while the root has no AGENTS.talk and a parent folder has one, or null
+export function rootWarning(root, home) {
+  const parent = parentAgentsTalk(root, home);
+  if (parent === null) {
+    return null;
+  }
+  return { message: "No AGENTS.talk in " + root + ", but " + parent + " has one. To use that folder as the project root, start the host there, set CLANK_TALK_ROOT=" + parent + ", or start the MCP server with --root " + parent + ". Tell the human." };
+}
 
 // read a harness policy file, and check it against its sha256 if a hash is given
 // file null: no policy; flags names the host's options, for the errors
@@ -133,6 +179,10 @@ export async function describeTool(root) {
   if (errors.length > 0) {
     text += "\n\nAGENTS.talk has errors: " + errors.map((e) => e.message + " at " + e.line + ":" + e.column).join("; ");
   }
+  const misplaced = rootWarning(root);
+  if (misplaced !== null) {
+    text += "\n\n" + misplaced.message;
+  }
   return text;
 }
 
@@ -146,6 +196,10 @@ export function formatResult(result, script, root) {
   const stale = staleCodeWarning();
   if (stale !== null) {
     warnings.push(stale);
+  }
+  const misplaced = root ? rootWarning(root) : null;
+  if (misplaced !== null) {
+    warnings.push(misplaced);
   }
   if (warnings.length > 0) {
     sections.push("--- warnings ---\n" + formatProblems(warnings, script, root));

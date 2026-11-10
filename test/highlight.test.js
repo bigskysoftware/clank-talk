@@ -1,11 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { highlight, highlightBash, highlightAudit } from "../docs/highlight.js";
+import { highlight, highlightBash, highlightAudit, highlightJson, highlightMarkdown } from "../docs/highlight.js";
 
 function plain(html) {
   return html.replace(/<[^>]+>/g, "").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&amp;", "&");
 }
+
+test("the JSON and Markdown highlighters mark their parts, and keep every character", () => {
+  const json = '{\n  "args": ["-y", 2, true],\n  "x": null\n}';
+  const jsonHtml = highlightJson(json);
+  assert.equal(plain(jsonHtml), json);
+  assert.match(jsonHtml, /<span class="tok-keyword">&quot;args&quot;<\/span>:/);
+  assert.match(jsonHtml, /<span class="tok-string">&quot;-y&quot;<\/span>/);
+  assert.match(jsonHtml, /<span class="tok-number">2<\/span>/);
+  const md = "## Tools\n\n- Use the `clank_talk` tool for **all** work.";
+  const mdHtml = highlightMarkdown(md);
+  assert.equal(plain(mdHtml), md);
+  assert.match(mdHtml, /<span class="tok-keyword">## Tools<\/span>/);
+  assert.match(mdHtml, /<span class="tok-path">`clank_talk`<\/span>/);
+});
 
 test("the bash highlighter marks keywords, strings, variables and comments, and keeps every character", () => {
   const code = "# bump\nfor f in ./config/*.json; do\n  v=$(jq -r '.version' \"$f\")\n  if [ \"$v\" -lt 2 ]; then echo $v#x; fi\ndone";

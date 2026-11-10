@@ -3,8 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { marked } from "marked";
-import { highlight, highlightBash, highlightAudit } from "./highlight.js";
-import { referenceMarkdown } from "../src/js/help.js";
+import { highlight, highlightBash, highlightAudit, highlightJson, highlightMarkdown } from "./highlight.js";
+import { referenceMarkdown, agentsTalkReferenceMarkdown } from "../src/js/help.js";
 
 const SRC = "docs";
 const OUT = "_site";
@@ -14,7 +14,9 @@ function escapeHtml(text) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// ```talk, ```bash and ```audit blocks get highlighted
+// ```talk, ```bash, ```audit, ```json and ```md blocks get highlighted
+const HIGHLIGHTERS = { talk: highlight, bash: highlightBash, audit: highlightAudit, json: highlightJson, md: highlightMarkdown };
+
 // a title after the language puts the block in a window: ```talk bump.talk
 marked.use({
   renderer: {
@@ -22,19 +24,12 @@ marked.use({
       const parts = (token.lang || "").trim().split(/\s+/);
       const lang = parts[0];
       const title = parts.slice(1).join(" ");
-      if (lang !== "talk" && lang !== "bash" && lang !== "audit" && title === "") {
+      const highlighter = Object.hasOwn(HIGHLIGHTERS, lang) ? HIGHLIGHTERS[lang] : null;
+      if (highlighter === null && title === "") {
         return false;
       }
-      let code;
-      if (lang === "talk") {
-        code = '<pre><code class="language-talk">' + highlight(token.text) + "</code></pre>\n";
-      } else if (lang === "bash") {
-        code = '<pre><code class="language-bash">' + highlightBash(token.text) + "</code></pre>\n";
-      } else if (lang === "audit") {
-        code = '<pre><code class="language-audit">' + highlightAudit(token.text) + "</code></pre>\n";
-      } else {
-        code = '<pre><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(token.text) + "</code></pre>\n";
-      }
+      const body = highlighter === null ? escapeHtml(token.text) : highlighter(token.text);
+      const code = '<pre><code class="language-' + escapeHtml(lang) + '">' + body + "</code></pre>\n";
       if (title === "") {
         return code;
       }
@@ -90,6 +85,7 @@ function page(md, outName) {
 
 // the reference is made from the help table, so it always agrees with help
 page('<div class="features">\n\n<img class="page-robot" src="img/clanktalk-robot.png" alt="A friendly robot">\n\n<p><a href="./">Home</a> | <a href="docs.html">Docs for Humans</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a> | <a href="https://github.com/sponsors/bigskysoftware">Sponsor</a></p>\n\n' + referenceMarkdown() + "\n\n</div>\n", "reference.html");
+page('<div class="features">\n\n<img class="page-robot" src="img/clanktalk-robot.png" alt="A friendly robot">\n\n<p><a href="./">Home</a> | <a href="docs.html">Docs for Humans</a> | <a href="policy.html">Policies for Teams</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>\n\n' + agentsTalkReferenceMarkdown() + "\n\n</div>\n", "agents-talk.html");
 
 for (const name of fs.readdirSync(SRC)) {
   if (SKIP.includes(name)) {

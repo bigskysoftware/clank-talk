@@ -742,20 +742,80 @@ export function referenceMarkdown() {
   for (const area of AREAS) {
     lines.push("<h2 id=\"" + slug(area.title) + "\">" + area.title + "</h2>", "", area.intro, "");
     for (const name of area.names) {
-      const entry = HELP.find((item) => item.name === name);
-      lines.push("### " + entry.name, "", "```text", entry.syntax, "```", "", descriptionText(entry, "- "), "");
-      if (entry.examples.length > 0) {
-        lines.push("<p class=\"examples-label\">Examples</p>", "");
-      }
-      for (const example of entry.examples) {
-        lines.push("```talk", example, "```", "");
-      }
+      entryMarkdown(HELP.find((item) => item.name === name), lines);
     }
   }
   lines.push("<h2 id=\"recipes\">Recipes</h2>", "", "Common tasks, step by step. In a script, `help recipes` shows the same.", "");
   for (const recipe of RECIPES) {
     lines.push("### " + recipe.name, "", recipe.description, "", "```talk", recipe.example, "```", "");
   }
+  return lines.join("\n");
+}
+
+// the steps that hooks can watch, with the fields of each step; see src/md/features/hooks.md
+export const HOOK_STEPS = [
+  ["read", "path, and text in an after hook"],
+  ["write, append", "kind, path, text"],
+  ["replace", "kind, path, old, new; for replace lines: from, to, text"],
+  ["put", "kind, path, line, where, text"],
+  ["remove", "kind, path, from, to"],
+  ["move", "kind, path, to"],
+  ["delete", "kind, path"],
+  ["change", "any file change above, with its kind"],
+  ["undo", "kind, path, text"],
+  ["run", "program, args, sandbox, secrets"],
+  ["start", "program, args, name, sandbox, secrets"],
+  ["stop", "name"],
+  ["git", "operation, args; files and message for commit; branch for switch, merge and rebase"],
+  ["fetch", "url, method, secrets, and status in an after hook"],
+  ["a tool name", "args, named"],
+];
+
+// the parts of the AGENTS.talk reference, in order
+const AGENTS_TALK_AREAS = [
+  { title: "Top Lines", intro: "At the top of AGENTS.talk: what scripts and programs can reach, and how the session is recorded.", names: ["allow", "limit", "audit"] },
+  { title: "Tools", intro: "What your agent can run.", names: ["tool", "run", "start", "process", "import"] },
+  { title: "Hooks", intro: "Your rules, before and after each step.", names: ["before", "after", "reject", "ask"] },
+];
+
+// one help entry, as Markdown: a heading, the syntax, the description and the examples
+function entryMarkdown(entry, lines) {
+  lines.push("### " + entry.name, "", "```text", entry.syntax, "```", "", descriptionText(entry, "- "), "");
+  if (entry.examples.length > 0) {
+    lines.push("<p class=\"examples-label\">Examples</p>", "");
+  }
+  for (const example of entry.examples) {
+    lines.push("```talk", example, "```", "");
+  }
+}
+
+/**
+ * The AGENTS.talk reference, as Markdown, for the site: every line that AGENTS.talk can hold.
+ * It comes from the same entries as help, so it cannot drift from the language.
+ */
+export function agentsTalkReferenceMarkdown() {
+  const lines = [
+    "# AGENTS.talk Reference",
+    "",
+    "Every line that `AGENTS.talk` can hold. For a guided tour, read [Your AGENTS.talk](docs.html#agents-talk). For rules across an organization, read [Policies for Teams](policy.html).",
+    "",
+    "<ul class=\"areas\">",
+  ];
+  for (const area of AGENTS_TALK_AREAS) {
+    lines.push("<li><a href=\"#" + slug(area.title) + "\">" + area.title + "</a></li>");
+  }
+  lines.push("<li><a href=\"#hook-steps\">Hook Steps</a></li>", "</ul>", "");
+  for (const area of AGENTS_TALK_AREAS) {
+    lines.push("<h2 id=\"" + slug(area.title) + "\">" + area.title + "</h2>", "", area.intro, "");
+    for (const name of area.names) {
+      entryMarkdown(HELP.find((item) => item.name === name), lines);
+    }
+  }
+  lines.push("<h2 id=\"hook-steps\">Hook Steps</h2>", "", "In a hook, `the <step>` holds the step, such as `the run's args`. Every step also has `labels`, the taint labels of what the command read. For `run` and `start`, `sandbox` is null, or `{ network, reads, writes }`.", "", "| Step | Fields |", "|---|---|");
+  for (const [step, fields] of HOOK_STEPS) {
+    lines.push("| `" + step + "` | " + fields + " |");
+  }
+  lines.push("");
   return lines.join("\n");
 }
 

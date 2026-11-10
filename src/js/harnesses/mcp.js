@@ -9,7 +9,7 @@
 
 import { watch } from "node:fs";
 import { run, stopAllProcesses, VERSION } from "../clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "../host.js";
+import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, rootWarning } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -243,10 +243,11 @@ export function readPolicy(args) {
  * @param {string[]} args  command line arguments: [--root <dir>] [--policy <file> [--policy-hash <sha256>]]
  */
 export function main(args) {
-  let root = process.cwd();
   const rootIndex = args.indexOf("--root");
-  if (rootIndex !== -1 && args[rootIndex + 1]) {
-    root = args[rootIndex + 1];
+  const root = projectRoot(rootIndex !== -1 ? args[rootIndex + 1] : null, process.cwd());
+  const misplaced = rootWarning(root);
+  if (misplaced !== null) {
+    process.stderr.write("clank-talk: " + misplaced.message + "\n");
   }
 
   // --policy <file> [--policy-hash <sha256>]: the harness's policy for this session; see src/md/features/policy.md
