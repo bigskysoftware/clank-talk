@@ -248,6 +248,11 @@ test('in an in block, line forms with no of use the block target', async () => {
   assert.equal(await readProject('a.txt'), 'top\nvar a\nend\n');
 });
 
+test('in an in block, a bare read reads the block target', async () => {
+  const result = await ok(`in ./a.txt do\n  read\n  print lines 1 to 1\n  read then remove lines 2 to 2\nend\nread ./a.txt\nprint it`);
+  assert.deepEqual(result.output, ['1: var x', 'var x\n']);
+});
+
 test('in an in block, a loop variable named line still works', async () => {
   const result = await ok(`in ./a.txt do\n  for line in lines of ./a.txt\n    print line\n  end\nend`);
   assert.deepEqual(result.output, ['var x', 'var y']);

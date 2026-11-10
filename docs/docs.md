@@ -308,7 +308,7 @@ That is a lot of `of ./src/app.js`. In an `in ... do` block, you can leave it of
 
 ```talk
 in ./src/app.js do
-  read ./src/app.js
+  read
   print lines 10 to 12
   replace lines 11 to 11 with 'let x = 2'
   put '// added' after line 12

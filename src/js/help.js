@@ -98,7 +98,7 @@ export const HELP = [
   {
     name: "in", kind: "command",
     syntax: "in <file or text> replace <old> with <new> | in <file or text> find <text> | in <file or text> do ... end",
-    description: "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'. In a 'do ... end' block, every replace and find with no target uses X, and so do line forms with no 'of' (lines 5 to 7, line 5, put ... after line 5, remove lines 5 to 7), and an 'in' inside the block starts a new command.",
+    description: "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'. In a 'do ... end' block, every replace and find with no target uses X, and so do a bare read and line forms with no 'of' (lines 5 to 7, line 5, put ... after line 5, remove lines 5 to 7), and an 'in' inside the block starts a new command.",
     examples: ["in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'", "in ./src/app.js do\n  replace 'var ' with 'let '\n  find 'TODO'\n  print the result\nend"],
   },
   {

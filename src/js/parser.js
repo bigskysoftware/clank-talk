@@ -1078,6 +1078,11 @@ export function parse(source, options = {}) {
 
   // read <expression>: puts the text of a file in the result
   function parseRead(token) {
+    // in an "in <target> do ... end" block, a read with nothing after it on its line reads the block's target
+    const next = current();
+    if (inTarget !== null && (next === undefined || next.line !== token.line || isWord("then"))) {
+      return { type: "read", file: inTarget, line: token.line, column: token.column };
+    }
     const file = parseAccess();
     return { type: "read", file, line: token.line, column: token.column };
   }
