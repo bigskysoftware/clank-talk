@@ -85,6 +85,7 @@ export function clankTalkExtension(pi, Type) {
           agent: agent || null,
           policy: session.policy,
           fetchHosts: session.fetchHosts,
+          privateHosts: session.privateHosts,
           processes: session.processes,
           audit: session.audit,
           ask: askFor(ctx),
@@ -106,7 +107,7 @@ export function clankTalkExtension(pi, Type) {
 }
 
 function newSession(root) {
-  return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
+  return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), privateHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
 }
 
 // "ask" in a script goes to a pi dialog, so the human answers, never the model

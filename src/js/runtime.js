@@ -182,6 +182,7 @@ function lineLabel(line) {
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
+ * @param {Set} [options.privateHosts]              hosts the human allowed private data to go to; pass the same Set for a session
  * @param {Object} [options.policy]                 the harness's policy: { name, source }, ClankTalk text; see src/md/features/policy.md
  * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
  * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to talk/audit/
@@ -289,6 +290,8 @@ async function execute(source, options, execution) {
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
     fetchHosts: options.fetchHosts || new Set(),
+    // hosts the human said yes to for private data; a host keeps the Set for a session
+    privateHosts: options.privateHosts || new Set(),
     // secrets from "allow secret" in AGENTS.talk, by name: { name, hosts, value }; value is null when not set
     secrets: secrets.secrets,
     // background processes by name; a host keeps the Map for a session, and stops them at the end
@@ -1892,6 +1895,7 @@ async function runProgram(command, state) {
   checkDenied("run", state, command);
   checkSandboxRequired("run", sandbox, state, command);
   await runHooks("before", ["run"], step, state, command);
+  await askUntrusted(state, "Run " + program, args.join(" "), command);
 
   const env = programEnv(command, state);
   let limit = state.timeLimit;
@@ -1969,6 +1973,12 @@ async function runGit(command, state) {
     checkDenied("writes", state, command);
   }
   await runHooks("before", ["git"], step, state, command);
+  // untrusted text in a commit message or a branch name
+  if (step.message !== undefined) {
+    await askUntrusted(state, "Commit", step.message, command);
+  } else if (step.branch !== undefined) {
+    await askUntrusted(state, "Use a branch name", step.branch, command);
+  }
 
   const env = gitEnv(process.env);
   // the repo config can make git run programs; if it does, git does not run
@@ -2523,6 +2533,7 @@ async function startProcess(command, state) {
   checkDenied("start", state, command);
   checkSandboxRequired("start", sandbox, state, command);
   await runHooks("before", ["start"], step, state, command);
+  await askUntrusted(state, "Start " + program, args.join(" "), command);
 
   let spawnProgramName = program;
   let spawnArgs = args;
@@ -2699,6 +2710,7 @@ async function runFetch(command, state) {
   step.method = method;
   step.secrets = secrets;
   await runHooks("before", ["fetch"], step, state, command);
+  await askPrivate(state, url, command);
 
   let limit = shorter(state.timeLimit, FETCH_TIME_LIMIT);
   if (command.within !== null) {
@@ -2932,6 +2944,36 @@ async function askHuman(command, state) {
 // a question to the human waits at most this long, unless "within" says otherwise;
 // a client that cannot show the dialog (for example on a phone) must not hang the script
 const ASK_TIME_LIMIT = 2 * 60 * 1000;
+
+// ----- taint questions; see src/md/features/taint.md -----
+
+// untrusted text in an action: ask the human each time; no answer, or no, is an error
+// labels are the command's labels so far, which hold the labels of its arguments
+async function askUntrusted(state, action, text, node) {
+  const labels = taint.current(state);
+  if (!taint.has(labels, taint.UNTRUSTED)) {
+    return;
+  }
+  const question = redact(taint.untrustedQuestion(action, labels, text), state);
+  const answer = await askState(state, question, ["yes", "no"], null);
+  if (answer !== "yes") {
+    throw new ScriptError("The human did not approve untrusted text from " + taint.originsText(labels, taint.UNTRUSTED) + " here" + askReason(state) + ".", node);
+  }
+}
+
+// private data in a fetch: ask the human once for each host in a session
+async function askPrivate(state, url, node) {
+  const labels = taint.current(state);
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
+  if (!taint.has(labels, taint.PRIVATE) || state.privateHosts.has(host)) {
+    return;
+  }
+  const answer = await askState(state, "Send private data to " + host + "?", ["yes", "no"], null);
+  if (answer !== "yes") {
+    throw new ScriptError("The human did not approve sending private data to " + host + askReason(state) + ".", node);
+  }
+  state.privateHosts.add(host);
+}
 
 // why an approval did not come: no way to ask, or no answer in time; empty for a plain "no"
 function askReason(state) {

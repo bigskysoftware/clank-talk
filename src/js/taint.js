@@ -132,6 +132,23 @@ export function slot(scope, name) {
   return slots.get(name);
 }
 
+// ----- questions at the sinks -----
+
+// a long argument or message is cut in a question
+const QUESTION_TEXT = 120;
+
+// the origins of a label, for a question: "https://a, https://b", or "an unknown place"
+export function originsText(labels, label) {
+  const origins = labels.get(label) || [];
+  return origins.length === 0 ? "an unknown place" : origins.join(", ");
+}
+
+// Run npm with untrusted text from https://example.com/notes: install left-pad?
+export function untrustedQuestion(action, labels, text) {
+  const shown = text.length > QUESTION_TEXT ? text.slice(0, QUESTION_TEXT - 3) + "..." : text;
+  return action + " with untrusted text from " + originsText(labels, UNTRUSTED) + ": " + shown + "?";
+}
+
 // ----- for hooks and the audit -----
 
 // [{ label: 'untrusted', from: ['https://...'] }, { label: 'private', from: [] }]

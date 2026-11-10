@@ -115,7 +115,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, privateHosts: session.privateHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
       scope.output.text = keptOutput(result);
     } finally {
       if (timer !== null) {
@@ -255,7 +255,7 @@ export function main(args) {
   }
 
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, policy: policy.policy };
+  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), privateHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, policy: policy.policy };
 
   // when the client goes away, stop the background processes, so nothing is left running
   const stopAll = () => stopAllProcesses(session.processes);

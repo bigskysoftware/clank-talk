@@ -2,8 +2,8 @@
 
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
-Built (branch 1, taint-core): the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, and the audit notes.
-Not built yet: the questions at the sinks (branch 2), file labels and `talk/taint.json` (branch 3), the docs (branch 4).
+Built: the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, the audit notes, and the questions at the sinks.
+Not built yet: file labels and `talk/taint.json` (branch 3), the docs (branch 4).
 
 Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 
@@ -39,15 +39,15 @@ Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 - Approved (built): a step notes the labels of what its command read: `run  echo ...  code 0, 0.1 s  (untrusted from https://example.com/notes)`. A fetch line notes `untrusted` with its URL. A call to an untrusted tool notes `untrusted from tool issue`.
 - Approved (built): all file text is private, so a read or a file change notes only `untrusted`. Why: `(private)` on every file change is noise.
 - Approved (built): JSON audit records have a `labels` field.
-- Approved: taint questions and their answers are recorded as `ask` steps (branch 2). `taint.json` changes and hash drops are recorded (branch 3).
+- Approved (built): taint questions and their answers are recorded as `ask` steps. `taint.json` changes and hash drops are recorded (branch 3).
 
-## Sinks (branch 2)
+## Sinks
 
-- Approved: `private` in a fetch URL, headers or body: ask once for each host in a session: `Send private data to api.github.com?`
-- Approved: `untrusted` in a `run` or `start` argument: ask each time: `Run npm with untrusted text from https://...: <argument>?`
-- Approved: `untrusted` in a git commit message or branch name: ask each time.
+- Approved (built): `private` in a fetch URL, headers or body: ask once for each host in a session: `Send private data to api.github.com?` The host keeps the hosts for the session (`privateHosts`). The question comes after the `before fetch` hooks, so a hook can refuse first.
+- Approved (built): `untrusted` in a `run` or `start` argument: ask each time: `Run npm with untrusted text from https://...: install left-pad?` The question shows all the arguments, cut at 120 characters, with secrets as `<secret NAME>`.
+- Approved (built): `untrusted` in a git commit message or branch name: ask each time: `Commit with untrusted text from ...: <message>?`, `Use a branch name with untrusted text from ...: <name>?`
 - Approved: `untrusted` written to a file: allowed; the file remembers the label. In a tool argument: allowed; the checks apply inside the tool.
-- Approved: no answer, or no, is an error.
+- Approved (built): no answer, or no, is an error: `The human did not approve untrusted text from https://... here.` The questions and answers are `ask` steps in the audit.
 - Later, if the questions get noisy: an AGENTS.talk line to skip the question for a host.
 
 ## Files (branch 3)
