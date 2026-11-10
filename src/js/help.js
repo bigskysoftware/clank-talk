@@ -103,8 +103,8 @@ export const HELP = [
   },
   {
     name: "find", kind: "command",
-    syntax: "find <text or pattern> in <file, list of files, or text>   (also a value: set hits to find 'x' in f)",
-    description: "Put the lines that contain the text in the result. Each line has number and text, and file when it comes from a file. print shows path:number: text. The match is plain text, and letter case counts.",
+    syntax: "find <text or pattern> in <file, list of files, lines, or text>   (also a value: set hits to find 'x' in f)",
+    description: "Put the lines that contain the text in the result. Each line has number and text, and file when it comes from a file. print shows path:number: text. The match is plain text, and letter case counts. In lines, such as 'lines 5 to 9 of f' or an earlier find, the lines keep their numbers and files.",
     examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'all good' end", "set hits to find 'TODO' in ./src/**/*.js\nprint hits's length"],
   },
   {

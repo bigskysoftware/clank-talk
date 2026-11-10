@@ -162,3 +162,8 @@ test("first <n> of and last <n> of give up to n items", async () => {
   assert.match((await errors("print first 1.5 of [1]"))[0], /needs a whole number of items/);
   assert.match((await errors("print first 2 of 7"))[0], /needs a list, a file or text/);
 });
+
+test("find in a list of lines keeps their numbers", async () => {
+  const script = "set t to 'a TODO\nb\nc TODO\nd TODO'\nprint find 'TODO' in lines 2 to 4 of t\nprint find 'c' in find 'TODO' in t";
+  assert.deepEqual(await output(script), ["3: c TODO\n4: d TODO", "3: c TODO"]);
+});

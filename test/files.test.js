@@ -189,7 +189,7 @@ test('find is also a value', async () => {
 
 test('find errors', async () => {
   assert.deepEqual(await errors(`find '' in ./notes.txt`), ['Cannot find empty text']);
-  assert.deepEqual(await errors(`find 'x' in 5`), ["'find' needs a file, a list of files, or text, found 5"]);
+  assert.deepEqual(await errors(`find 'x' in 5`), ["'find' needs a file, a list of files, lines, or text, found 5"]);
   assert.deepEqual((await errors(`find 'x' ./notes.txt`))[0], "Expected 'in'");
 });
 

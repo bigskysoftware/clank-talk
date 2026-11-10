@@ -4740,13 +4740,17 @@ async function findLines(text, wanted, state, node) {
   if (typeof target === "string") {
     return await matchingLines(text, splitLines(target), state, node);
   }
+  // a list of lines, such as "lines 5 to 9 of f" or an earlier find: the lines keep their numbers and files
+  if (isListOfLines(target)) {
+    return await matchingLines(text, target, state, node);
+  }
   let files = null;
   if (target instanceof FileRef) {
     files = [target];
   } else if (Array.isArray(target) && target.every((item) => item instanceof FileRef)) {
     files = target;
   } else {
-    throw new ScriptError("'find' needs a file, a list of files, or text, found " + describe(target), node);
+    throw new ScriptError("'find' needs a file, a list of files, lines, or text, found " + describe(target), node);
   }
   const found = [];
   for (const file of files) {
