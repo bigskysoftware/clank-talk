@@ -582,6 +582,17 @@ export function parse(source, options = {}) {
       }
     }
 
+    // secret NAME: a value that the script can send to an allowed host, but never see
+    // only with a name after it on the same line, so "secret" alone stays a plain word, as in "set secret to 1"
+    if (isWord("secret")) {
+      const after = tokens[i + 1];
+      if (after !== undefined && after.line === current().line && after.type === "word" && !LINK_WORDS.includes(after.value)) {
+        const secretToken = current();
+        i += 2;
+        return node("secret", secretToken, { name: after.value });
+      }
+    }
+
     // read as an expression: set readme to read @/README.md
     if (isWord("read")) {
       const readToken = current();
@@ -1881,27 +1892,20 @@ export function parse(source, options = {}) {
         return null;
       }
       i++;
-      const hosts = [];
-      while (true) {
-        const host = current();
-        if (host === undefined || host.type !== "string") {
-          error("Expected a host in quotes, such as 'api.github.com'");
-          return null;
-        }
-        i++;
-        hosts.push(host.value.toLowerCase());
-        if (!isOp(",")) {
-          break;
-        }
-        i++;
+      const hosts = parseHosts();
+      if (hosts === null) {
+        return null;
       }
       return { type: "allowFetch", hosts, line: token.line, column: token.column };
     }
     if (isWord("changes")) {
       return parseAllowChanges(token);
     }
+    if (isWord("secret")) {
+      return parseAllowSecret(token);
+    }
     if (!isWord("env")) {
-      error("Expected 'env', 'changes to' or 'fetch from'");
+      error("Expected 'env', 'changes to', 'fetch from' or 'secret'");
       return null;
     }
     i++;
@@ -1918,6 +1922,55 @@ export function parse(source, options = {}) {
       i++;
     }
     return { type: "allowEnv", names, line: token.line, column: token.column };
+  }
+
+  // allow secret NAME for fetch to 'api.github.com', '*.github.com'
+  // see src/md/features/secrets.md
+  function parseAllowSecret(token) {
+    i++;
+    const name = parseName();
+    if (name === null) {
+      return null;
+    }
+    if (!isWord("for")) {
+      error("Expected 'for', as in: allow secret " + name + " for fetch to 'api.github.com'");
+      return null;
+    }
+    i++;
+    if (!isWord("fetch")) {
+      error("Expected 'fetch', as in: allow secret " + name + " for fetch to 'api.github.com'");
+      return null;
+    }
+    i++;
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const hosts = parseHosts();
+    if (hosts === null) {
+      return null;
+    }
+    return { type: "allowSecret", name, hosts, line: token.line, column: token.column };
+  }
+
+  // 'api.github.com', '*.npmjs.org': hosts in quotes, lower case
+  function parseHosts() {
+    const hosts = [];
+    while (true) {
+      const host = current();
+      if (host === undefined || host.type !== "string") {
+        error("Expected a host in quotes, such as 'api.github.com'");
+        return null;
+      }
+      i++;
+      hosts.push(host.value.toLowerCase());
+      if (!isOp(",")) {
+        break;
+      }
+      i++;
+    }
+    return hosts;
   }
 
   // allow changes to <path>, <path>: hidden paths that scripts can change

@@ -86,6 +86,68 @@ class Line {
   }
 }
 
+// a secret: text that a script can send to an allowed host, but never see; see src/md/features/secrets.md
+// the parts are text and { name, value } items, so 'Bearer ' + secret X is still a secret
+class Secret {
+  #parts;
+
+  constructor(parts) {
+    this.#parts = parts;
+  }
+
+  // text or a secret, joined with text or a secret: always a secret
+  static join(left, right) {
+    return new Secret([...Secret.partsOf(left), ...Secret.partsOf(right)]);
+  }
+
+  static partsOf(value) {
+    if (value instanceof Secret) {
+      return value.#parts;
+    }
+    return [toText(value)];
+  }
+
+  // the names of the secrets in it, each once
+  names() {
+    const names = [];
+    for (const part of this.#parts) {
+      if (typeof part !== "string" && !names.includes(part.name)) {
+        names.push(part.name);
+      }
+    }
+    return names;
+  }
+
+  // what print shows: Bearer <secret GITHUB_TOKEN>
+  shown() {
+    return this.#parts.map((part) => typeof part === "string" ? part : "<secret " + part.name + ">").join("");
+  }
+
+  // the real text, only for an allowed place
+  reveal() {
+    return this.#parts.map((part) => typeof part === "string" ? part : part.value).join("");
+  }
+
+  // JSON and plain JavaScript text never get the value: they fail, so a missed place fails closed
+  toJSON() {
+    throw new SecretUse(this, null);
+  }
+
+  toString() {
+    throw new SecretUse(this, null);
+  }
+}
+
+// a secret went to a place where it cannot go; runCommands gives it the command's line
+// where is a word for the error, such as "'is'", or null to use the command's name
+class SecretUse extends ScriptError {
+  constructor(secret, where) {
+    super("A secret cannot be used here: " + secret.names().join(", "), { line: 0, column: 0 });
+    this.secret = secret;
+    this.where = where;
+  }
+}
+
 // how print starts a line: "12: ", or "src/a.js:12: " for a line from find
 function lineLabel(line) {
   if (line.file !== null) {
@@ -188,6 +250,10 @@ async function execute(source, options, execution) {
   if (policyErrors.length > 0) {
     return finish(execution, "failed", policyErrors);
   }
+  const secrets = await loadSecrets(root, agents.allowedSecrets);
+  if (secrets.errors.length > 0) {
+    return finish(execution, "failed", secrets.errors);
+  }
   // policy hooks run first, and AGENTS.talk cannot remove them
   const policyHookErrors = [];
   for (const hook of policy.hooks) {
@@ -221,6 +287,8 @@ async function execute(source, options, execution) {
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
     fetchHosts: options.fetchHosts || new Set(),
+    // secrets from "allow secret" in AGENTS.talk, by name: { name, hosts, value }; value is null when not set
+    secrets: secrets.secrets,
     // background processes by name; a host keeps the Map for a session, and stops them at the end
     processes: options.processes || new Map(),
     // the full print output of the last script, from the host; null before the first script
@@ -292,8 +360,207 @@ async function execute(source, options, execution) {
 
   execution.patterns.stop();
   recordUndo(state);
+  // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
+  failure = failure.map((error) => ({ ...error, message: redact(error.message, state) }));
+  for (const warning of execution.warnings) {
+    warning.message = redact(warning.message, state);
+  }
   await writeAudit(state, source, status, failure);
   return finish(execution, status, failure);
+}
+
+// ----- secrets -----
+// see src/md/features/secrets.md
+
+// a value shorter than this would match common text, so it cannot be kept out of the output
+const SECRET_MIN_LENGTH = 8;
+
+// the values of the secrets that AGENTS.talk allows: the environment first, then .env.local, then .env
+// the files are read on each run, so a change takes effect at once
+async function loadSecrets(root, allowed) {
+  const secrets = new Map();
+  const errors = [];
+  if (allowed.length === 0) {
+    return { secrets, errors };
+  }
+  const local = await readEnvFile(nodePath.join(root, ".env.local"));
+  const base = await readEnvFile(nodePath.join(root, ".env"));
+  for (const { name, hosts, where } of allowed) {
+    let entry = secrets.get(name);
+    if (entry === undefined) {
+      let value = process.env[name];
+      if (value === undefined || value === "") {
+        value = local[name];
+      }
+      if (value === undefined || value === "") {
+        value = base[name];
+      }
+      if (value === undefined || value === "") {
+        value = null;
+      }
+      if (value !== null && value.length < SECRET_MIN_LENGTH) {
+        errors.push({ message: "The value of secret " + name + " is shorter than " + SECRET_MIN_LENGTH + " characters, so it cannot be kept out of the output. Use a longer value, or remove the allow line.", ...where });
+      }
+      entry = { name, hosts: [], value };
+      secrets.set(name, entry);
+    }
+    entry.hosts.push(...hosts);
+  }
+  return { secrets, errors };
+}
+
+// KEY=value lines, as dotenv reads them: # comments, "export ", quotes; a missing file is empty
+async function readEnvFile(absolute) {
+  let text;
+  try {
+    text = await fs.readFile(absolute, "utf8");
+  } catch (err) {
+    return Object.create(null);
+  }
+  return parseEnvFile(text);
+}
+
+function parseEnvFile(text) {
+  const values = Object.create(null);
+  for (const raw of text.split("\n")) {
+    let line = raw.trim();
+    if (line === "" || line.startsWith("#")) {
+      continue;
+    }
+    if (line.startsWith("export ")) {
+      line = line.slice(7).trim();
+    }
+    const equals = line.indexOf("=");
+    if (equals < 1) {
+      continue;
+    }
+    const key = line.slice(0, equals).trim();
+    let value = line.slice(equals + 1).trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    if (close > 0) {
+      value = value.slice(1, close);
+      // in double quotes, \n is a line break
+      if (quote === '"') {
+        value = value.replaceAll("\\n", "\n");
+      }
+    } else {
+      // with no quotes, " #" starts a comment
+      const hash = value.indexOf(" #");
+      if (hash !== -1) {
+        value = value.slice(0, hash).trim();
+      }
+    }
+    values[key] = value;
+  }
+  return values;
+}
+
+// secret NAME: an error if AGENTS.talk does not allow it, or if it has no value
+function secretValue(node, state) {
+  const entry = state.secrets.get(node.name);
+  if (entry === undefined) {
+    throw new ScriptError("AGENTS.talk does not allow secret " + node.name + ".\nTo allow it, a human can add this line to AGENTS.talk:\n  allow secret " + node.name + " for fetch to '<host>'", node);
+  }
+  if (entry.value === null) {
+    throw new ScriptError("No value for secret " + node.name + ". Put it in the environment, in .env.local or in .env.", node);
+  }
+  return new Secret([{ name: node.name, value: entry.value }]);
+}
+
+// the error for a secret in the wrong place, with the places where it can go
+function secretUseMessage(secret, where, state) {
+  const names = secret.names();
+  const hosts = [];
+  for (const name of names) {
+    const entry = state.secrets.get(name);
+    if (entry !== undefined) {
+      for (const host of entry.hosts) {
+        if (!hosts.includes(host)) {
+          hosts.push(host);
+        }
+      }
+    }
+  }
+  const start = where === null ? "A secret cannot be used here: " : "A secret cannot go into " + where + ": ";
+  return start + names.join(", ") + ". Use it in fetch headers or body to " + hosts.join(", ") + ".";
+}
+
+// the text with each allowed secret's value as <secret NAME>
+function redact(text, state) {
+  if (typeof text !== "string") {
+    return text;
+  }
+  for (const entry of state.secrets.values()) {
+    if (entry.value !== null) {
+      text = text.split(entry.value).join("<secret " + entry.name + ">");
+    }
+  }
+  return text;
+}
+
+// a copy of a value with each secret as <secret NAME>, for print and error messages
+// lists and plain objects are copied only when they hold a secret
+function showSecrets(value) {
+  if (value instanceof Secret) {
+    return value.shown();
+  }
+  if (!hasSecret(value)) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(showSecrets);
+  }
+  const copy = Object.create(null);
+  for (const key of Object.keys(value)) {
+    copy[key] = showSecrets(value[key]);
+  }
+  return copy;
+}
+
+// does a value, or a list or plain object in it, hold a secret?
+function hasSecret(value) {
+  if (value instanceof Secret) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasSecret);
+  }
+  if (isPlainObject(value)) {
+    return Object.values(value).some(hasSecret);
+  }
+  return false;
+}
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}
+
+// a copy of a value with each secret as its real text, for a fetch; the names go into used
+function revealSecrets(value, used) {
+  if (value instanceof Secret) {
+    for (const name of value.names()) {
+      if (!used.includes(name)) {
+        used.push(name);
+      }
+    }
+    return value.reveal();
+  }
+  if (!hasSecret(value)) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => revealSecrets(item, used));
+  }
+  const copy = Object.create(null);
+  for (const key of Object.keys(value)) {
+    copy[key] = revealSecrets(value[key], used);
+  }
+  return copy;
 }
 
 // an error object for the host; "file" is there only for errors in AGENTS.talk
@@ -519,7 +786,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -585,6 +852,14 @@ async function loadAgentsTalk(root, hostTools) {
           result.auditFormat = definition.format;
         } else {
           result.errors.push({ message: "'audit as' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "allowSecret") {
+        if (file.name === AGENTS_TALK) {
+          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, where });
+        } else {
+          result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -741,7 +1016,13 @@ async function runCommands(commands, state, tools, maxSteps) {
     let signal;
     try {
       signal = await runCommand(command, state, tools, maxSteps);
-    } catch (err) {
+    } catch (caught) {
+      let err = caught;
+      // a secret in the wrong place: the error points at this command, and names it
+      if (err instanceof SecretUse) {
+        const word = SECRET_COMMAND_WORDS.includes(command.type) ? command.type : null;
+        err = new ScriptError(secretUseMessage(err.secret, err.where || word, state), command);
+      }
       if (!canHandle(err, state)) {
         throw err;
       }
@@ -758,6 +1039,9 @@ async function runCommands(commands, state, tools, maxSteps) {
   }
   return null;
 }
+
+// commands that a secret error names: "A secret cannot go into write: X"
+const SECRET_COMMAND_WORDS = ["write", "append", "replace", "put", "remove", "run", "start", "git", "ask", "find", "wait", "stop"];
 
 // the "on error" block at the top level of a script or tool, or null
 function findHandler(commands) {
@@ -816,12 +1100,13 @@ async function runLoopBody(node, state, tools, maxSteps) {
 
 async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
-    const value = await evaluate(command.value, state);
+    // a secret shows as <secret NAME>, and a secret's value in other text too
+    const value = showSecrets(await evaluate(command.value, state));
     // print shows a list of lines with their numbers, as an editor does
     if (isListOfLines(value)) {
-      state.execution.output.push(value.map((line) => lineLabel(line) + line.text).join("\n"));
+      state.execution.output.push(redact(value.map((line) => lineLabel(line) + line.text).join("\n"), state));
     } else {
-      state.execution.output.push(toText(value));
+      state.execution.output.push(redact(toText(value), state));
     }
     return;
   }
@@ -1072,7 +1357,7 @@ async function runCommand(command, state, tools, maxSteps) {
     step.args = args;
     step.named = named;
     await runHooks("before", [command.name], step, state, command);
-    auditStep(state, "tool", command.name, args.map((arg) => toText(arg)).join(", "));
+    auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).join(", "));
 
     const definition = state.definitions[command.name];
     if (definition !== undefined) {
@@ -1186,15 +1471,24 @@ async function evaluate(node, state) {
     return null;
   }
   if (type === "template") {
+    // 'Bearer ${secret X}' is a secret
     let text = "";
     for (const part of node.parts) {
       if (typeof part === "string") {
-        text += part;
+        text = text instanceof Secret ? Secret.join(text, part) : text + part;
+        continue;
+      }
+      const value = await asText(await evaluate(part, state), state, part);
+      if (text instanceof Secret || value instanceof Secret) {
+        text = Secret.join(text, value);
       } else {
-        text += toText(await asText(await evaluate(part, state), state, part));
+        text += toText(value);
       }
     }
     return text;
+  }
+  if (type === "secret") {
+    return secretValue(node, state);
   }
   if (type === "result") {
     return state.result;
@@ -1247,7 +1541,7 @@ async function evaluate(node, state) {
     if (record === undefined) {
       return null;
     }
-    return new ProcessInfo(record);
+    return new ProcessInfo(record, state);
   }
   if (type === "previousOutput") {
     return state.previousOutput;
@@ -1292,7 +1586,11 @@ async function evaluate(node, state) {
     return getProperty(object, index, node);
   }
   if (type === "unary") {
-    return evaluateUnary(node, await evaluate(node.value, state));
+    const value = await evaluate(node.value, state);
+    if (value instanceof Secret) {
+      throw new SecretUse(value, "'" + node.operator + "'");
+    }
+    return evaluateUnary(node, value);
   }
   if (type === "check") {
     // "x exists" asks if a variable is set, so an unset variable is not an error here
@@ -1301,6 +1599,9 @@ async function evaluate(node, state) {
       return node.operator === "does not exist";
     }
     let value = await evaluate(node.value, state);
+    if (value instanceof Secret) {
+      throw new SecretUse(value, "'" + node.operator + "'");
+    }
     if (value instanceof Line) {
       value = value.text;
     }
@@ -1314,7 +1615,11 @@ async function evaluate(node, state) {
     return evaluateCheck(node, value);
   }
   if (type === "conversion") {
-    return convert(node, await evaluate(node.value, state));
+    const value = await evaluate(node.value, state);
+    if (value instanceof Secret) {
+      throw new SecretUse(value, "'as " + node.to + "'");
+    }
+    return convert(node, value);
   }
   if (type === "binary") {
     // "and" and "or" do not evaluate the right side if they do not need it
@@ -1326,6 +1631,10 @@ async function evaluate(node, state) {
     }
     let left = await evaluate(node.left, state);
     let right = await evaluate(node.right, state);
+    // a secret can only be joined with +: a check such as "is" tells something about its value
+    if (node.operator !== "+" && (left instanceof Secret || right instanceof Secret)) {
+      throw new SecretUse(left instanceof Secret ? left : right, "'" + node.operator + "'");
+    }
     // <text> matches pattern '<regexp>'
     if (node.operator === "matches") {
       if (!(right instanceof Pattern)) {
@@ -1445,6 +1754,8 @@ async function runProgram(command, state) {
   }
 
   auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s");
+  // the output can hold a secret's value, for example from "env"
+  result.output = redact(result.output, state);
 
   // after hooks see the result
   state.result = result;
@@ -2003,11 +2314,12 @@ const PROCESS_OUTPUT_BYTES = 64 * 1024;
 
 // one item of "the processes", or the value of "process <name>": a snapshot, not the live process
 class ProcessInfo {
-  constructor(record) {
+  constructor(record, state) {
     this.name = record.name;
     this.status = record.status;
     this.code = record.code;
-    this.output = record.output;
+    // the output can hold a secret's value
+    this.output = redact(record.output, state);
   }
 }
 
@@ -2093,7 +2405,7 @@ async function startProcess(command, state) {
   state.processes.delete(name);
   state.processes.set(name, record);
   auditStep(state, "start", name, sandboxText(sandbox) + [program, ...args].join(" "));
-  return new ProcessInfo(record);
+  return new ProcessInfo(record, state);
 }
 
 // stop process <name>: any script can stop a process that ClankTalk started
@@ -2111,7 +2423,7 @@ async function stopProcess(command, state) {
     await endProcess(record);
     auditStep(state, "stop", name, "");
   }
-  return new ProcessInfo(record);
+  return new ProcessInfo(record, state);
 }
 
 // end the process group, and wait up to 2 seconds before a hard kill
@@ -2162,7 +2474,7 @@ export function stopAllProcesses(processes) {
 function processList(state) {
   const list = [];
   for (const record of state.processes.values()) {
-    list.unshift(new ProcessInfo(record));
+    list.unshift(new ProcessInfo(record, state));
   }
   return list;
 }
@@ -2177,11 +2489,18 @@ const FETCH_MAX_REDIRECTS = 5;
 // see src/md/features/fetch.md
 async function runFetch(command, state) {
   checkDenied("fetch", state, command);
-  const url = parseUrl(toText(await evaluate(command.url, state)), command.url);
+  const urlValue = await evaluate(command.url, state);
+  // URLs go into the audit, hooks and errors, so a secret cannot go there
+  if (urlValue instanceof Secret) {
+    throw new ScriptError(secretUseMessage(urlValue, "the fetch URL", state), command.url);
+  }
+  const url = parseUrl(toText(urlValue), command.url);
 
   let method = "GET";
   let headers = {};
   let body;
+  // the names of the secrets in the headers and the body
+  const secrets = [];
   for (const arg of command.named) {
     const value = await evaluate(arg.value, state);
     if (arg.name === "method") {
@@ -2191,12 +2510,14 @@ async function runFetch(command, state) {
         throw new ScriptError("headers must be an object, such as { 'Accept': 'text/plain' }", arg.value);
       }
       for (const name of Object.keys(value)) {
-        headers[name] = toText(value[name]);
+        headers[name] = toText(revealSecrets(value[name], secrets));
       }
     } else if (arg.name === "body") {
       // an object or a list goes as JSON
-      if (value !== null && typeof value === "object") {
-        body = JSON.stringify(value);
+      if (value instanceof Secret) {
+        body = revealSecrets(value, secrets);
+      } else if (value !== null && typeof value === "object") {
+        body = JSON.stringify(revealSecrets(value, secrets));
         if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
           headers["Content-Type"] = "application/json";
         }
@@ -2208,9 +2529,12 @@ async function runFetch(command, state) {
     }
   }
 
+  checkSecretHosts(secrets, url, state, command);
+
   const step = Object.create(null);
   step.url = url.href;
   step.method = method;
+  step.secrets = secrets;
   await runHooks("before", ["fetch"], step, state, command);
 
   let limit = shorter(state.timeLimit, FETCH_TIME_LIMIT);
@@ -2244,29 +2568,34 @@ async function runFetch(command, state) {
     }
     const previous = current;
     current = parseUrl(new URL(location, current).href, command);
+    // a redirect can send the request on to another place, so the audit records each one
+    auditStep(state, "redirect", previous.href, response.status + " to " + current.href);
     // on a redirect to another origin (scheme, host or port), the script's headers stay behind,
     // because they often hold a key for the first host; a body is not sent on, it is an error
+    // a 303, or a 301 or 302 after a POST, goes on as a GET with no body, as browsers do
+    const becomesGet = response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST");
     if (current.origin !== previous.origin) {
       headers = {};
-      if (body !== undefined && (response.status === 307 || response.status === 308)) {
+      // any other redirect keeps the body, for example a 307, or a 301 after a PUT
+      if (body !== undefined && !becomesGet) {
         throw new ScriptError("fetch will not send the body on to another host: " + previous.origin + " redirects to " + current.origin, command);
       }
     }
-    // a 303, or a 301 or 302 after a POST, goes on as a GET with no body, as browsers do
-    if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST")) {
+    if (becomesGet) {
       method = "GET";
       body = undefined;
     }
   }
 
-  const text = await readLimited(response, current, command);
+  // a server can send a secret's value back, so the response text shows <secret NAME>
+  const text = redact(await readLimited(response, current, command), state);
   step.status = response.status;
 
   let result;
   if (command.as === "response") {
     const responseHeaders = Object.create(null);
     for (const [name, value] of response.headers) {
-      responseHeaders[name] = value;
+      responseHeaders[name] = redact(value, state);
     }
     result = { status: response.status, headers: responseHeaders, text };
   } else {
@@ -2283,7 +2612,8 @@ async function runFetch(command, state) {
       result = text;
     }
   }
-  auditStep(state, "fetch", method + " " + current.href, response.status + ", " + Buffer.byteLength(text) + " bytes");
+  const secretNote = secrets.length === 0 ? "" : "  (secret " + secrets.join(", ") + ")";
+  auditStep(state, "fetch", method + " " + current.href, response.status + ", " + Buffer.byteLength(text) + " bytes" + secretNote);
   state.result = result;
   await runHooks("after", ["fetch"], step, state, command);
   return result;
@@ -2323,6 +2653,17 @@ async function readLimited(response, url, node) {
     chunks.push(value);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+// each secret can go only to the hosts in its "allow secret" line
+function checkSecretHosts(secrets, url, state, node) {
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
+  for (const name of secrets) {
+    const entry = state.secrets.get(name);
+    if (!isAllowedFetchHost(host, entry.hosts)) {
+      throw new ScriptError("A secret cannot go to " + host + ": " + name + ". It can go only to " + entry.hosts.join(", ") + ".", node);
+    }
+  }
 }
 
 // a host is allowed if AGENTS.talk names it, or the human said yes in this session
@@ -2499,7 +2840,7 @@ function localDate(date) {
 
 // one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
 function auditStep(state, kind, target, details) {
-  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: String(target), details: details || "", from: state.auditFrom };
+  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact(details || "", state), from: state.auditFrom };
   state.auditSteps.push(record);
   state.audit.records.push(record);
   if (state.audit.records.length > AUDIT_RECORDS) {
@@ -2945,6 +3286,9 @@ function getProperty(object, name, node) {
   if (object === null || object === undefined) {
     return null;
   }
+  if (object instanceof Secret) {
+    throw new SecretUse(object, "'" + name + "'");
+  }
   if (typeof object !== "object" && typeof object !== "string") {
     return null;
   }
@@ -3005,6 +3349,9 @@ function evaluateBinary(node, left, right) {
   const op = node.operator;
 
   if (op === "+") {
+    if (left instanceof Secret || right instanceof Secret) {
+      return Secret.join(left, right);
+    }
     if (typeof left === "string" || typeof right === "string") {
       return toText(left) + toText(right);
     }
@@ -3715,6 +4062,10 @@ function toText(value) {
   if (value === null || value === undefined) {
     return "null";
   }
+  // a secret has no text; only print and an allowed fetch handle it
+  if (value instanceof Secret) {
+    throw new SecretUse(value, null);
+  }
   // print shows a file as its path, so a list of many files stays short
   if (value instanceof FileRef) {
     return value.path;
@@ -3826,7 +4177,7 @@ async function findLines(text, wanted, state, node) {
 
 // a value for an error message: text in quotes, and a long value cut short
 function describe(value) {
-  let text = toText(value);
+  let text = toText(showSecrets(value));
   let more = "";
   if (text.length > DESCRIBE_LENGTH) {
     more = "... (" + text.length + " characters)";

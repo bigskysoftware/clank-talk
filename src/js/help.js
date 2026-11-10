@@ -204,6 +204,12 @@ export const HELP = [
     examples: ["fetch https://api.github.com/repos/bigskysoftware/htmx as json\nprint it's stargazers_count", "fetch https://example.com/api as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
   },
   {
+    name: "secret", kind: "expression",
+    syntax: "secret <NAME>",
+    description: "A secret from the environment, .env.local or .env, that you can send but never see. It goes only into fetch headers or body, to the hosts in its 'allow secret' line. print shows <secret NAME>; any other use is an error. 'Bearer ' + secret X is still a secret. Its value shows as <secret NAME> in output.",
+    examples: ["fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer ' + secret GITHUB_TOKEN }\nprint it's login"],
+  },
+  {
     name: "ask", kind: "command",
     syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
     description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text they type, or the choice they pick. With no way to ask, no answer in time (2 minutes, unless 'within' says otherwise), or a 'no thanks', the result is null, so treat null as no.",
@@ -235,9 +241,9 @@ export const HELP = [
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
-    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>', ...",
-    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com.",
-    examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore"],
+    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>', ... | allow secret <NAME> for fetch to '<host>', ...",
+    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com. 'allow secret' lets scripts use a secret, and names the hosts it can go to; it does not skip the fetch question.",
+    examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore", "allow secret GITHUB_TOKEN for fetch to 'api.github.com'"],
   },
   {
     name: "limit", kind: "command", where: "AGENTS.talk",
