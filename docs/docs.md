@@ -136,10 +136,10 @@ TODO (Carson): the comment above a tool is its help; the agent calls it by name.
 ### Watching Your Agent
 
 ```bash
-tail -f talk/audit/*.log
+tail -f .talk/audit/*.log
 ```
 
-TODO (Carson): every step goes to `talk/audit/`, one file a day. Add `talk/audit/` and `talk/taint.json` to `.gitignore`.
+TODO (Carson): every step goes to `.talk/audit/`, one file a day, kept for 3 days (`keep audit for 7 days` in `AGENTS.talk` keeps more). Add `.talk/` to `.gitignore`. Put shared tool files in `talk/`.
 
 <h3 id="reading">Reading a Script</h3>
 
@@ -396,7 +396,7 @@ end
 TODO (Carson): notes.
 
 - `untrusted`: text from fetch, an `untrusted tool`, or a subagent. `private`: text from files, git and programs.
-- Labels follow values, and stay with files you write (`talk/taint.json`).
+- Labels follow values, and stay with files you write (`.talk/taint.json`).
 - Untrusted text in `run`, `start` or git asks you first; private text in a fetch asks once for each host.
 - Limits: the agent can retype what it read; an `if` passes no labels; taint cannot see inside a program.
 

@@ -2295,6 +2295,45 @@ export function parse(source, options = {}) {
     return { type: "auditAlso", folder: folder.value, ...at };
   }
 
+  // keep audit for 7 days | keep audit for at least 30 days (a policy: the fewest days that AGENTS.talk can keep)
+  function parseKeepAudit(token) {
+    for (const word of ["audit", "for"]) {
+      if (!isWord(word)) {
+        error("Expected '" + word + "', as in: keep audit for 7 days");
+        return null;
+      }
+      i++;
+    }
+    let atLeast = false;
+    if (isWord("at")) {
+      i++;
+      if (!isWord("least")) {
+        error("Expected 'least', as in: keep audit for at least 30 days");
+        return null;
+      }
+      i++;
+      atLeast = true;
+    }
+    if (atLeast !== Boolean(options.policy)) {
+      error(options.policy ? "A policy sets the fewest days: keep audit for at least 30 days" : "'at least' is only for a policy. Use: keep audit for 7 days");
+      return null;
+    }
+    // a number token holds its digits as text
+    const number = current();
+    const days = number === undefined || number.type !== "number" ? NaN : Number(number.value);
+    if (!Number.isInteger(days) || days < 1) {
+      error("Expected a whole number of days above 0, such as: keep audit for 7 days");
+      return null;
+    }
+    i++;
+    if (!isWord("days") && !isWord("day")) {
+      error("Expected 'days', as in: keep audit for 7 days");
+      return null;
+    }
+    i++;
+    return { type: "keepAudit", days, atLeast, line: token.line, column: token.column };
+  }
+
   // limit output to 400 lines [or 20 KB]: the most print output the agent sees, in AGENTS.talk or a policy
   // see src/md/infrastructure/host.md
   function parseOutputLimit(token) {
@@ -2346,6 +2385,16 @@ export function parse(source, options = {}) {
           while (!atEnd() && !isWord("tool") && !isWord("allow") && !isWord("import") && !isWord("before") && !isWord("after") && !isWord("limit")) {
             i++;
           }
+        }
+        continue;
+      }
+      // keep audit for <n> days (AGENTS.talk), keep audit for at least <n> days (a policy); see src/md/features/audit.md
+      if (isWord("keep")) {
+        const token = current();
+        i++;
+        const definition = parseKeepAudit(token);
+        if (definition !== null) {
+          definitions.push(definition);
         }
         continue;
       }

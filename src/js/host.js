@@ -99,7 +99,7 @@ Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactl
 x's y, x.y and y of x are the same. 'the' is optional. it, or the result, is the value from the last command.`;
 
 const RULES = `Rules:
-  You cannot change .talk files, @/talk/, or hidden files and folders (.env, .git/), unless AGENTS.talk allows them.
+  You cannot change .talk files, @/talk/, @/.talk/, or hidden files and folders (.env, .git/), unless AGENTS.talk allows them.
   If a change is refused because of AGENTS.talk, tell the human the line to add. Do not try another way to make the change.
   A line edit (replace lines, put, remove) needs a read of the file first. Line numbers shift after an edit.
   ask goes to the human, never to you. null means no answer: treat it as no.

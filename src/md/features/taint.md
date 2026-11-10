@@ -2,7 +2,7 @@
 
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
-Built: the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, the audit notes, the questions at the sinks, and file labels in `talk/taint.json`.
+Built: the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, the audit notes, the questions at the sinks, and file labels in `.talk/taint.json`.
 Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
 
 Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
@@ -53,10 +53,10 @@ Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 ## Files
 
 - Approved (built): a written file remembers its untrusted labels. Reading it gives `private` plus those labels. A full `write` takes the labels of its text only; `append` keeps the file's labels too; `replace` and line edits read the file first, so they keep its labels.
-- Approved (built): file labels persist in `@/talk/taint.json` (scripts cannot change `@/talk/`). It holds only files with a label beyond `private`: in practice, files written with `untrusted` text. A rewrite with no `untrusted` text removes the entry.
+- Approved (built): file labels persist in `@/.talk/taint.json` (scripts cannot change `@/.talk/`). It holds only files with a label beyond `private`: in practice, files written with `untrusted` text. A rewrite with no `untrusted` text removes the entry.
 - Approved (built): each entry has the path, a SHA-256 hash of the file's text, the labels with origins, the time, the session and the script number. If the text changed outside ClankTalk, the hash does not match, and the entry is dropped on the next read. `delete` removes the entry; `move` and `git move` move it; `undo` removes it if the text it puts back does not match.
 - Approved (built): the audit records each change as a `taint` step: `taint  notes.md  untrusted from https://...`, `cleared`, `moved from old.md`, or `dropped: changed outside ClankTalk`.
-- Approved: `talk/taint.json` goes in `.gitignore`, the same as `talk/audit/`. Why: it is audit-like data about one machine's work. Checked in, it changes with every untrusted write, it holds paths and sessions of scratch files, and it can describe files in a state that was never committed. Entries are sorted by path anyway.
+- Approved: `.talk/taint.json` goes in `.gitignore`, with all of `.talk/`. Why: it is audit-like data about one machine's work. Checked in, it changes with every untrusted write, it holds paths and sessions of scratch files, and it can describe files in a state that was never committed. Entries are sorted by path anyway.
 - Later, maybe: an AGENTS.talk line to share labels in git, with entries only for files that git tracks.
 
 ## Limits

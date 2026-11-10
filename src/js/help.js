@@ -235,8 +235,8 @@ export const HELP = [
   },
   {
     name: "audit", kind: "expression",
-    syntax: "the audit | audit as json (in AGENTS.talk)",
-    description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to talk/audit/<date>.log, which scripts cannot change. With 'audit as json' in AGENTS.talk, the host writes JSON Lines.",
+    syntax: "the audit | audit as json (in AGENTS.talk) | keep audit for <n> days (in AGENTS.talk)",
+    description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to .talk/audit/<date>.log, which scripts cannot change. With 'audit as json' in AGENTS.talk, the host writes JSON Lines. The host keeps 3 days of files, or the days in 'keep audit for 7 days' in AGENTS.talk.",
     examples: ["for step in the audit\n  if step's kind is 'write'\n    print step's target\n  end\nend"],
   },
   {

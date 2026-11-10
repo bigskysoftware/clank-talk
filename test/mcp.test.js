@@ -236,8 +236,8 @@ test('each agent name has its own undo list and $ globals', async () => {
   // with no name, the session's own state
   assert.match((await call('undo')).result.content[0].text, /Nothing to undo/);
   // the audit names the agent
-  const [file] = await fs.readdir(path.join(root, 'talk', 'audit'));
-  const text = await fs.readFile(path.join(root, 'talk', 'audit', file), 'utf8');
+  const [file] = await fs.readdir(path.join(root, '.talk', 'audit'));
+  const text = await fs.readFile(path.join(root, '.talk', 'audit', file), 'utf8');
   assert.match(text, /script 1 \(agent writer\)  done/);
   assert.match(text, /script 2 \(agent tester\)  done/);
 });

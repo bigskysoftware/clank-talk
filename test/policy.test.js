@@ -48,8 +48,8 @@ test("policy hooks run first, and the audit names the policy", async () => {
   const result = await run("write 'x' to ./a.txt", { root, audit, policy: { name: "acme.talk", source: RUN_POLICY } });
   assert.deepEqual(result.errors.map((e) => e.message), ["This session is read only"]);
   assert.deepEqual(result.output, []);
-  const [file] = await fs.readdir(path.join(root, "talk", "audit"));
-  const text = await fs.readFile(path.join(root, "talk", "audit", file), "utf8");
+  const [file] = await fs.readdir(path.join(root, ".talk", "audit"));
+  const text = await fs.readFile(path.join(root, ".talk", "audit", file), "utf8");
   const hash = createHash("sha256").update(RUN_POLICY).digest("hex").slice(0, 8);
   assert.match(text, new RegExp("\\(policy acme-secure " + hash + "\\) ==$", "m"));
 });

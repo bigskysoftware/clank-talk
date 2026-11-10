@@ -183,13 +183,13 @@ export function describe(labels) {
 
 // ----- file labels -----
 //
-// A file that a script wrote with untrusted text remembers its labels, in @/talk/taint.json:
+// A file that a script wrote with untrusted text remembers its labels, in @/.talk/taint.json:
 //   { "notes.md": { "hash": "...", "labels": [{ "label": "untrusted", "from": ["https://..."] }],
 //                   "time": "2026-11-10 10:42", "session": "claude-code-4f2a", "script": 12 } }
-// Only files with a label beyond private are there. Scripts cannot change @/talk/.
+// Only files with a label beyond private are there. Scripts cannot change @/.talk/.
 // If a file's text no longer matches its hash, it changed outside ClankTalk, and the entry is dropped.
 
-export const FILE_LABELS = "talk/taint.json";
+export const FILE_LABELS = ".talk/taint.json";
 
 export function hashText(text) {
   return createHash("sha256").update(text).digest("hex");

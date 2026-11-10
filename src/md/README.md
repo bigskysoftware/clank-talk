@@ -19,6 +19,7 @@ Syntax ideas come from https://hyperscript.org. The parser and runtime are new c
 
 ## File Index
 
+- [backlog.md](backlog.md): ideas that are not approved yet
 - [features/language.md](features/language.md): syntax, what to keep from hyperscript
 - [features/runtime.md](features/runtime.md): how scripts run, value rules
 - [features/examples.md](features/examples.md): real agent tasks in proposed syntax, for review

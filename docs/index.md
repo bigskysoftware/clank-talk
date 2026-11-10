@@ -194,9 +194,9 @@ end
 
 Ever wonder what your agent is actually doing? Wonder no more.
 
-Every step that touches the world is written to `talk/audit/`: what ran, what it touched, and where. Your agent can't change it.
+Every step that touches the world is written to `.talk/audit/`: what ran, what it touched, and where. Your agent can't change it.
 
-```text talk/audit/2026-11-09.log
+```text .talk/audit/2026-11-09.log
 10:42:01  replace  src/config.js   undo saved
 10:42:01  tool     run_tests
 10:42:09  run      npm test        code 0, 7.9 s

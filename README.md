@@ -36,7 +36,7 @@ Any other MCP client:
 }
 ```
 
-ClankTalk writes an audit log to `talk/audit/`, and taint labels to `talk/taint.json`, in your project. Add both to your `.gitignore`.
+ClankTalk keeps its audit log and taint labels in `.talk/` in your project. Add `.talk/` to your `.gitignore`.
 
 Then give your agent tools in an `AGENTS.talk` at the root of your project:
 

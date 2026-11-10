@@ -20,9 +20,9 @@ afterEach(async () => {
 });
 
 async function auditText() {
-  const files = await fs.readdir(path.join(root, "talk", "audit"));
+  const files = await fs.readdir(path.join(root, ".talk", "audit"));
   assert.equal(files.length, 1);
-  return { name: files[0], text: await fs.readFile(path.join(root, "talk", "audit", files[0]), "utf8") };
+  return { name: files[0], text: await fs.readFile(path.join(root, ".talk", "audit", files[0]), "utf8") };
 }
 
 test("the text audit: one block for each script, one line for each step", async () => {
@@ -79,7 +79,7 @@ test("audit as json writes JSON Lines", async () => {
 test("a script cannot change the audit", async () => {
   await run("read ./a.txt", { root, audit });
   const { name } = await auditText();
-  const result = await run("write 'gone' to @/talk/audit/" + name, { root, audit });
+  const result = await run("write 'gone' to @/.talk/audit/" + name, { root, audit });
   assert.match(result.errors[0].message, /^A script cannot change .talk files or the @\/talk folder/);
 });
 
@@ -95,3 +95,52 @@ test("the header names the session, and the agent or (main)", async () => {
   assert.match(text, /^== \d\d:\d\d:\d\d  session claude-code-4f2a  script 1 \(main\)  done  1 steps ==$/m);
   assert.match(text, /^== \d\d:\d\d:\d\d  session claude-code-4f2a  script 2 \(agent tester\)  done  1 steps ==$/m);
 });
+
+
+// ----- rotation and .talk/ -----
+
+function dayBefore(days) {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+  return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+}
+
+test("the audit keeps 3 days by default, and deletes only older day files", async () => {
+  const folder = path.join(root, ".talk", "audit");
+  await fs.mkdir(folder, { recursive: true });
+  for (const name of [dayBefore(2) + ".log", dayBefore(3) + ".log", dayBefore(9) + ".jsonl", "notes.txt"]) {
+    await fs.writeFile(path.join(folder, name), "old\n");
+  }
+  await run("print 1", { root, audit });
+  const left = (await fs.readdir(folder)).sort();
+  assert.ok(left.includes(dayBefore(2) + ".log"));
+  assert.ok(!left.includes(dayBefore(3) + ".log"));
+  assert.ok(!left.includes(dayBefore(9) + ".jsonl"));
+  assert.ok(left.includes("notes.txt"));
+  const step = audit.records.find((record) => record.kind === "audit");
+  assert.equal(step.details, "deleted 2 files older than 3 days");
+});
+
+test("keep audit for <n> days, and a policy minimum", async () => {
+  const folder = path.join(root, ".talk", "audit");
+  await fs.mkdir(folder, { recursive: true });
+  await fs.writeFile(path.join(folder, dayBefore(5) + ".log"), "old\n");
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "keep audit for 7 days");
+  await run("print 1", { root, audit });
+  assert.ok((await fs.readdir(folder)).includes(dayBefore(5) + ".log"));
+  const policy = { name: "p.talk", source: "policy 'p'\nkeep audit for at least 30 days" };
+  const result = await run("print 1", { root, policy });
+  assert.deepEqual(result.errors.map((e) => e.message), ["'keep audit for 7 days' is fewer than the policy: p.talk 2:1 keeps the audit for at least 30 days"]);
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "keep audit for at least 7 days");
+  assert.match((await run("print 1", { root })).errors[0].message, /'at least' is only for a policy/);
+});
+
+test("no allow line opens .talk/, and globs skip it", async () => {
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "allow changes to @/.talk/");
+  assert.deepEqual((await run("print 1", { root })).errors.map((e) => e.message), ["Cannot allow changes to @/.talk/: .talk/ and talk/ hold the audit and the tools, and no line can open them"]);
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "");
+  await run("print 1", { root, audit });
+  const result = await run("print @/**/*.log", { root });
+  assert.deepEqual(result.output, ["[]"]);
+});
+

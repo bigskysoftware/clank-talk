@@ -186,7 +186,7 @@ function lineLabel(line) {
  * @param {Set} [options.privateHosts]              hosts the human allowed private data to go to; pass the same Set for a session
  * @param {Object} [options.policy]                 the harness's policy: { name, source }, ClankTalk text; see src/md/features/policy.md
  * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
- * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to talk/audit/
+ * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to .talk/audit/
  * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
  * @param {number} [options.askTimeLimit]            how long a question waits with no "within", in ms (default: 2 minutes)
  */
@@ -315,7 +315,7 @@ async function execute(source, options, execution) {
     // taint: the open frames, and the labels of the result; see src/js/taint.js
     taintFrames: [],
     resultLabels: taint.none(),
-    // file labels from @/talk/taint.json, by path; saved at the end if they changed
+    // file labels from @/.talk/taint.json, by path; saved at the end if they changed
     fileLabels: await taint.loadFiles(root),
     fileLabelsChanged: false,
     // the .talk file of the tool or hook now running; null for the script
@@ -340,13 +340,15 @@ async function execute(source, options, execution) {
     // the audit: the session (script count and records; a host keeps it), this script's steps,
     // the files this script read, where a step runs (script, a tool name, or a hook), and the format
     audit: options.audit || { scripts: 0, records: [] },
-    // the file in talk/audit/ is written only for a host session; the MCP host always passes one
+    // the file in .talk/audit/ is written only for a host session; the MCP host always passes one
     auditToFile: options.audit !== undefined,
     auditScript: 0,
     auditSteps: [],
     auditReads: new Set(),
     auditFrom: "script",
     auditFormat: agents.auditFormat,
+    // how many days of audit files to keep: AGENTS.talk, or the default, but never fewer than the policy says
+    auditKeepDays: keepDays(agents, policy.policy),
     // the name of the agent that sent the script, or null; the audit records it
     agent: options.agent || null,
     // the host's name for this session, such as claude-code-4f2a; the audit records it
@@ -1000,6 +1002,11 @@ function checkPolicy(policy, agents) {
       }
     }
   }
+  // keep audit: AGENTS.talk cannot keep fewer days than the policy
+  const keep = policy.rules.find((rule) => rule.type === "keepAudit");
+  if (keep !== undefined && agents.keepAudit !== null && agents.keepAudit.days < keep.days) {
+    errors.push({ message: "'keep audit for " + agents.keepAudit.days + " days' is fewer than the policy: " + ruleAt(keep) + " keeps the audit for at least " + keep.days + " days", ...agents.keepAudit.where });
+  }
   // tools and hooks in AGENTS.talk cannot use what the policy denies
   for (const definition of [...Object.values(agents.definitions), ...agents.hooks]) {
     for (const node of findNodes(definition, [])) {
@@ -1100,7 +1107,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, keepAudit: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1169,6 +1176,16 @@ async function loadAgentsTalk(root, hostTools) {
         }
         continue;
       }
+      if (definition.type === "keepAudit") {
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'keep audit' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (result.keepAudit !== null) {
+          result.errors.push({ message: "Only one 'keep audit' line is allowed", ...where });
+        } else {
+          result.keepAudit = { days: definition.days, where };
+        }
+        continue;
+      }
       if (definition.type === "useModel") {
         if (file.name !== AGENTS_TALK) {
           result.errors.push({ message: "'use model' is only allowed in " + AGENTS_TALK, ...where });
@@ -1204,6 +1221,11 @@ async function loadAgentsTalk(root, hostTools) {
           // @/ and ./ both start from the root, where AGENTS.talk is
           const rest = shown.startsWith("@/") ? shown.slice(2) : shown;
           const absolute = nodePath.resolve(root, rest);
+          // .talk/ holds the audit and the taint labels: no line can open it
+          if (isProtectedPath(nodePath.relative(root, absolute).split(nodePath.sep).join("/") + "/")) {
+            result.errors.push({ message: "Cannot allow changes to " + shown + ": .talk/ and talk/ hold the audit and the tools, and no line can open them", ...where });
+            continue;
+          }
           if (!isInside(absolute, root) || absolute === root) {
             result.errors.push({ message: "Cannot allow changes to " + shown + ": it must be inside the project root", ...where });
             continue;
@@ -3391,7 +3413,47 @@ function auditLine(record) {
   return (record.time + "  " + record.kind.padEnd(8) + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(details)).trimEnd();
 }
 
-// append this script's block to the day's file in talk/audit/; scripts cannot change @/talk/
+// the audit keeps this many days by default; see src/md/features/audit.md
+const AUDIT_KEEP_DAYS = 3;
+
+function keepDays(agents, policy) {
+  if (agents.keepAudit !== null) {
+    return agents.keepAudit.days;
+  }
+  const keep = policy === null ? undefined : policy.rules.find((rule) => rule.type === "keepAudit");
+  return Math.max(AUDIT_KEEP_DAYS, keep === undefined ? 0 : keep.days);
+}
+
+// once a day for each audit folder: delete the day files older than the kept days, and note it in the audit
+// only names such as 2026-11-10.log and 2026-11-10.jsonl; the policy's "audit also to" copy is never rotated
+const auditRotated = new Map();
+async function rotateAudit(state, folder, now) {
+  const today = localDate(now);
+  if (auditRotated.get(folder) === today) {
+    return;
+  }
+  auditRotated.set(folder, today);
+  const oldest = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (state.auditKeepDays - 1)));
+  let names;
+  try {
+    names = await fs.readdir(folder);
+  } catch (err) {
+    return;
+  }
+  let deleted = 0;
+  for (const name of names) {
+    const match = /^(\d{4}-\d{2}-\d{2})\.(log|jsonl)$/.exec(name);
+    if (match !== null && match[1] < oldest) {
+      await fs.rm(nodePath.join(folder, name), { force: true });
+      deleted++;
+    }
+  }
+  if (deleted > 0) {
+    auditStep(state, "audit", ".talk/audit/", "deleted " + deleted + (deleted === 1 ? " file" : " files") + " older than " + state.auditKeepDays + (state.auditKeepDays === 1 ? " day" : " days"));
+  }
+}
+
+// append this script's block to the day's file in .talk/audit/; scripts cannot change @/.talk/
 // a failure to write is a warning, so the audit never breaks a script
 async function writeAudit(state, source, status, errors) {
   if (!state.auditToFile) {
@@ -3399,8 +3461,9 @@ async function writeAudit(state, source, status, errors) {
   }
   try {
     const now = new Date();
-    const folder = nodePath.join(state.root, "talk", "audit");
+    const folder = nodePath.join(state.root, ".talk", "audit");
     await fs.mkdir(folder, { recursive: true });
+    await rotateAudit(state, folder, now);
     let text = "";
     let name = localDate(now) + ".log";
     if (state.auditFormat === "json") {
@@ -4057,7 +4120,7 @@ async function globFiles(base, pattern, state, node) {
   // fs.glob calls exclude for each file and folder, so a skipped folder is not walked
   const exclude = (path) => {
     const absolute = nodePath.resolve(base, path);
-    if (nodePath.basename(absolute) === ".git" && !namesGit) {
+    if ((nodePath.basename(absolute) === ".git" || nodePath.basename(absolute) === ".talk") && !namesGit) {
       return true;
     }
     return ignored.has(absolute) && !isInside(fixed, absolute);
@@ -4356,11 +4419,12 @@ async function moveFile(from, to, state, node) {
 }
 
 // is this file AGENTS.talk, by name (any case) or by being the same file on disk (a link to it)?
-// a protected path, relative to the root: any .talk file, or anything in the talk folder
+// a protected path, relative to the root: any .talk file, anything in talk/ (extensions),
+// or anything in .talk/ (the audit and taint labels); no allow line can open these
 // letter case does not matter, because some file systems ignore it
 function isProtectedPath(relative) {
   const lower = relative.toLowerCase();
-  return lower.endsWith(".talk") || lower === "talk" || lower.startsWith("talk/");
+  return lower.endsWith(".talk") || lower === "talk" || lower.startsWith("talk/") || lower.startsWith(".talk/");
 }
 
 // scripts cannot change .talk files or the @/talk folder, so an agent cannot change its own tools

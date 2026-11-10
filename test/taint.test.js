@@ -221,7 +221,7 @@ test("untrusted text in a git commit message or a branch name asks the human", a
   }
 });
 
-// ----- file labels and talk/taint.json -----
+// ----- file labels and .talk/taint.json -----
 
 test("a file written with untrusted text stays untrusted, also in a new session", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-files-"));
@@ -230,7 +230,7 @@ test("a file written with untrusted text stays untrusted, also in a new session"
     assert.deepEqual(result.errors, []);
     return result.output;
   };
-  const entries = async () => JSON.parse(await fs.readFile(path.join(dir, "talk", "taint.json"), "utf8"));
+  const entries = async () => JSON.parse(await fs.readFile(path.join(dir, ".talk", "taint.json"), "utf8"));
   try {
     await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
     const audit = { scripts: 0, records: [] };
@@ -243,7 +243,7 @@ test("a file written with untrusted text stays untrusted, also in a new session"
     const taintStep = audit.records.find((record) => record.kind === "taint");
     assert.equal(taintStep.target, "page.txt");
     assert.equal(taintStep.details, "untrusted from " + base + "/");
-    // a new run, with no shared state, reads the label from talk/taint.json
+    // a new run, with no shared state, reads the label from .talk/taint.json
     assert.deepEqual(await go("print (read ./page.txt) is untrusted"), ["true"]);
     // an append and a replace keep the label
     await go("append 'more' to ./page.txt");
@@ -279,19 +279,19 @@ test("a full rewrite with no untrusted text clears the label; an outside change 
     const audit = { scripts: 0, records: [] };
     assert.deepEqual(await go("print (read ./b.txt) is untrusted", { audit }), ["false"]);
     assert.deepEqual(audit.records.filter((record) => record.kind === "taint").map((record) => record.details), ["dropped: changed outside ClankTalk"]);
-    assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "talk", "taint.json"), "utf8")), {});
-    // scripts cannot change talk/taint.json
-    assert.equal((await run("write '{}' to @/talk/taint.json", { root: dir })).status, "failed");
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, ".talk", "taint.json"), "utf8")), {});
+    // scripts cannot change .talk/taint.json
+    assert.equal((await run("write '{}' to @/.talk/taint.json", { root: dir })).status, "failed");
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
-test("talk/taint.json lists its entries sorted by path", async () => {
+test(".talk/taint.json lists its entries sorted by path", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-files-"));
   try {
     await taint.saveFiles(dir, { "z.txt": { hash: "1" }, "a.txt": { hash: "2" } });
-    assert.deepEqual(Object.keys(JSON.parse(await fs.readFile(path.join(dir, "talk", "taint.json"), "utf8"))), ["a.txt", "z.txt"]);
+    assert.deepEqual(Object.keys(JSON.parse(await fs.readFile(path.join(dir, ".talk", "taint.json"), "utf8"))), ["a.txt", "z.txt"]);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
