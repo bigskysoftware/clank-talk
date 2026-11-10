@@ -16,7 +16,7 @@ const MAX_NESTING = 100;
 // words that join values, so they never start one: "set sorted to 5" sets a variable named sorted
 const LINK_WORDS = ["to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
 
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "push", "delete"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "move", "push", "delete"];
 
 /**
  * @typedef {Object} ParseError
@@ -1040,6 +1040,22 @@ export function parse(source, options = {}) {
         return null;
       }
     }
+    // git move <file> to <file>
+    if (op.value === "move") {
+      command.value = parseBefore(["to"], parseExpression);
+      if (command.value === null) {
+        return null;
+      }
+      if (!isWord("to")) {
+        error("Expected 'to'");
+        return null;
+      }
+      i++;
+      command.to = parseExpression();
+      if (command.to === null) {
+        return null;
+      }
+    }
     // git rebase onto <branch>
     if (op.value === "rebase") {
       if (!isWord("onto")) {
@@ -1272,6 +1288,24 @@ export function parse(source, options = {}) {
     return { type: "find", text, target, line: token.line, column: token.column };
   }
 
+  // move <file> to <file>
+  function parseMove(token) {
+    const from = parseBefore(["to"], parseExpression);
+    if (from === null) {
+      return null;
+    }
+    if (!isWord("to")) {
+      error("Expected 'to'");
+      return null;
+    }
+    i++;
+    const to = parseExpression();
+    if (to === null) {
+      return null;
+    }
+    return { type: "move", from, to, line: token.line, column: token.column };
+  }
+
   // put <text> before|after line <n> of <file>
   function parsePut(token) {
     const text = parseBefore(["before", "after"], parseExpression);
@@ -1382,6 +1416,7 @@ export function parse(source, options = {}) {
     append: parseWrite,
     replace: parseReplace,
     find: parseFind,
+    move: parseMove,
     in: parseIn,
     git: parseGit,
     undo: parseUndo,

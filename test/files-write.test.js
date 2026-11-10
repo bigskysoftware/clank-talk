@@ -371,3 +371,25 @@ test("a new file in a linked folder that leads into talk/ is refused", async () 
   assert.match((await errors(`write 'x' to ./tl/y.txt`))[0], /^A script cannot change .talk files or the @\/talk folder/);
   assert.deepEqual(await fs.readdir(path.join(root, "talk")), []);
 });
+
+test("move a file, and undo takes it back", async () => {
+  await fs.writeFile(path.join(root, "old.txt"), "text\n");
+  await ok("move ./old.txt to ./sub/new.txt");
+  assert.equal(await readProject("sub/new.txt"), "text\n");
+  await assert.rejects(fs.access(path.join(root, "old.txt")));
+  await fs.rm(path.join(root, "sub"), { recursive: true });
+  await fs.writeFile(path.join(root, "old.txt"), "text\n");
+  await ok("move ./old.txt to ./sub/new.txt\nundo");
+  assert.equal(await readProject("old.txt"), "text\n");
+  await assert.rejects(fs.access(path.join(root, "sub", "new.txt")));
+});
+
+test("move checks both paths, and never replaces a file", async () => {
+  await fs.writeFile(path.join(root, "b.txt"), "b\n");
+  assert.deepEqual(await errors("move ./a.txt to ./b.txt"), ["Cannot move a.txt to b.txt: that file is already there. move does not replace files"]);
+  assert.deepEqual(await errors("move ./nope.txt to ./c.txt"), ["Cannot move nope.txt: there is no such file"]);
+  assert.match((await errors("move ./a.txt to ./.env"))[0], /^A script cannot change hidden files/);
+  assert.match((await errors("move ./a.txt to ./x.talk"))[0], /^A script cannot change \.talk files/);
+  assert.match((await errors("move ./a.txt to ../out.txt"))[0], /outside the project root/);
+  assert.equal(await readProject("a.txt"), "var x\nvar y\n");
+});

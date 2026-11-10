@@ -53,6 +53,8 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved (built): `git merge <branch>` is `merge --ff-only <branch>`. It never makes a commit, so it needs no message and cannot conflict. If a fast-forward is not possible, it is an error.
 - Approved (built): repo config with `merge.<driver>.driver` is refused too: a merge driver runs a program.
 - Approved (built): `git rebase onto <branch>` rebases the current branch onto the branch (`rebase --no-autosquash --no-autostash <branch>`). It is all or nothing: on a conflict, it runs `rebase --abort` and gives an error with the files in conflict, so the repo is never left in a rebase. It refuses with no current branch, onto the branch itself, with uncommitted changes to tracked files, and if the branch has commits on a remote, because a rebase rewrites them. No interactive mode and no `--exec`. After a rebase, run the tests before the merge.
+- Approved (built): `git move <file> to <file>` runs `git mv -- <from> <to>`, so the history follows the file. One file, with the checks of a write for both paths (inside the project, no `.talk`, no `@/talk/`, no hidden files). It never replaces a file. It makes the folder of the new path. It is not in the undo list, as `git switch` and `git commit` are not.
+- Approved (built): `git commit` adds only the named files that exist. A named file that is gone (moved or removed) is still in the commit, so git commits the rename or the removal.
 - Approved, for the rest of the first version:
   - `git diff` with no path: all changes
   - `git log`, and `git log 20` for the last 20 commits

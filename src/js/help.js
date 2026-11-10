@@ -108,6 +108,12 @@ export const HELP = [
     examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'all good' end", "set hits to find 'TODO' in ./src/**/*.js\nprint hits's length"],
   },
   {
+    name: "move", kind: "command",
+    syntax: "move <file> to <file>",
+    description: "Move or rename one file. It has the checks of a write for both paths, and it never replaces a file: the new path must be free. undo takes it back. For a file in git, use git move, so the history follows it.",
+    examples: ["move ./src/old.js to ./src/new.js"],
+  },
+  {
     name: "put", kind: "command",
     syntax: "put <text> before line <n> of <file> | put <text> after line <n> of <file>",
     description: "Put new lines into a file. Needs a read of the file first. Line numbers shift after an edit.",
@@ -205,7 +211,7 @@ export const HELP = [
   },
   {
     name: "git", kind: "command",
-    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git push | git delete branch <branch>",
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch>",
     description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, and asks the human first, unless AGENTS.talk has 'allow git push'. Delete branch deletes only a merged branch.",
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },

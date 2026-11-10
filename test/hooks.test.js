@@ -99,7 +99,7 @@ test("errors in a hook point at AGENTS.talk", async () => {
 
 test("hook rules", async () => {
   await agentsTalk("before banana\nend");
-  assert.equal((await errors("print 1"))[0].message, "Unknown step 'banana' for a hook. Use read, write, append, replace, put, remove, change, undo, run, git, fetch, start, stop, or a tool name");
+  assert.equal((await errors("print 1"))[0].message, "Unknown step 'banana' for a hook. Use read, write, append, replace, put, remove, move, change, undo, run, git, fetch, start, stop, or a tool name");
   await agentsTalk("after write\n  reject 'x'\nend");
   assert.equal((await errors("print 1"))[0].message, "'reject' is only allowed in a 'before' hook");
   assert.equal((await errors("reject 'x'"))[0].message, "'reject' is only allowed in a 'before' hook");

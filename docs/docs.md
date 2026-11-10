@@ -326,7 +326,10 @@ Want a tidy list? There's `sorted` and `unique`: `print sorted unique failures`.
 write 'hello' to ./out.txt
 append ' world' to ./out.txt
 replace 'retries: 3' with 'retries: 5' in ./src/config.js
+move ./out.txt to ./notes/out.txt
 ```
+
+`move` never writes over a file that is already there. For a file in git, `git move` does the same, and git sees the rename.
 
 You can name the file first, too. That reads well when you change several things in one file:
 

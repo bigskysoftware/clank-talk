@@ -255,3 +255,13 @@ test("git rebase checks the branch first", async () => {
     await fs.rm(bare, { recursive: true, force: true });
   }
 });
+
+test("git move moves a tracked file, so git sees a rename", async () => {
+  await output("git switch to 'main'");
+  await output("git move ./a.txt to ./moved/a.txt");
+  assert.match(git(["status", "--short"]), /^R  a\.txt -> moved\/a\.txt$/m);
+  await output("git commit [./moved/a.txt, ./a.txt] with 'Move a'");
+  assert.equal(git(["log", "-1", "--format=%s"]), "Move a\n");
+  assert.deepEqual(await errors("git move ./moved/a.txt to ./b.txt"), ["Cannot move moved/a.txt to b.txt: that file is already there. git move does not replace files"]);
+  assert.match((await errors("git move ./moved/a.txt to ./.env"))[0], /^A script cannot change hidden files/);
+});

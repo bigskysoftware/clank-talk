@@ -27,8 +27,8 @@ const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
 // git operations that change files or branches; "deny writes" denies them
-const GIT_WRITES = ["switch", "commit", "merge", "rebase", "delete"];
-const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git", "fetch", "start", "stop"];
+const GIT_WRITES = ["switch", "commit", "merge", "rebase", "move", "delete"];
+const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
 class ScriptError extends Error {
@@ -1015,6 +1015,11 @@ async function runCommand(command, state, tools, maxSteps) {
     throw new ScriptError("Expected a file, or a variable with text, found " + describe(target), command);
   }
 
+  if (command.type === "move") {
+    await moveFile(await evaluate(command.from, state), await evaluate(command.to, state), state, command);
+    return null;
+  }
+
   if (command.type === "run") {
     state.result = await runProgram(command, state);
     return null;
@@ -1533,10 +1538,19 @@ async function runGit(command, state) {
 
   // commit adds the named files first, so new files can be committed too;
   // the commit then has only those files, even if other files are staged
+  // a file that is gone (moved or removed) is not added: the commit still names it, so git commits the change
   if (command.operation === "commit") {
-    const add = await spawnProgram("git", [...guardArgs(), "add", "--", ...step.files], state.root, env, state.timeLimit, state, command);
-    if (add.code !== 0) {
-      throw new ScriptError("git add failed: " + add.output.trim(), command);
+    const present = [];
+    for (const path of step.files) {
+      if (await fs.access(nodePath.resolve(state.root, path)).then(() => true, () => false)) {
+        present.push(path);
+      }
+    }
+    if (present.length > 0) {
+      const add = await spawnProgram("git", [...guardArgs(), "add", "--", ...present], state.root, env, state.timeLimit, state, command);
+      if (add.code !== 0) {
+        throw new ScriptError("git add failed: " + add.output.trim(), command);
+      }
     }
   }
 
@@ -1625,6 +1639,22 @@ async function gitArgs(command, state, step) {
   // the current branch, to a branch with the same name on origin; never force
   if (op === "push") {
     return ["push", "--no-verify", "origin", "HEAD"];
+  }
+  // git mv, so the history follows the file: one file, with the checks of a write for both paths
+  // it is not in the undo list, as git switch and git commit are not
+  if (op === "move") {
+    const from = await evaluate(command.value, state);
+    const to = await evaluate(command.to, state);
+    await checkWritable(from, state, command.value);
+    await checkWritable(to, state, command.to);
+    if ((await realPath(to, state, command.to)) !== null) {
+      throw new ScriptError("Cannot move " + from.path + " to " + to.path + ": that file is already there. git move does not replace files", command.to);
+    }
+    step.from = from.path;
+    step.to = to.path;
+    // git mv needs the folder of the new path
+    await makeParentFolders(to, state, command.to);
+    return ["mv", "--", from.path, to.path];
   }
   // the current branch onto another; runGit checks it first, and stops it on a conflict
   if (op === "rebase") {
@@ -3223,26 +3253,7 @@ async function editLines(file, from, to, newText, state, node, putLine) {
 }
 
 async function writeText(file, text, append, state, node) {
-  if (Array.isArray(file)) {
-    throw new ScriptError("Expected one file, found a list of " + file.length + ". Use a for loop", node);
-  }
-  if (!(file instanceof FileRef)) {
-    throw new ScriptError("Expected a file, found " + describe(file), node);
-  }
-  checkDenied("writes", state, node);
-  if (await isProtected(file, state, node)) {
-    throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
-  }
-  const hidden = await isHidden(file, state, node);
-  if (hidden !== null) {
-    throw new ScriptError(
-      "A script cannot change hidden files or folders (a name that starts with .): " + file.path + "\n" +
-      "To allow this, a human can add this line to AGENTS.talk:\n" +
-      "  " + allowLineFor(hidden),
-      node,
-    );
-  }
-
+  await checkWritable(file, state, node);
   let real = await realPath(file, state, node);
   let before = null;
   if (real !== null) {
@@ -3268,6 +3279,57 @@ async function writeText(file, text, append, state, node) {
   await fs.writeFile(real, after, "utf8");
   state.seen.set(await fs.realpath(real), after);
   state.execution.changes.push({ path: file.path, before, after });
+}
+
+// the checks before a script changes a file: one file, writes not denied, not protected, not hidden
+async function checkWritable(file, state, node) {
+  if (Array.isArray(file)) {
+    throw new ScriptError("Expected one file, found a list of " + file.length + ". Use a for loop", node);
+  }
+  if (!(file instanceof FileRef)) {
+    throw new ScriptError("Expected a file, found " + describe(file), node);
+  }
+  checkDenied("writes", state, node);
+  if (await isProtected(file, state, node)) {
+    throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
+  }
+  const hidden = await isHidden(file, state, node);
+  if (hidden !== null) {
+    throw new ScriptError(
+      "A script cannot change hidden files or folders (a name that starts with .): " + file.path + "\n" +
+      "To allow this, a human can add this line to AGENTS.talk:\n" +
+      "  " + allowLineFor(hidden),
+      node,
+    );
+  }
+}
+
+// move <file> to <file>: one file, with the checks of a write for both paths; undo can take it back
+// it never replaces a file: the target must not exist
+async function moveFile(from, to, state, node) {
+  await checkWritable(from, state, node);
+  await checkWritable(to, state, node);
+  const real = await realPath(from, state, node);
+  if (real === null) {
+    throw new ScriptError("Cannot move " + from.path + ": there is no such file", node);
+  }
+  if (!(await fs.stat(real)).isFile()) {
+    throw new ScriptError("move takes one file, and " + from.path + " is not a file", node);
+  }
+  if ((await realPath(to, state, node)) !== null) {
+    throw new ScriptError("Cannot move " + from.path + " to " + to.path + ": that file is already there. move does not replace files", node);
+  }
+  const step = changeStep("move", from, { to: to.path });
+  await changeHooks("before", step, state, node);
+  const text = await fs.readFile(real, "utf8");
+  await makeParentFolders(to, state, node);
+  await fs.rename(real, to.absolute);
+  state.seen.delete(real);
+  state.seen.set(await fs.realpath(to.absolute), text);
+  // two changes, so undo puts the text back at the old path, and removes the new one
+  state.execution.changes.push({ path: from.path, before: text, after: null });
+  state.execution.changes.push({ path: to.path, before: null, after: text });
+  await changeHooks("after", step, state, node);
 }
 
 // is this file AGENTS.talk, by name (any case) or by being the same file on disk (a link to it)?
