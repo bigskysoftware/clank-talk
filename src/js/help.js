@@ -232,7 +232,7 @@ export const HELP = [
   {
     name: "strings", kind: "expression",
     syntax: "'text'  \"text\"  'Hi ${name}'  \"\"\" raw \"\"\"",
-    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code.",
+    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code. The line break right after the opening quotes is not part of the text. To start with a blank line, leave one empty line after the opening quotes.",
     examples: ["print 'Hi ${name}'", "set code to \"\"\"\n  const x = `${y}`\n\"\"\""],
   },
   {

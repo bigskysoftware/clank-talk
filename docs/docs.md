@@ -138,6 +138,8 @@ set code to """
 """
 ```
 
+The line break right after the opening quotes is not part of the text. Want the text to start with a blank line? Leave one empty line after the opening quotes.
+
 ### Variables and the Result
 
 ```talk
