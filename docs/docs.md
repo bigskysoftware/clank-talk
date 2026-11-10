@@ -58,6 +58,18 @@ claude --tools "" --allowedTools mcp__clank-talk
 
 `--tools ""` turns off the built-in tools (the shell, file edits, and so on), and keeps MCP tools. Now ClankTalk is the only way your agent can touch your machine.
 
+But someone on your team will forget the flags one day. So tell the agent too, in your `AGENTS.md`:
+
+```md
+## Tools
+
+Use the clank_talk tool for all work: reading, editing, search, git and tests.
+Do not use a shell or other file tools.
+If ClankTalk cannot do a task, stop and tell the human what is missing.
+```
+
+Claude Code reads `CLAUDE.md`, not `AGENTS.md`. A `CLAUDE.md` with the line `@AGENTS.md` pulls it in. A note is only a request, though: the flags above are what make it a rule.
+
 Next, give your agent a way to run your tests, in an `AGENTS.talk` at the root of your project:
 
 ```talk
