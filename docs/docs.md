@@ -2,7 +2,7 @@
 
 <img class="page-robot" src="img/clanktalk-robot.png" alt="A friendly robot">
 
-<p><a href="./">Home</a> | <a href="reference.html">Docs for Agents</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
+<p><a href="./">Home</a> | <a href="reference.html">Docs for Agents</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a> | <a href="https://github.com/sponsors/bigskysoftware">Sponsor</a></p>
 
 # ClankTalk Docs
 

@@ -54,6 +54,10 @@ end
 
 ClankTalk is under construction. Expect things to change.
 
+## Sponsor
+
+ClankTalk is made by [Big Sky Software](https://github.com/bigskysoftware). To support the work, [sponsor us on GitHub](https://github.com/sponsors/bigskysoftware).
+
 ## License
 
 [BSD-3-Clause](LICENSE)

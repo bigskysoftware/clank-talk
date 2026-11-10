@@ -55,7 +55,7 @@ print process 'site'
 <img src="img/clanktalk-robot.png" alt="A friendly robot">
 </div>
 <p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable tool language that works with any agent in any harness. Your agents get the tools they need to get work done. You get <a href="docs.html#reading">readable</a>, <a href="docs.html#audit">auditable</a> actions, <a href="docs.html#sandboxing">sandboxes</a>, <a href="docs.html#hooks">security hooks</a>, <a href="docs.html#taint">taint tracking</a>, <a href="docs.html#undo">undo</a>, <a href="docs.html#secrets">secrets support</a> and <a href="docs.html">more</a>.</p>
-<p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
+<p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a> &middot; <a href="https://github.com/sponsors/bigskysoftware">Sponsor</a></p>
 <div class="install">
 <div class="install-picker">
 <span class="install-label">Install for</span>

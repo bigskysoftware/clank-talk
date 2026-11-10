@@ -80,7 +80,7 @@ function page(md, outName) {
 }
 
 // the reference is made from the help table, so it always agrees with help
-page('<div class="features">\n\n<img class="page-robot" src="img/clanktalk-robot.png" alt="A friendly robot">\n\n<p><a href="./">Home</a> | <a href="docs.html">Docs for Humans</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>\n\n' + referenceMarkdown() + "\n\n</div>\n", "reference.html");
+page('<div class="features">\n\n<img class="page-robot" src="img/clanktalk-robot.png" alt="A friendly robot">\n\n<p><a href="./">Home</a> | <a href="docs.html">Docs for Humans</a> | <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a> | <a href="https://github.com/sponsors/bigskysoftware">Sponsor</a></p>\n\n' + referenceMarkdown() + "\n\n</div>\n", "reference.html");
 
 for (const name of fs.readdirSync(SRC)) {
   if (SKIP.includes(name)) {
