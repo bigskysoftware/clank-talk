@@ -2,7 +2,7 @@
   "mcpServers": {
     "clank-talk": {
       "command": "node",
-      "args": ["bin/clank-talk-mcp.js", "--log", "tmp/clank-talk.log"]
+      "args": ["bin/clank-talk-mcp.js"]
     }
   }
 }
