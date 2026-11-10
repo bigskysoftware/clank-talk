@@ -121,6 +121,21 @@ test("git commit checks its values", async () => {
   }
 });
 
+test("git commit takes no folders and no pathspec magic, so it cannot commit a hidden file", async () => {
+  await fs.mkdir(path.join(root, "sub"));
+  await fs.writeFile(path.join(root, "sub", ".env"), "SECRET=1\n");
+  await fs.writeFile(path.join(root, ".env"), "SECRET=1\n");
+  try {
+    assert.deepEqual(await errors("git commit ./sub with 'x'"), ["git commit needs files, not a folder: sub. Name the files, for example with a glob: @/sub/**/*"]);
+    assert.equal((await errors(`git commit ./":(top).env" with 'x'`)).length, 1);
+    assert.equal((await errors(`git commit ./":/" with 'x'`)).length, 1);
+    assert.doesNotMatch(git(["log", "--all", "--name-only", "--format="]), /\.env/);
+  } finally {
+    await fs.rm(path.join(root, "sub"), { recursive: true });
+    await fs.rm(path.join(root, ".env"));
+  }
+});
+
 test("git merge is fast-forward only", async () => {
   await output("git switch to new branch 'ahead'");
   await fs.writeFile(path.join(root, "c.txt"), "c\n");

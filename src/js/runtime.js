@@ -1500,6 +1500,11 @@ async function gitArgs(command, state, step) {
           command.value,
         );
       }
+      // a folder can hold hidden files, such as .env, so commit takes files only
+      const stats = await fs.stat(file.absolute).catch(() => null);
+      if (stats !== null && stats.isDirectory()) {
+        throw new ScriptError("git commit needs files, not a folder: " + file.path + ". Name the files, for example with a glob: @/" + file.path + "/**/*", command.value);
+      }
       paths.push(file.path);
     }
     const message = toText(await evaluate(command.message, state));

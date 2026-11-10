@@ -94,6 +94,8 @@ function isDangerous(key, value) {
 export function guardArgs(forPush = false) {
   const args = [
     "--no-pager",
+    // a path is a path: no pathspec magic such as :/ or :(top), which can name hidden files
+    "--literal-pathspecs",
     "-c", "core.hooksPath=/dev/null",
     "-c", "core.fsmonitor=false",
     "-c", "core.editor=false",
