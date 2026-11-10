@@ -99,9 +99,11 @@ test("the server speaks JSON-RPC over stdio", async () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   child.kill();
+  // calls run at the same time, so the answers can come in any order
+  const text = (id) => lines.find((line) => line.id === id).result.content[0].text;
   assert.equal(lines[0].id, 1);
-  assert.equal(lines[1].result.content[0].text, "hello");
-  assert.equal(lines[2].result.content[0].text, "a" + separators + "b");
+  assert.equal(text(2), "hello");
+  assert.equal(text(3), "a" + separators + "b");
 });
 
 test('the log has each script as written, and what happened', async () => {
