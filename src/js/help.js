@@ -3,6 +3,8 @@
 // test/help.test.js checks that every example parses.
 
 // where: "AGENTS.talk" means the example only parses in AGENTS.talk
+// a description is one text, or a list of short rules; help shows a list one rule per line,
+// and the tool description shows only the first sentence, so it says what the entry does
 export const HELP = [
   // ----- commands -----
   {
@@ -14,7 +16,11 @@ export const HELP = [
   {
     name: "set", kind: "command",
     syntax: "set <variable or property> to <value>",
-    description: "Set a variable, a property, or the result. A plain name is local to the script or tool. A $name is a global that stays between runs. A variable that is not set is an error. 'x exists' tells if x is set. A $name that is not set is null.",
+    description: [
+      "Set a variable, a property, or the result.",
+      "A plain name is local to the script or tool. A plain variable that is not set is an error. 'x exists' is true if x is set.",
+      "A $name is a global. It keeps its value between scripts. A $name that is not set is null.",
+    ],
     examples: ["set total to 0", "set config's version to 2", "set $last to 'build ok'", "set the result to 'done'"],
   },
   {
@@ -26,7 +32,7 @@ export const HELP = [
   {
     name: "decrement", kind: "command",
     syntax: "decrement <variable or property> [by <number>]",
-    description: "Take away from a number. With no 'by', take away 1.",
+    description: "Take away from a number. With no 'by', take away 1. A variable that is not set starts at 0.",
     examples: ["decrement retries"],
   },
   {
@@ -44,7 +50,7 @@ export const HELP = [
   {
     name: "repeat", kind: "command",
     syntax: "repeat <n> times ... end | repeat while <condition> ... end | repeat until <condition> ... end",
-    description: "Run commands again and again. Each pass counts against the step budget.",
+    description: "Run commands again and again. The count is a whole number, and 0 or less gives no pass. Each pass counts against the step budget.",
     examples: ["repeat 3 times index i\n  print i\nend", "repeat until done\n  set done to true\nend"],
   },
   {
@@ -69,7 +75,7 @@ export const HELP = [
     name: "stop", kind: "command",
     syntax: "stop | stop process <name>",
     description: "In 'on error': end the script or tool with the error. 'stop process <name>' stops a background process, from any script.",
-    examples: ["on error\n  print 'giving up'\n  stop\nend", "stop process 'site'"],
+    examples: ["on error\n  print 'the build failed'\n  stop\nend", "stop process 'site'"],
   },
   {
     name: "read", kind: "command",
@@ -80,43 +86,74 @@ export const HELP = [
   {
     name: "write", kind: "command",
     syntax: "write <value> to <file>",
-    description: "Replace the text of a file, or make it. If the file changed after this script read it, the write fails. A script cannot change a file that is not UTF-8 text. A file with a BOM keeps it, and a line edit keeps CRLF line breaks. Reads do not show the BOM.",
+    description: [
+      "Replace the text of a file, or make the file.",
+      "If the file changed after this script read it, the write fails. Read the file again.",
+      "A script cannot change a file that is not UTF-8 text.",
+      "A file with a BOM keeps it. Reads do not show the BOM.",
+    ],
     examples: ["write 'hello' to ./out.txt", "write config as pretty json to ./config.json"],
   },
   {
     name: "append", kind: "command",
     syntax: "append <value> to <file>",
-    description: "Add text to the end of a file, or make it.",
+    description: "Add text to the end of a file, or make the file.",
     examples: ["append 'one more line\\n' to ./log.txt"],
   },
   {
     name: "replace", kind: "command",
     syntax: "replace <old> with <new> in <file, files, glob or variable> | replace lines <a> to <b> of <file> with <text>",
-    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. In a list of files or a glob, the runtime checks every file first. If one file cannot change, no file changes. A replace that gives the same text writes nothing. 'replace lines' replaces lines by number. Read the file first. Then the result is the old lines.",
+    description: [
+      "Replace every match of the old text, or of a pattern (help pattern).",
+      "The result lists each replacement. 'if the result is empty' means no match. No match also gives a warning.",
+      "In a list of files or a glob, the runtime checks every file first. If one file cannot change, no file changes.",
+      "A replace that gives the same text writes nothing.",
+      "'replace lines' replaces lines by number. Read the file first. The result is the old lines.",
+      "A line edit keeps the CRLF line breaks of a file.",
+    ],
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "replace 'getTotal(' with 'cartTotal(' in ./src/**/*.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
     name: "in", kind: "command",
     syntax: "in <file or text> replace <old> with <new> | in <file or text> find <text> | in <file or text> do ... end",
-    description: "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'. In a 'do ... end' block, each replace and find with no target uses X. A bare read and line forms with no 'of' also use X: lines 5 to 7, line 5, put ... after line 5, remove lines 5 to 7. An 'in' inside the block starts a new command.",
+    description: [
+      "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'.",
+      "In a 'do ... end' block, each replace and find with no target uses X.",
+      "A bare read, and the line forms with no 'of', also use X: lines 5 to 7, line 5, put ... after line 5, remove lines 5 to 7.",
+      "An 'in' inside the block starts a new command.",
+    ],
     examples: ["in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'", "in ./src/app.js do\n  replace 'var ' with 'let '\n  find 'TODO'\n  print the result\nend"],
   },
   {
     name: "find", kind: "command",
     syntax: "find <text or pattern> in <file, list of files, lines, or text>   (also a value: set hits to find 'x' in f)",
-    description: "Put the lines that contain the text in the result. Each line has number and text, and file when it comes from a file. print shows path:number: text. The match is plain text, and letter case counts. In lines, such as 'lines 5 to 9 of f' or an earlier find, the lines keep their numbers and files.",
-    examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'all good' end", "set hits to find 'TODO' in ./src/**/*.js\nprint hits's length"],
+    description: [
+      "Put the lines that contain the text in the result.",
+      "Each line has number and text, and file when it comes from a file. print shows path:number: text.",
+      "The match is plain text, and letter case counts.",
+      "In lines, such as 'lines 5 to 9 of f' or an earlier find, the lines keep their numbers and files.",
+    ],
+    examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'no failures' end", "set hits to find 'TODO' in ./src/**/*.js\nprint hits's length"],
   },
   {
     name: "delete", kind: "command",
     syntax: "delete <file>",
-    description: "Delete one file. It has the checks of a write, and it takes one file, not a folder or a glob. undo puts the file back. For a link, delete removes the link, not the file that it points to. To commit the removal: git commit [<file>] with <message>.",
+    description: [
+      "Delete one file. It has the checks of a write. It takes one file, not a folder or a glob.",
+      "undo puts the file back.",
+      "For a link, delete removes the link, not the file that it points to.",
+      "To commit the removal: git commit [<file>] with <message>.",
+    ],
     examples: ["delete ./tmp/old-notes.md"],
   },
   {
     name: "move", kind: "command",
     syntax: "move <file> to <file>",
-    description: "Move or rename one file. It has the checks of a write for both paths, and it never replaces a file: the new path must be free. undo takes it back. For a file in git, use git move, so the history follows it.",
+    description: [
+      "Move or rename one file. It has the checks of a write for both paths.",
+      "It never replaces a file: the new path must be free.",
+      "undo takes it back. For a file in git, use git move, so that the history follows it.",
+    ],
     examples: ["move ./src/old.js to ./src/new.js"],
   },
   {
@@ -146,49 +183,83 @@ export const HELP = [
   {
     name: "tool", kind: "command", where: "AGENTS.talk",
     syntax: "[untrusted] tool <name> [with <param>, ...] ... end",
-    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result. A call is also a value, and then the result does not change: set tests to run_tests. If a tool brings in text from the network (curl, gh, npm view), mark it 'untrusted'. Then its result is untrusted.",
+    description: [
+      "Define a tool that the agent can call by name. Only in AGENTS.talk.",
+      "The '#' comment lines just above the tool are its help.",
+      "The tool gives back the result. A call is also a value, and then the result does not change: set tests to run_tests.",
+      "If a tool brings in text from the network (curl, gh, npm view), mark it 'untrusted'. Then its result is untrusted.",
+    ],
     examples: ["# Runs one test class.\ntool run_test with name\n  run 'mvn' with 'test', '-Dtest=' + name\nend", "# Shows a GitHub issue.\nuntrusted tool issue with id\n  run 'gh' with 'issue', 'view', id\nend"],
   },
   {
     name: "run", kind: "command", where: "AGENTS.talk",
     syntax: "run <program and args> | run <program> with <arg>, ... [using secret <NAME>, ...] [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>]",
-    description: "Only in a tool. Run a program with no shell. The result is { code, output }. Only the variables from 'allow env' go to the program. A file value is its path, such as './src/a.js'. A list gives one argument for each item. An argument that does not start with text written out in the tool must not start with '-'. Put '--' before it if the program takes '--'. A program that PATH finds inside the project is an error. Write its path to run it, such as './node_modules/.bin/jest'. The program must be written out in the tool: run 'npm' with name, not run name. In run 'npm test ${name}', each ${} is one whole argument, also if it has spaces. 'in a sandbox' runs it in an OS sandbox. There it can write only the project (not .git, .talk or hidden files). It can read only system folders, its install folder and tool caches, and it has no network. 'with local network' allows localhost only. On an OS with no sandbox, a sandboxed run is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable. AGENTS.talk needs 'allow secret NPM_TOKEN for run'. The value shows as <secret NPM_TOKEN> in the output. 'run <prompt> in a subagent with only <tools>' gives the task to a model that can call only those tools. Its answer is untrusted.",
+    description: [
+      "Run a program with no shell. Only in a tool. The result is { code, output }.",
+      "Write the program in the tool: run 'npm' with name, not run name.",
+      "Only the variables in 'allow env' go to the program.",
+      "A file value is its path, such as './src/a.js'. A list gives one argument for each item.",
+      "In run 'npm test ${name}', each ${} is one whole argument, also with spaces in it.",
+      "An argument that does not start with text written in the tool must not start with '-'. Put '--' before it if the program takes '--'.",
+      "A program that PATH finds inside the project is an error. To run it, write its path, such as './node_modules/.bin/jest'.",
+      "'in a sandbox' runs the program in an OS sandbox. It can write only the project (not .git, .talk or hidden files). It can read only system folders, its install folder and tool caches. It has no network.",
+      "'with network' allows the network, and 'with local network' allows localhost only. 'writes to' and 'reads of' add paths.",
+      "On an OS with no sandbox, a sandboxed run is an error, and nothing runs.",
+      "'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program the secret as an environment variable. AGENTS.talk needs 'allow secret NPM_TOKEN for run'. The value shows as <secret NPM_TOKEN> in the output.",
+      "'run <prompt> in a subagent with only <tools>' gives the task to a model that can call only those tools. Its answer is untrusted.",
+    ],
     examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend", "# Summarizes the most important open issues.\ntool summarize_issues\n  run 'Summarize the most important open issues' in a subagent with only gh_issues\nend"],
   },
   {
     name: "import", kind: "command", where: "AGENTS.talk",
     syntax: "import <path to a .talk file>",
-    description: "Only in AGENTS.talk and the files it imports. Load the tools from another .talk file. ./ starts from the importing file, @/ from the project root.",
+    description: "Load the tools from another .talk file. Only in AGENTS.talk and the files that it imports. ./ starts from the importing file, @/ from the project root.",
     examples: ["import ./talk/git.talk", "import @/talk/maven.talk"],
   },
   {
     name: "before", kind: "command", where: "AGENTS.talk",
     syntax: "before <step> ... end",
-    description: "Only in AGENTS.talk. Run commands before a step: read, write, append, replace, put, remove, move, delete, change (any file change), undo, run, start, stop, git, fetch, or a tool name. 'the <step>' holds the step, also for a tool: the deploy's args. 'reject' stops the step. A hook cannot change the step. A hook cannot run a program, or call a tool that runs one.",
+    description: [
+      "Run commands before a step. Only in AGENTS.talk.",
+      "Steps: read, write, append, replace, put, remove, move, delete, change (any file change), undo, run, start, stop, git, fetch, or a tool name.",
+      "'the <step>' holds the step, also for a tool: the deploy's args.",
+      "'reject' stops the step.",
+      "A hook cannot change the step. A hook cannot run a program, or call a tool that runs one.",
+    ],
     examples: ["before change\n  if the change's path ends with '.env'\n    reject 'Cannot change env files!'\n  end\nend"],
   },
   {
     name: "after", kind: "command", where: "AGENTS.talk",
     syntax: "after <step> ... end",
-    description: "Only in AGENTS.talk. Run commands after a step. 'the <step>' holds the step, and 'the result' holds what it gave back.",
+    description: "Run commands after a step. Only in AGENTS.talk. 'the <step>' holds the step, and 'the result' holds what it gave back.",
     examples: ["after run\n  print 'ran ' + the run's program + ': ' + the result's code\nend"],
   },
   {
     name: "reject", kind: "command", where: "AGENTS.talk",
     syntax: "reject <message>",
-    description: "Only in a 'before' hook. The step does not happen, and the script gets an error with the message. 'on error' can catch it.",
+    description: "Stop the step, in a 'before' hook. The script gets an error with the message. 'on error' can catch it.",
     examples: ["before write\n  reject 'This project is read only'\nend"],
   },
   {
     name: "wait", kind: "command",
     syntax: "wait <duration> | wait until <condition> [within <duration>]",
-    description: "Wait for a time, or until a condition is true. 'wait until' checks every 200 ms. An error in the condition counts as false. With no 'within', it stops after 30 seconds. Durations: 100ms, 2s, 5 seconds, 1 minute.",
+    description: [
+      "Wait for a time, or until a condition is true.",
+      "'wait until' checks every 200 ms. An error in the condition counts as false. With no 'within', it stops after 30 seconds.",
+      "Durations: 100ms, 2s, 5 seconds, 1 minute.",
+    ],
     examples: ["wait 2 seconds", "wait until (fetch http://localhost:4000/ as response)'s status is 200 within 10 seconds"],
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",
     syntax: "start <program> [with <arg>, ...] as <name> [using secret <NAME>, ...] [in a sandbox [with ...]] | start <prompt> as <name> in a subagent with only <tool>, ...",
-    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. The program must be written out in the tool, as in run. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background. Its answer is the output of the process.",
+    description: [
+      "Start a program in the background, such as a dev server, with no shell. Only in a tool.",
+      "The program keeps running after the script. The host stops all of them when the session ends.",
+      "Write the program in the tool, as in run. 'using secret' and 'in a sandbox' work as in run.",
+      "'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them.",
+      "'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background. Its answer is the output of the process.",
+    ],
     examples: ["tool site_server\n  start 'npm run serve-site' as 'site' in a sandbox\nend"],
   },
   {
@@ -200,55 +271,107 @@ export const HELP = [
   {
     name: "fetch", kind: "command",
     syntax: "fetch <url> [as json | as response | as text] [with method: ..., headers: ..., body: ...] [within <duration>]   (also a value: set page to fetch url)",
-    description: "Get a URL over http or https. The result is the body as text, or parsed with 'as json'. 'as response' gives { status, headers, text }. A new host asks the human first, unless AGENTS.talk has 'allow fetch from'. Local and private addresses must be in AGENTS.talk, and so must a name that points to one. Limits: 30 seconds, 5 MB.",
+    description: [
+      "Get a URL over http or https.",
+      "The result is the body as text. 'as json' parses it. 'as response' gives { status, headers, text }.",
+      "The first fetch to a new host asks the human, unless AGENTS.talk has 'allow fetch from'.",
+      "A local or private address must be in AGENTS.talk, and so must a name that points to one.",
+      "A URL cannot hold a user name or password. Send them in a header.",
+      "Limits: 30 seconds, 5 MB.",
+    ],
     examples: ["fetch https://api.github.com/repos/bigskysoftware/htmx as json\nprint it's stargazers_count", "fetch https://example.com/api as response with method: 'POST', body: { name: 'x' }\nprint it's status"],
   },
   {
     name: "secret", kind: "expression",
     syntax: "secret <NAME>",
-    description: "A secret from the environment, .env.local or .env, that you can send but never see. It goes only into fetch headers or body, to the hosts in its 'allow secret' line, or to a program in a tool, with 'using secret'. print shows <secret NAME>. Any other use is an error. 'Bearer ' + secret X is still a secret. Its value shows as <secret NAME> in output.",
+    description: [
+      "A secret from the environment, .env.local or .env. You can send it, but you cannot see it.",
+      "It goes only into fetch headers or a fetch body, to the hosts in its 'allow secret' line, or to a program in a tool, with 'using secret'.",
+      "'Bearer ' + secret X is still a secret.",
+      "print and all other output show <secret NAME>. Any other use is an error.",
+    ],
     examples: ["fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer ' + secret GITHUB_TOKEN }\nprint it's login"],
   },
   {
     name: "ask", kind: "command",
     syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
-    description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text that the human types, or the choice that the human picks. If there is no way to ask, no answer in time (2 minutes, or the 'within' time), or a 'no thanks', the result is null. Treat null as no.",
+    description: [
+      "Ask the human, and wait. Only the human answers, never you.",
+      "The result is the text that the human types, or the choice that the human picks.",
+      "The result is null if there is no way to ask, no answer in time (2 minutes, or the 'within' time), or the human declines. Treat null as no.",
+    ],
     examples: ["ask 'Which branch should I use?'\nprint it", "ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes\nif the result is 'yes'\n  print 'ok'\nend"],
   },
   {
     name: "undo", kind: "command",
     syntax: "undo | undo <count> | undo changes to <file> | the undo list",
-    description: "Put back the files that scripts changed. 'undo' takes back this script's changes so far, or if it made none, the last script that changed files. 'undo 3' takes back 3, newest first. If a file changed after that script, undo changes nothing. It does not undo run programs, tools, or git commits. The result is the files it put back.",
+    description: [
+      "Put back the files that scripts changed.",
+      "'undo' takes back this script's changes so far. If this script made none, it takes back the last script that changed files.",
+      "'undo 3' takes back 3 scripts, newest first.",
+      "If a file changed after that script, undo changes nothing.",
+      "Undo does not take back programs, tools or git commits.",
+      "The result is the files that undo put back.",
+    ],
     examples: ["undo", "undo changes to ./src/app.js", "print the undo list"],
   },
   {
     name: "git", kind: "command",
     syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch>",
-    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, never with force. It does not ask. A push to a remote that is a folder inside the project is an error. If the project root is a subfolder of the repo, status, diff, show and log cover only the root. A policy can turn it off with 'deny git push'. Delete branch deletes only a merged branch.",
+    description: [
+      "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text.",
+      "If the repo config can run programs, git does not run.",
+      "status is short, with the branch. log shows 15 commits, one line each.",
+      "commit adds and commits only the files that you name.",
+      "merge is fast-forward only. delete branch deletes only a merged branch.",
+      "push sends the current branch to origin, never with force. It does not ask the human. A policy can turn it off with 'deny git push'.",
+      "A push to a remote that is a folder inside the project is an error.",
+      "If the project root is a subfolder of the repo, status, diff, show and log cover only the root.",
+    ],
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
     name: "previous", kind: "expression",
     syntax: "the previous output",
-    description: "All the print output of the last script, as text. The host shows at most 1000 lines or 30 KB (less with 'limit output to' in AGENTS.talk), and cuts the middle of longer output. This value has all of it. Each script replaces it. To keep it: set $log to the previous output.",
+    description: [
+      "All the print output of the last script, as text.",
+      "The host shows at most 1000 lines or 30 KB (less with 'limit output to' in AGENTS.talk), and cuts the middle of longer output. This value has all of it.",
+      "Each script replaces it. To keep it: set $log to the previous output.",
+      "It keeps the taint labels of what the last script printed.",
+    ],
     examples: ["print lines 1001 to 1500 of the previous output", "set failures to find 'not ok' in the previous output"],
   },
   {
     name: "audit", kind: "expression",
     syntax: "the audit | audit as json (in AGENTS.talk) | keep audit for <n> days (in AGENTS.talk)",
-    description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to .talk/audit/<date>.log, which scripts cannot change. With 'audit as json' in AGENTS.talk, the host writes JSON Lines. The host keeps 3 days of files, or the days in 'keep audit for 7 days' in AGENTS.talk.",
+    description: [
+      "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls.",
+      "'the audit' is this session's records. Each record has time, script, kind, target, details and from.",
+      "The host writes the records to .talk/audit/<date>.log. Scripts cannot change it.",
+      "With 'audit as json' in AGENTS.talk, the host writes JSON Lines.",
+      "The host keeps 3 days of files, or the days in 'keep audit for 7 days' in AGENTS.talk.",
+    ],
     examples: ["for step in the audit\n  if step's kind is 'write'\n    print step's target\n  end\nend"],
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
     syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>', ... | allow secret <NAME> for fetch to '<host>', ... | allow secret <NAME> for run | allow secret <NAME> for subagents | use model '<id>' for subagents [with secret <NAME>]",
-    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without a question. '*.github.com' allows hosts under github.com. 'allow secret ... for fetch to' lets scripts use a secret, and names the hosts that it can go to. It does not skip the fetch question. 'allow secret ... for run' lets a run or start in a tool have the secret, with 'using secret'. A name cannot be in both 'allow env' and 'allow secret'. 'use model' sets the model for subagents. pi lends its own model. Other harnesses need a key from 'allow secret ... for subagents'.",
+    description: [
+      "Allow environment variables, changes to hidden files, fetch hosts and secrets. Only at the top of AGENTS.talk.",
+      "'allow env' lists the environment variables that run passes on.",
+      "'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files.",
+      "'allow fetch from' lists the hosts that fetch can reach with no question. '*.github.com' allows the hosts under github.com.",
+      "'allow secret ... for fetch to' lets scripts use a secret, and names the hosts that it can go to. The fetch question still comes.",
+      "'allow secret ... for run' gives the secret to a run or start in a tool, with 'using secret'.",
+      "A name cannot be in both 'allow env' and 'allow secret'.",
+      "'use model' sets the model for subagents. pi lends its own model. Other harnesses need a key from 'allow secret ... for subagents'.",
+    ],
     examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore", "allow secret GITHUB_TOKEN for fetch to 'api.github.com'"],
   },
   {
     name: "limit", kind: "command", where: "AGENTS.talk",
     syntax: "limit output to <n> lines [or <n> KB]",
-    description: "Only at the top of AGENTS.talk, or in a policy. The most print output that the agent sees from one script. The host cuts the middle of longer output, and the previous output has all of it. It can only make the host's limit (1000 lines or 30 KB) smaller.",
+    description: "Set the most print output that the agent sees from one script. Only at the top of AGENTS.talk, or in a policy. The host cuts the middle of longer output, and the previous output has all of it. It can only make the host's limit (1000 lines or 30 KB) smaller.",
     examples: ["limit output to 400 lines", "limit output to 400 lines or 20 KB"],
   },
 
@@ -262,37 +385,53 @@ export const HELP = [
   {
     name: "strings", kind: "expression",
     syntax: "'text'  \"text\"  'Hi ${name}'  \"\"\" raw \"\"\"  | text block",
-    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code. The line break right after the opening quotes is not part of the text. To start with a blank line, leave one empty line after the opening quotes. To hold three quotes, open with four and close with four. The text cannot start with a quote, since that makes one more opening quote: start the text on the next line. For code, and for any text with quotes, use a text block: lines that start with |. The runtime removes one space after the |. The rest of the line is the text, exactly as typed, with no escapes and no ${}. A line with only | is an empty line.",
+    description: [
+      "For code, and for any text with quotes, use a text block: lines that start with |. The text is exactly as typed, with no escapes and no ${}. One space after the | is removed. A line with only | is an empty line.",
+      "'text' and \"text\" can span lines, and their common indent is removed. ${...} puts in a value. Write \\${ for a plain ${. Escapes: \\n and \\t.",
+      "A raw string in three double quotes has no escapes and no ${}, and keeps its indent. The line break right after the opening quotes is not part of the text.",
+      "To hold three quotes in a raw string, open and close it with four. A raw string cannot start with a quote: start the text on the next line.",
+    ],
     examples: ["print 'Hi ${name}'", "set code to \"\"\"\n  const x = `${y}`\n\"\"\""],
   },
   {
     name: "paths", kind: "expression",
     syntax: "./x  ../x  @/x  ./src/**/*.js  ./\"my file.txt\"  https://example.com/x",
-    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files, sorted by path, and skip .git and what git ignores, unless the pattern names the folder. A file has name, path, text, lines, size and modified. Paths outside the project are refused. A URL (https://...) needs no quotes: it is text.",
+    description: [
+      "./ and ../ start from the current folder, @/ from the project root. Paths outside the project are refused.",
+      "* and ** make a list of files, sorted by path. A glob skips .git and what git ignores, unless the pattern names the folder.",
+      "A file has name, path, text, lines, size and modified.",
+      "Quotes hold a name with spaces: ./\"my dir\"/a.txt.",
+      "A URL (https://...) needs no quotes: it is text.",
+    ],
     examples: ["print ./src/**/*.js", "print the size of @/README.md"],
   },
   {
     name: "the", kind: "expression",
     syntax: "the <value>",
-    description: "'the' is optional, and changes nothing. Use it where it reads better. To use a command word as a name, write 'the' before it: the write's path.",
+    description: "'the' is optional, and changes nothing. To use a command word or a tool name as a name, write 'the' before it: the write's path.",
     examples: ["print the file's text"],
   },
   {
     name: "it", kind: "expression",
     syntax: "it | the result",
-    description: "The value from the last command: read, fetch, replace, a tool call, and more. Each command sets it again, so to keep a value, put it in a variable: set tests to run_tests.",
+    description: "The value from the last command: read, fetch, replace, a tool call, and more. Each command sets it again. To keep a value, put it in a variable: set tests to run_tests.",
     examples: ["read ./a.txt\nprint it"],
   },
   {
     name: "of", kind: "expression",
     syntax: "<value>'s <name> | <value>.<name> | <name> of <value> | <value>[<index>]",
-    description: "Three ways to get a property: file's text, file.text and text of file are the same. A missing property is null.",
+    description: "Get a property. file's text, file.text and text of file are the same. A missing property is null. set x[i] on a list takes a whole number from 0 to the length.",
     examples: ["print the name of the file", "print config.version", "print items[0]"],
   },
   {
     name: "lines", kind: "expression",
     syntax: "lines of <file or text> | lines <a> to <b> of <file or text> | line <n> of <file or text>",
-    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses whole line numbers, both ends included, and starts at 1 or more. The end of a range can go past the last line. 'line <n> of' gives one line. A number past the end is an error. Put the line in a variable first, then use its fields on the next line.",
+    description: [
+      "The lines of a file or text. Each line has number (from 1) and text.",
+      "A range uses whole line numbers, both ends included, and starts at 1 or more. The end can go past the last line.",
+      "'line <n> of' gives one line. A number past the end is an error.",
+      "Put a line in a variable first. Then use its fields on the next line.",
+    ],
     examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js", "set first to line 1 of ./a.txt\nset name to first's text"],
   },
   {
@@ -316,31 +455,55 @@ export const HELP = [
   {
     name: "operators", kind: "expression",
     syntax: "+ - * / mod   is  is not  <  >  <=  >=   and  or  not  no",
-    description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. In + and ${}, a file is its path: write file's text to join its text. 'no x' is true for null and empty values. False values are false, null, 0, '', [] and {}. 'is' compares lists and objects by their content. < > <= >= compare numbers only, and text that holds a number counts as a number. A hyphen with a letter after it is part of a name (build-dir), so put spaces around a minus between names: a - b.",
+    description: [
+      "Math, comparison and logic.",
+      "Mixing different math operators, or 'and' with 'or', needs parentheses.",
+      "+ joins text if either side is text. In + and ${}, a file is its path. Write file's text to join its text.",
+      "< > <= >= compare numbers only. Text that holds a number counts as a number.",
+      "'is' compares lists and objects by their content.",
+      "False values: false, null, 0, '', [] and {}. 'no x' is true for null and empty values.",
+      "mod is the remainder: -7 mod 3 is -1.",
+      "A hyphen with a letter after it is part of a name (build-dir). Put spaces around a minus between names: a - b.",
+    ],
     examples: ["print 1 + (2 * 3)", "if a is 1 and b is not 2 print 'yes' end"],
   },
   {
     name: "contains", kind: "expression",
     syntax: "contains  does not contain  starts with  ends with  matches  is in  is not in  exists  does not exist  is empty  is not empty",
-    description: "Checks for text, lists and files. On a file or line they use its text. On a list, they compare items by their content. No text contains, starts with or ends with null. matches takes a pattern.",
+    description: [
+      "Checks for text, lists and files.",
+      "On a file or a line, they use its text. On a list, they compare items by their content.",
+      "No text contains, starts with or ends with null.",
+      "matches takes a pattern.",
+    ],
     examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern '^v[0-9]+' print 'a version' end"],
   },
   {
     name: "untrusted", kind: "expression",
     syntax: "<value> is untrusted | <value> is not untrusted | <value> is private | <value> is not private",
-    description: "Taint checks. Text from fetch and from an untrusted tool is untrusted: it must not drive an action without the human. Text from files, git and programs is private: it must not leave the machine without the human. A value made from labeled values has their labels. Nothing removes a label.",
-    examples: ["set page to fetch https://example.com/notes\nif page is untrusted\n  print 'This came from the web'\nend"],
+    description: [
+      "Check the taint labels of a value.",
+      "Text from fetch and from an untrusted tool is untrusted. It must not drive an action without the human.",
+      "Text from files, git and programs is private. It must not leave the machine without the human.",
+      "A value made from labeled values has their labels. Nothing removes a label.",
+    ],
+    examples: ["set page to fetch https://example.com/notes\nif page is untrusted\n  print 'untrusted text'\nend"],
   },
   {
     name: "pattern", kind: "expression",
     syntax: "pattern '<regexp>'",
-    description: "A regexp, in JavaScript syntax with the u flag, for find, replace and matches. Use a raw string for backslashes: pattern \"\"\"\\d+\"\"\". In replace, the new text can use $1, $<name>, $& and $$. A pattern that runs for more than 2 seconds is stopped.",
+    description: [
+      "A regexp, in JavaScript syntax with the u flag, for find, replace and matches.",
+      "Use a raw string for backslashes: pattern \"\"\"\\d+\"\"\".",
+      "In replace, the new text can use $1, $<name>, $& and $$.",
+      "A pattern that runs for more than 2 seconds is stopped.",
+    ],
     examples: ["set failures to find pattern 'not ok|FAIL' in the result's output", "replace pattern \"\"\"(\\w+)@old\\.com\"\"\" with '$1@new.com' in ./users.txt", "if tag matches pattern \"\"\"^v\\d+\\.\\d+$\"\"\" print 'a release' end"],
   },
   {
     name: "as", kind: "expression",
     syntax: "<value> as json | as pretty json | as number | as text",
-    description: "Convert a value. 'as json' parses text, and formats other values as compact JSON.",
+    description: "Convert a value. 'as json' parses text, and formats other values as compact JSON. On a file, it parses the file's text.",
     examples: ["set config to the file's text as json"],
   },
   {
@@ -350,6 +513,16 @@ export const HELP = [
     examples: ["help within"],
   },
 ];
+
+// the rules of an entry, as a list
+function rulesOf(entry) {
+  return Array.isArray(entry.description) ? entry.description : [entry.description];
+}
+
+// the description as text: one rule per line, or the one text as it is
+function descriptionText(entry, bullet) {
+  return Array.isArray(entry.description) ? entry.description.map((rule) => bullet + rule).join("\n") : entry.description;
+}
 
 // the entry for a word: a full name, or the first word of a name
 function findEntry(word) {
@@ -398,7 +571,7 @@ export function helpIndex(tools, only) {
     lines.push("Commands:");
     for (const entry of HELP) {
       if (entry.kind === "command") {
-        lines.push("  " + pad(entry.name, 12) + firstSentence(entry.description));
+        lines.push("  " + pad(entry.name, 12) + firstSentence(rulesOf(entry)[0]));
       }
     }
     lines.push("");
@@ -407,7 +580,7 @@ export function helpIndex(tools, only) {
     lines.push("Expressions:");
     for (const entry of HELP) {
       if (entry.kind === "expression") {
-        lines.push("  " + pad(entry.name, 12) + firstSentence(entry.description));
+        lines.push("  " + pad(entry.name, 12) + firstSentence(rulesOf(entry)[0]));
       }
     }
     lines.push("");
@@ -428,7 +601,7 @@ export function helpIndex(tools, only) {
   return lines.join("\n");
 }
 
-// recipes: common tasks done well, for "help recipes" and the docs for agents
+// recipes: common tasks, step by step, for "help recipes" and the docs for agents
 // they may call the tools run_tests and dev_server; test/help.test.js parses them with those names
 export const RECIPES = [
   {
@@ -444,7 +617,7 @@ export const RECIPES = [
   {
     name: "Read only the failures",
     description: "Test output is long. Find the lines that matter.",
-    example: "set tests to run_tests\nset failures to find 'not ok' in tests's output\nif failures is empty\n  print 'all green'\nelse\n  print failures\nend",
+    example: "set tests to run_tests\nset failures to find 'not ok' in tests's output\nif failures is empty\n  print 'no failures'\nelse\n  print failures\nend",
   },
   {
     name: "Find, then rename",
@@ -454,7 +627,7 @@ export const RECIPES = [
   {
     name: "Ask before something big",
     description: "Only the human answers. No answer is null: treat it as no.",
-    example: "find 'TODO' in ./src/**/*.js\nask 'Remove all ' + the length of the result + ' TODO lines?' with 'yes' or 'no'\nif the result is not 'yes'\n  print 'Left them alone'\nend",
+    example: "find 'TODO' in ./src/**/*.js\nask 'Remove all ' + the length of the result + ' TODO lines?' with 'yes' or 'no'\nif the result is not 'yes'\n  print 'kept the TODO lines'\nend",
   },
   {
     name: "Start a server, and wait for it",
@@ -480,7 +653,7 @@ export const RECIPES = [
 
 // help recipes: every recipe, with its code
 function recipesText() {
-  const lines = ["Recipes: common tasks, done well.", ""];
+  const lines = ["Recipes: common tasks, step by step.", ""];
   for (const recipe of RECIPES) {
     lines.push(recipe.name, "  " + recipe.description, "");
     for (const line of recipe.example.split("\n")) {
@@ -514,7 +687,7 @@ export function helpFor(word, tools) {
   if (entry === null) {
     return null;
   }
-  const lines = [entry.syntax, "", entry.description, "", "Examples:"];
+  const lines = [entry.syntax, "", descriptionText(entry, "- "), "", "Examples:"];
   for (const example of entry.examples) {
     lines.push("");
     for (const line of example.split("\n")) {
@@ -556,7 +729,7 @@ export function referenceMarkdown() {
   const lines = [
     "# ClankTalk Docs for Agents",
     "",
-    "This page lists each ClankTalk command and expression, with examples. You do not need to read all of it. In a script, `help` lists everything, `help <word>` shows one entry, and `help recipes` shows common tasks. Use `help` when you need it.",
+    "This page lists each ClankTalk command and expression, with examples. In a script, `help` lists everything, `help <word>` shows one entry, and `help recipes` shows common tasks.",
     "",
     "For people: read the [docs for humans](docs.html).",
     "",
@@ -570,7 +743,7 @@ export function referenceMarkdown() {
     lines.push("<h2 id=\"" + slug(area.title) + "\">" + area.title + "</h2>", "", area.intro, "");
     for (const name of area.names) {
       const entry = HELP.find((item) => item.name === name);
-      lines.push("### " + entry.name, "", "```text", entry.syntax, "```", "", entry.description, "");
+      lines.push("### " + entry.name, "", "```text", entry.syntax, "```", "", descriptionText(entry, "- "), "");
       if (entry.examples.length > 0) {
         lines.push("<p class=\"examples-label\">Examples</p>", "");
       }
@@ -579,7 +752,7 @@ export function referenceMarkdown() {
       }
     }
   }
-  lines.push("<h2 id=\"recipes\">Recipes</h2>", "", "Common tasks, done well. In a script, `help recipes` shows the same.", "");
+  lines.push("<h2 id=\"recipes\">Recipes</h2>", "", "Common tasks, step by step. In a script, `help recipes` shows the same.", "");
   for (const recipe of RECIPES) {
     lines.push("### " + recipe.name, "", recipe.description, "", "```talk", recipe.example, "```", "");
   }
@@ -596,7 +769,7 @@ export function syntaxSummary() {
     lines.push(group.title + ":");
     for (const entry of HELP) {
       if (group.match(entry)) {
-        lines.push("  " + entry.syntax + "   " + firstSentence(entry.description));
+        lines.push("  " + entry.syntax + "   " + firstSentence(rulesOf(entry)[0]));
       }
     }
     lines.push("");

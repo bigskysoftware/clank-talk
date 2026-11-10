@@ -106,9 +106,7 @@ args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
 
 ## Readable Scripts
 
-ClankTalk is an xTalk language, inspired by [hyperscript](https://hyperscript.org).
-
-It reads like English, so you can tell what your agent did at a glance.  Bash... not so much.
+ClankTalk is designed for your agent to write and _you_ to read.  It is optimized for human understanding, while allowing agents to get work done efficiently.
 
 <div class="compare">
 
@@ -135,27 +133,25 @@ end
 </div>
 <script src="js/compare.js"></script>
 
-## Runtime Limits
+## A Controllable Runtime
 
-Giving an agent a shell is giving it the keys to your kingdom. ClankTalk gives it a controlled & observable language instead.
-
-The runtime is pure JavaScript:
+Giving an agent a shell is pretty crazy when you think
+about it. ClankTalk gives it a controlled & observable runtime instead:
 
 - File access stays inside the project root
 - Secrets and config that runs code, like `.env` and `.git/`, are off limits
-- Fetch asks you before it talks to a new host
-- Runaway loops hit a step budget and stop
+- You can lock down `fetch` with your own rules
+- Step budgets control run away loops
 
 ```talk escape.talk
 write 'hello' to ../../etc/hosts
 # error: outside the project root
 ```
 
-## Tools in AGENTS.talk
+## You Define the Tools
 
-Sometimes your agent really does need to run something, like your test suite or a dev server. Fine!
-
-Define a tool in `AGENTS.talk`. The agent can call it. The agent can't change it. Everything else stays off limits.
+You can define new tools in `AGENTS.talk` for your agents that allow you to minimize the surface area
+needed to get work done.  Agents aren't allowed to touch `.talk` files or hidden files by default.
 
 ```talk AGENTS.talk
 tool site_server
@@ -165,7 +161,7 @@ end
 
 ## OS Sandboxes for Programs
 
-When available & needed, tools can run programs in OS level sandboxes.
+When available (MacOS, Linux) and needed, tools can run programs in OS level sandboxes.
 
 ```talk AGENTS.talk
 tool run_tests
@@ -173,13 +169,47 @@ tool run_tests
 end
 ```
 
-## Hooks
+## Secrets
 
-Your agent security policy is code you can read. Hooks live in `AGENTS.talk`, right next to your tools, and run before and after every step.
+Allow your agents to use secrets without seeing them in a controlled manner. 
 
-Allow it, reject it, or ask you. Only you answer `ask`, never the agent. If nobody answers, the answer is no.
+Secrets come from `.env`, which scripts cannot read, and can only be used in places defined in your `AGENTS.talk`.
+
+```talk github.talk
+set auth to 'Bearer ' + secret GITHUB_TOKEN
+fetch https://api.github.com/user with headers: { Authorization: auth }
+
+print auth
+# Bearer <secret GITHUB_TOKEN>
+
+print auth contains 'ghp'
+# error: a secret cannot go into 'contains'
+```
+
+## Taint Tracking
+
+Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agents environment, and to control how things work
+after that happens.
+
+```talk triage.talk
+set issue to fetch https://example.com/issues/42
+git commit [./src/cart.js] with issue
+# asks you: Commit with untrusted text from
+#   https://example.com/issues/42: ...?
+```
+
+## A Security Policy
+
+You can define a sophisticated security policy for your project (or company!)
+
+In `AGENTS.talk`, `allow` lines say what your agent can reach, and hooks run logic before and after every agent action.
 
 ```talk AGENTS.talk
+allow env PATH, HOME
+allow changes to @/.github/
+allow fetch from 'api.github.com', 'registry.npmjs.org'
+allow secret NPM_TOKEN for run
+
 before git
   if the git's operation is 'commit'
     ask 'Commit ' + the git's files + '?' with 'yes' or 'no'
@@ -190,23 +220,31 @@ before git
 end
 ```
 
-## Audit Log
+## Audit Logs
 
-Ever wonder what your agent is actually doing? Wonder no more.
+ClankTalk adds _observability_ to your agent's sessions by keeping a log (default of three days) of every action your agent takes.
 
-Every step that touches the world is written to `.talk/audit/`: what ran, what it touched, and where. Your agent can't change it.
+```audit .talk/audit/2026-11-09.log
+== 10:42:01  script 12 (main)  done  4 steps ==
+  replace
+  | total = price * qty
+  with
+  | total = price * qty * (1 - off)
+  in @/src/cart.js
 
-```text .talk/audit/2026-11-09.log
-10:42:01  replace  src/config.js   undo saved
+  run_tests
+--
+10:42:01  read     src/cart.js
+10:42:01  replace  src/cart.js  undo saved
 10:42:01  tool     run_tests
-10:42:09  run      npm test        code 0, 7.9 s
+10:42:09  run      npm test     code 0, 7.9 s, from run_tests
 ```
 
 ## Undo
 
-Agent made a mess? Undo it.
-
-ClankTalk saves file changes before it makes them, so you can roll agent work back one script at a time.
+The ClankTalk runtime makes an undo stack available to 
+allow you or the agent to back out any changes made on
+disk easily, even if you aren't using git.
 
 ```talk undo.talk
 undo 2
@@ -215,7 +253,9 @@ undo changes to ./src/config.js
 
 ## Hardened Git
 
-Git is built in, with the parts that run programs turned off. Your agent commits only the files it names, and merges only by fast-forward.
+Git tools come built in, with the parts that run programs turned off.  This allows you to use the 80%
+of git that matters without the 20% of git that can
+be used to compromise you.
 
 ```talk fix.talk
 git switch to new branch 'fix-retries'
@@ -223,23 +263,17 @@ git commit [./src/config.js] with 'More retries'
 git push
 ```
 
-## MCP Server
+## Agent & Harness Agnostic
 
-ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with Claude Code or any other agent that speaks MCP. Turn off your agent's shell, and ClankTalk is the only way in.
+ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with _any_ agent in _any_ harness. 
+
+You can turn off your other tools and ClankTalk becomes
+the only way your agent can interact with your system.
 
 ```bash terminal
 claude --tools "" --allowedTools mcp__clank-talk
 ```
 
-## Imports
-
-Tools are just ClankTalk, so they're easy to read and easy to share. Pull in a whole set with `import`.
-
-You pick the imports. Your agent doesn't, and it can't touch a `.talk` file.
-
-```talk AGENTS.talk
-import ./tools/deploy.talk
-```
 
 <div class="construction">
 

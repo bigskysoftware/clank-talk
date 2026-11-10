@@ -280,10 +280,13 @@ pre {
 /* the code is a little narrower than the text, and centered */
 .feature > .window, .feature > .compare { width: 92%; align-self: center; }
 .feature-wide { grid-column: 1 / -1; max-width: 680px; width: 100%; justify-self: center; }
+/* a last card with no pair goes in the center, at the width of one column */
+.feature-alone { grid-column: 1 / -1; justify-self: center; width: calc(50% - 24px); }
 /* in a card, the bash and ClankTalk windows stack */
 .feature .compare { grid-template-columns: 1fr; gap: 0; margin-left: 0; transform: none; }
 @media (max-width: 760px) {
   .feature-grid { grid-template-columns: 1fr; }
+  .feature-alone { width: 100%; }
 }
 
 /* the compare slider: ClankTalk on top of bash, cut open at the bar */

@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { marked } from "marked";
-import { highlight } from "./highlight.js";
+import { highlight, highlightBash, highlightAudit } from "./highlight.js";
 import { referenceMarkdown } from "../src/js/help.js";
 
 const SRC = "docs";
@@ -14,7 +14,7 @@ function escapeHtml(text) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// ```talk blocks get highlighted
+// ```talk, ```bash and ```audit blocks get highlighted
 // a title after the language puts the block in a window: ```talk bump.talk
 marked.use({
   renderer: {
@@ -22,12 +22,16 @@ marked.use({
       const parts = (token.lang || "").trim().split(/\s+/);
       const lang = parts[0];
       const title = parts.slice(1).join(" ");
-      if (lang !== "talk" && title === "") {
+      if (lang !== "talk" && lang !== "bash" && lang !== "audit" && title === "") {
         return false;
       }
       let code;
       if (lang === "talk") {
         code = '<pre><code class="language-talk">' + highlight(token.text) + "</code></pre>\n";
+      } else if (lang === "bash") {
+        code = '<pre><code class="language-bash">' + highlightBash(token.text) + "</code></pre>\n";
+      } else if (lang === "audit") {
+        code = '<pre><code class="language-audit">' + highlightAudit(token.text) + "</code></pre>\n";
       } else {
         code = '<pre><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(token.text) + "</code></pre>\n";
       }
@@ -53,10 +57,15 @@ function showcase(html) {
   const tail = cut === -1 ? "" : html.slice(cut);
   const parts = body.split(/(?=<h2)/);
   let out = parts[0] + '<div class="feature-grid">\n';
-  for (const part of parts.slice(1)) {
+  const cards = parts.slice(1);
+  // cards in a row since the last wide card; a last card with no pair goes in the center
+  let inRow = 0;
+  cards.forEach((part, index) => {
     const wide = !part.includes('class="window"');
-    out += '<section class="feature' + (wide ? " feature-wide" : "") + '">\n' + part + "</section>\n";
-  }
+    inRow = wide ? 0 : inRow + 1;
+    const alone = !wide && index === cards.length - 1 && inRow % 2 === 1;
+    out += '<section class="feature' + (wide ? " feature-wide" : "") + (alone ? " feature-alone" : "") + '">\n' + part + "</section>\n";
+  });
   return out + "</div>\n" + tail;
 }
 

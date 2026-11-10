@@ -1,4 +1,4 @@
-// Build-time syntax highlighter for ```talk code blocks
+// Build-time syntax highlighter for ```talk code blocks, and a small one for ```bash blocks
 // It uses the real tokenizer, so paths, urls, raw strings and 's follow the language's own rules.
 // Comments are not tokens: they are found in the text between tokens.
 
@@ -46,6 +46,62 @@ function gap(text) {
     }
   }
   return out;
+}
+
+// ----- the audit log, for the examples of .talk/audit/ -----
+// a header (== ... ==), the script (indented, as ClankTalk), "--", then steps: time, kind, target, details
+
+export function highlightAudit(text) {
+  let inScript = false;
+  return text.split("\n").map((line) => {
+    if (line.startsWith("== ")) {
+      inScript = true;
+      const header = /^(== )(\d\d:\d\d:\d\d)(.*)$/.exec(line);
+      return header === null ? span("comment", line) : span("comment", header[1]) + span("number", header[2]) + span("comment", header[3]);
+    }
+    if (line === "--") {
+      inScript = false;
+      return span("comment", line);
+    }
+    if (inScript) {
+      return highlight(line);
+    }
+    const step = /^(\d\d:\d\d:\d\d)(\s+)(\S+)(\s+)(\S+(?: \S+)*?)(\s{2,}.*)?$/.exec(line);
+    if (step === null) {
+      return escape(line);
+    }
+    return span("number", step[1]) + step[2] + span("keyword", step[3]) + step[4] + span("path", step[5]) + (step[6] === undefined ? "" : span("comment", step[6]));
+  }).join("\n");
+}
+
+// ----- bash, for the before-and-after examples -----
+
+const BASH_KEYWORDS = new Set(["for", "in", "do", "done", "if", "then", "elif", "else", "fi", "while", "until", "case", "esac", "function", "return", "local", "export"]);
+
+// one pass with one pattern: a comment (a # at the start or after a space), a quoted string,
+// a variable ($x, ${x}, $1, $( ), a number, or a word
+const BASH_TOKEN = /((?<=^|\s)#[^\n]*)|('[^']*'|"(?:\\.|[^"\\])*")|(\$\{[^}]*\}|\$\(|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@#?*!$-])|(\b\d+\b)|([A-Za-z_][A-Za-z0-9_-]*)/g;
+
+export function highlightBash(code) {
+  let out = "";
+  let at = 0;
+  for (const match of code.matchAll(BASH_TOKEN)) {
+    out += escape(code.slice(at, match.index));
+    const [text, comment, string, variable, number] = match;
+    if (comment !== undefined) {
+      out += span("comment", text);
+    } else if (string !== undefined) {
+      out += span("string", text);
+    } else if (variable !== undefined) {
+      out += span("path", text);
+    } else if (number !== undefined) {
+      out += span("number", text);
+    } else {
+      out += BASH_KEYWORDS.has(text) ? span("keyword", text) : escape(text);
+    }
+    at = match.index + text.length;
+  }
+  return out + escape(code.slice(at));
 }
 
 export function highlight(code) {

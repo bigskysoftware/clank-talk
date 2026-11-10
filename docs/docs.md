@@ -461,7 +461,7 @@ TODO (Carson): your security policy is code you can read; `before` hooks can `re
 
 <h3 id="audit">Audit</h3>
 
-```text
+```audit
 == 10:42:01  session claude-code-4f2a  script 12 (main)  done  6 steps ==
   in @/src/config.js
     replace 'retries: 3' with 'retries: 5'

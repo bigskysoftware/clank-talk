@@ -109,5 +109,5 @@ test('every recipe parses, and shows in help recipes and the reference', async (
     assert.ok(md.includes('```talk\n' + recipe.example + '\n```'), recipe.name);
   }
   const result = await run('help recipes');
-  assert.match(result.output[0], /^Recipes: common tasks, done well\./);
+  assert.match(result.output[0], /^Recipes: common tasks, step by step\./);
 });
