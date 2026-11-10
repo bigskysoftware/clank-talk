@@ -164,7 +164,9 @@ test("the hero example", () => {
 test("a path ends at an unmatched ] or }, but a glob keeps its brackets", () => {
   assert.deepEqual(simple("[./a, ./b]"), ["op:[", "path:./a", "op:,", "path:./b", "op:]"]);
   assert.deepEqual(simple("{f: ./a}"), ["op:{", "word:f", "op::", "path:./a", "op:}"]);
-  assert.deepEqual(simple("./src/[ab].js ./src/*.{js,ts}"), ["path:./src/[ab].js", "path:./src/*.{js", "op:,", "word:ts", "op:}"]);
+  assert.deepEqual(simple("./src/[ab].js ./src/*.{js,ts}"), ["path:./src/[ab].js", "path:./src/*.{js,ts}"]);
+  assert.deepEqual(simple("[./a.{js,md}, ./b]"), ["op:[", "path:./a.{js,md}", "op:,", "path:./b", "op:]"]);
+  assert.deepEqual(simple("./src/*.{js"), ["error:Unclosed { or [ in a path: ./src/*.{js"]);
 });
 
 test("'s after ], } and ) is a possessive", () => {

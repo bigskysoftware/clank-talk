@@ -41,6 +41,8 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 
 - A path literal gives a file object. Nothing is read until a property is used.
 - A path with `*` or `?` is a glob. It gives a list of files (not folders), sorted by path.
+- Approved (built): a bare path keeps a `,` inside braces, so `@/src/**/*.{js,md}` is one glob. A `,` outside braces still ends the path: `[@/a.md, @/b.md]`. A path with an open `{` or `[` is an error: `Unclosed { or [ in a path`.
+- Approved (built): where a command takes a file or a list of files (`find`, `git commit`, `git diff`, `for`), a glob in the list adds its files: `[@/package.json, @/src/js/*.js]`. A file named twice is there once. A list of other values stays as it is.
 - Approved (built): a glob skips `.git`, and the files and folders that git ignores (`.gitignore`, `.git/info/exclude`, the global excludes file). The hardened git lists them. If the fixed part of the pattern names an ignored folder, the glob looks in it: `./**/*.js` skips an ignored `dist/`, and `./dist/**/*.js` still works. Outside a git repo, or if the repo config can run programs, a glob skips only `.git`. No folder names are special cases. This replaces the `node_modules` rule.
 - The host gives `root`. `@/` is relative to `root`. `./` and `../` are relative to `cwd` (default: `root`).
 - A file has `name`, `path` (relative to the root, with `/`), `text`, `lines`, `size` (bytes) and `modified` (ISO date).

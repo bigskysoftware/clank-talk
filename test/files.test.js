@@ -261,3 +261,9 @@ test("line n of a file or text: one line, and an error past the end", async () =
   const zero = await run("print line 0 of 'a'", { root });
   assert.deepEqual(zero.errors.map((e) => e.message), ["Line numbers start at 1, found 0"]);
 });
+
+test("a list of files can hold globs, and a file named twice is there once", async () => {
+  assert.deepEqual(await output("print find 'var' in [./README.md, ./src/*.js, ./src/a.js]"), ["src/a.js:1: var a = 1"]);
+  assert.deepEqual(await output("for f in [./notes.txt, ./src/**/*.js]\n  print f's path\nend"), ["notes.txt", "src/a.js", "src/b.js", "src/deep/c.js"]);
+  assert.deepEqual(await output("print find 'var' in ./src/**/*.{js,md}"), ["src/a.js:1: var a = 1\nsrc/deep/c.js:1: var c = 3"]);
+});

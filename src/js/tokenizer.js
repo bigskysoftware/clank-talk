@@ -185,12 +185,18 @@ export function tokenize(source) {
     }
     return digits;
   }
-  // the rest of an unquoted path or url: it ends at whitespace, ")", ",", an unmatched "]" or "}",
-  // or a possessive 's; a "[" or "{" in it is part of a glob, so only an unmatched "]" or "}" ends it
+  // the rest of an unquoted path or url: it ends at whitespace, ")", a "," outside braces, an unmatched "]" or "}",
+  // or a possessive 's; a "[" or "{" in it is part of a glob, so only an unmatched "]" or "}" ends it,
+  // and a "," inside braces stays: @/src/**/*.{js,md}
+  // pathOpen is true after a path that ends with a "[" or "{" still open
+  let pathOpen = false;
   function readPathRest() {
     let value = "";
     let depth = 0;
-    while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && source[i] !== "," && !(source[i] === "'" && isPossessive(source, i))) {
+    while (i < source.length && !isSpace(source[i]) && source[i] !== ")" && !(source[i] === "'" && isPossessive(source, i))) {
+      if (source[i] === "," && depth === 0) {
+        break;
+      }
       if (source[i] === "[" || source[i] === "{") {
         depth++;
       }
@@ -203,6 +209,7 @@ export function tokenize(source) {
       value += source[i];
       advance();
     }
+    pathOpen = depth > 0;
     return value;
   }
 
@@ -382,6 +389,10 @@ export function tokenize(source) {
         advance();
       } else {
         value += readPathRest();
+        if (pathOpen) {
+          push("error", "Unclosed { or [ in a path: " + value, startLine, startColumn);
+          continue;
+        }
       }
       push("path", value, startLine, startColumn);
       continue;

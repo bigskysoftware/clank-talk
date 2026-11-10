@@ -1645,7 +1645,7 @@ async function gitArgs(command, state, step) {
     return ["merge", "--ff-only", name];
   }
   if (op === "commit") {
-    const value = await evaluate(command.value, state);
+    const value = flatFiles(await evaluate(command.value, state));
     const files = Array.isArray(value) ? value : [value];
     if (files.length === 0) {
       throw new ScriptError("git commit found no files to commit", command.value);
@@ -1700,7 +1700,7 @@ async function gitArgs(command, state, step) {
   if (op === "diff") {
     const args = ["diff", "--no-ext-diff", "--no-textconv", "--"];
     if (command.value !== null) {
-      const value = await evaluate(command.value, state);
+      const value = flatFiles(await evaluate(command.value, state));
       const files = Array.isArray(value) ? value : [value];
       // an empty list would give the diff of everything, which is a surprise
       if (files.length === 0) {
@@ -2734,9 +2734,36 @@ function loopItems(value, node) {
     return [];
   }
   if (Array.isArray(value)) {
-    return value;
+    return flatFiles(value);
   }
   throw new ScriptError("Cannot loop over " + describe(value) + ", expected a list", node);
+}
+
+// a list of files, with the files of each glob in it put in place: [@/package.json, @/src/js/*.js]
+// a file named twice is there once; a list of other values stays as it is
+function flatFiles(value) {
+  if (!Array.isArray(value) || !value.some(Array.isArray)) {
+    return value;
+  }
+  const all = [];
+  for (const item of value) {
+    if (Array.isArray(item)) {
+      all.push(...item);
+    } else {
+      all.push(item);
+    }
+  }
+  if (!all.every((item) => item instanceof FileRef)) {
+    return value;
+  }
+  const seen = new Set();
+  return all.filter((file) => {
+    if (seen.has(file.absolute)) {
+      return false;
+    }
+    seen.add(file.absolute);
+    return true;
+  });
 }
 
 // the error for a name that no command set; it names a set variable with a close spelling
@@ -3605,7 +3632,8 @@ async function matchingLines(text, lines, state, node) {
   return answer.indexes.map((index) => lines[index]);
 }
 
-async function findLines(text, target, state, node) {
+async function findLines(text, wanted, state, node) {
+  const target = flatFiles(wanted);
   if (typeof target === "string") {
     return await matchingLines(text, splitLines(target), state, node);
   }
