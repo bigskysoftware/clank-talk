@@ -54,8 +54,8 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; }
   color: #000000;
 }
 .hero-accent { color: #4a84c4; }
-.hero h1 { margin: 0.5rem 0 2rem; font-size: 1.4rem; color: var(--text-muted); }
-.subtitle { max-width: 680px; margin: 1.5rem auto 0; font-size: 1.05rem; color: var(--text-muted); }
+.hero h1 { margin: 0.5rem 0 2rem; font-size: 1.4rem; color: #3a3a3a; }
+.subtitle { max-width: 680px; margin: 1.5rem auto 0; font-size: 1.05rem; color: #333333; }
 
 /* speech bubble with code, robot to the right */
 .hero-art { display: flex; align-items: flex-start; justify-content: center; gap: 36px; text-align: left; }
@@ -111,7 +111,8 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; }
 .hero-bubble .tok-keyword { color: #1d4ed8; }
 .hero-bubble .tok-string { color: #15803d; }
 .hero-bubble .tok-path { color: #b45309; }
-.hero-bubble .tok-comment { color: #6b7280; }
+.hero-bubble .tok-comment { color: #4b5563; }
+.hero-bubble .tok-number { color: #7e22ce; }
 
 .note { text-align: center; font-size: 0.85rem; color: var(--text-muted); }
 
@@ -202,7 +203,7 @@ pre {
 /* install box, under the hero */
 .install { max-width: 680px; margin: 2rem auto 0; text-align: center; }
 .install-picker { position: relative; display: inline-flex; align-items: center; gap: 0.6rem; }
-.install-label { font-family: var(--font-heading); font-size: 0.95rem; color: var(--text-muted); }
+.install-label { font-family: var(--font-heading); font-size: 0.95rem; color: #3a3a3a; }
 .install-button {
   display: inline-flex; align-items: center; gap: 0.5rem;
   font: inherit; padding: 6px 12px; cursor: pointer;

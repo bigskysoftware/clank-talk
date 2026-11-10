@@ -14,7 +14,7 @@ export const HELP = [
   {
     name: "set", kind: "command",
     syntax: "set <variable or property> to <value>",
-    description: "Set a variable, a property, or the result. A plain name is local to the script or tool. A $name is a global that stays between runs. A variable that is not set is an error, but 'x exists' asks if it is set, and an unset $name is null.",
+    description: "Set a variable, a property, or the result. A plain name is local to the script or tool. A $name is a global that stays between runs. A variable that is not set is an error. 'x exists' tells if x is set. A $name that is not set is null.",
     examples: ["set total to 0", "set config's version to 2", "set $last to 'build ok'", "set the result to 'done'"],
   },
   {
@@ -80,7 +80,7 @@ export const HELP = [
   {
     name: "write", kind: "command",
     syntax: "write <value> to <file>",
-    description: "Replace the text of a file, or make it. Fails if the file changed since this script read it.",
+    description: "Replace the text of a file, or make it. If the file changed after this script read it, the write fails.",
     examples: ["write 'hello' to ./out.txt", "write config as pretty json to ./config.json"],
   },
   {
@@ -92,13 +92,13 @@ export const HELP = [
   {
     name: "replace", kind: "command",
     syntax: "replace <old> with <new> in <file, files, glob or variable> | replace lines <a> to <b> of <file> with <text>",
-    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. In a list of files or a glob, every file is checked first, so one file that cannot change stops it before any write. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
+    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. In a list of files or a glob, the runtime checks every file first. If one file cannot change, no file changes. 'replace lines' replaces lines by number. Read the file first. Then the result is the old lines.",
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "replace 'getTotal(' with 'cartTotal(' in ./src/**/*.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
     name: "in", kind: "command",
     syntax: "in <file or text> replace <old> with <new> | in <file or text> find <text> | in <file or text> do ... end",
-    description: "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'. In a 'do ... end' block, every replace and find with no target uses X, and so do a bare read and line forms with no 'of' (lines 5 to 7, line 5, put ... after line 5, remove lines 5 to 7), and an 'in' inside the block starts a new command.",
+    description: "Name the target first. 'in X replace A with B' is the same as 'replace A with B in X'. In a 'do ... end' block, each replace and find with no target uses X. A bare read and line forms with no 'of' also use X: lines 5 to 7, line 5, put ... after line 5, remove lines 5 to 7. An 'in' inside the block starts a new command.",
     examples: ["in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'", "in ./src/app.js do\n  replace 'var ' with 'let '\n  find 'TODO'\n  print the result\nend"],
   },
   {
@@ -110,7 +110,7 @@ export const HELP = [
   {
     name: "delete", kind: "command",
     syntax: "delete <file>",
-    description: "Delete one file. It has the checks of a write, and it takes one file, not a folder or a glob. undo puts the file back. A link is deleted itself, not the file it points to. To commit the removal: git commit [<file>] with <message>.",
+    description: "Delete one file. It has the checks of a write, and it takes one file, not a folder or a glob. undo puts the file back. For a link, delete removes the link, not the file that it points to. To commit the removal: git commit [<file>] with <message>.",
     examples: ["delete ./tmp/old-notes.md"],
   },
   {
@@ -122,13 +122,13 @@ export const HELP = [
   {
     name: "put", kind: "command",
     syntax: "put <text> before line <n> of <file> | put <text> after line <n> of <file>",
-    description: "Put new lines into a file. Needs a read of the file first. Line numbers shift after an edit.",
+    description: "Put new lines into a file. Read the file first. After an edit, the line numbers shift.",
     examples: ["read ./a.js\nput '// top' before line 1 of ./a.js"],
   },
   {
     name: "remove", kind: "command",
     syntax: "remove lines <a> to <b> of <file>",
-    description: "Remove lines from a file. Needs a read of the file first. The result is the old lines.",
+    description: "Remove lines from a file. Read the file first. The result is the old lines.",
     examples: ["read ./a.js\nremove lines 5 to 7 of ./a.js"],
   },
   {
@@ -146,13 +146,13 @@ export const HELP = [
   {
     name: "tool", kind: "command", where: "AGENTS.talk",
     syntax: "[untrusted] tool <name> [with <param>, ...] ... end",
-    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result. A call is also a value, which leaves the result as it was: set tests to run_tests. Mark a tool 'untrusted' if it brings in text from the network (curl, gh, npm view): its result is then untrusted.",
+    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result. A call is also a value, and then the result does not change: set tests to run_tests. If a tool brings in text from the network (curl, gh, npm view), mark it 'untrusted'. Then its result is untrusted.",
     examples: ["# Runs one test class.\ntool run_test with name\n  run 'mvn' with 'test', '-Dtest=' + name\nend", "# Shows a GitHub issue.\nuntrusted tool issue with id\n  run 'gh' with 'issue', 'view', id\nend"],
   },
   {
     name: "run", kind: "command", where: "AGENTS.talk",
     syntax: "run <program and args> | run <program> with <arg>, ... [using secret <NAME>, ...] [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>]",
-    description: "Only in a tool. Run a program with no shell. Gives back { code, output }. Only the variables from 'allow env' are passed on. 'in a sandbox' runs it in an OS sandbox: it can write only the project (not .git, .talk or hidden files), read only system folders, its own install folder and tool caches, and use no network ('with local network' allows localhost only). On an OS with no sandbox, it is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable; AGENTS.talk needs 'allow secret NPM_TOKEN for run'. Its value shows as <secret NPM_TOKEN> in the output. 'run <prompt> in a subagent with only <tools>' hands the task to a model that can call only those tools; its answer is untrusted.",
+    description: "Only in a tool. Run a program with no shell. The result is { code, output }. Only the variables from 'allow env' go to the program. 'in a sandbox' runs it in an OS sandbox. There it can write only the project (not .git, .talk or hidden files). It can read only system folders, its install folder and tool caches, and it has no network. 'with local network' allows localhost only. On an OS with no sandbox, a sandboxed run is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable. AGENTS.talk needs 'allow secret NPM_TOKEN for run'. The value shows as <secret NPM_TOKEN> in the output. 'run <prompt> in a subagent with only <tools>' gives the task to a model that can call only those tools. Its answer is untrusted.",
     examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend", "# Summarizes the most important open issues.\ntool summarize_issues\n  run 'Summarize the most important open issues' in a subagent with only gh_issues\nend"],
   },
   {
@@ -164,7 +164,7 @@ export const HELP = [
   {
     name: "before", kind: "command", where: "AGENTS.talk",
     syntax: "before <step> ... end",
-    description: "Only in AGENTS.talk. Run commands before a step: read, write, append, replace, put, remove, change (any file change), run, or a tool name. 'the <step>' holds the step. 'reject' stops the step.",
+    description: "Only in AGENTS.talk. Run commands before a step: read, write, append, replace, put, remove, move, delete, change (any file change), undo, run, start, stop, git, fetch, or a tool name. 'the <step>' holds the step. 'reject' stops the step.",
     examples: ["before change\n  if the change's path ends with '.env'\n    reject 'Cannot change env files!'\n  end\nend"],
   },
   {
@@ -182,19 +182,19 @@ export const HELP = [
   {
     name: "wait", kind: "command",
     syntax: "wait <duration> | wait until <condition> [within <duration>]",
-    description: "Wait for a time, or until a condition is true. 'wait until' checks every 200 ms; an error in the condition counts as false. With no 'within', it gives up after 30 seconds. Durations: 100ms, 2s, 5 seconds, 1 minute.",
+    description: "Wait for a time, or until a condition is true. 'wait until' checks every 200 ms. An error in the condition counts as false. With no 'within', it stops after 30 seconds. Durations: 100ms, 2s, 5 seconds, 1 minute.",
     examples: ["wait 2 seconds", "wait until (fetch http://localhost:4000/ as response)'s status is 200 within 10 seconds"],
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",
     syntax: "start <program> [with <arg>, ...] as <name> [using secret <NAME>, ...] [in a sandbox [with ...]] | start <prompt> as <name> in a subagent with only <tool>, ...",
-    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background; its answer is the process's output.",
+    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background. Its answer is the output of the process.",
     examples: ["tool site_server\n  start 'npm run serve-site' as 'site' in a sandbox\nend"],
   },
   {
     name: "process", kind: "expression",
     syntax: "process <name> | the processes",
-    description: "A background process that a tool started: name, status (running, exited or stopped), code, and output (the last 64 KB). Use of: the output of process 'site'. 'the processes' lists them, newest first.",
+    description: "A background process that a tool started: name, status (running, exited or stopped), code, and output (the last 64 KB). 'of' also works: the output of process 'site'. 'the processes' lists them, newest first.",
     examples: ["print the output of process 'site'", "if the status of process 'site' is 'running'\n  stop process 'site'\nend", "print the processes"],
   },
   {
@@ -206,13 +206,13 @@ export const HELP = [
   {
     name: "secret", kind: "expression",
     syntax: "secret <NAME>",
-    description: "A secret from the environment, .env.local or .env, that you can send but never see. It goes only into fetch headers or body, to the hosts in its 'allow secret' line, or to a program in a tool, with 'using secret'. print shows <secret NAME>; any other use is an error. 'Bearer ' + secret X is still a secret. Its value shows as <secret NAME> in output.",
+    description: "A secret from the environment, .env.local or .env, that you can send but never see. It goes only into fetch headers or body, to the hosts in its 'allow secret' line, or to a program in a tool, with 'using secret'. print shows <secret NAME>. Any other use is an error. 'Bearer ' + secret X is still a secret. Its value shows as <secret NAME> in output.",
     examples: ["fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer ' + secret GITHUB_TOKEN }\nprint it's login"],
   },
   {
     name: "ask", kind: "command",
     syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
-    description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text they type, or the choice they pick. With no way to ask, no answer in time (2 minutes, unless 'within' says otherwise), or a 'no thanks', the result is null, so treat null as no.",
+    description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text that the human types, or the choice that the human picks. If there is no way to ask, no answer in time (2 minutes, or the 'within' time), or a 'no thanks', the result is null. Treat null as no.",
     examples: ["ask 'Which branch should I use?'\nprint it", "ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes\nif the result is 'yes'\n  print 'ok'\nend"],
   },
   {
@@ -224,31 +224,31 @@ export const HELP = [
   {
     name: "git", kind: "command",
     syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch>",
-    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, never with force. It does not ask; a policy can turn it off with 'deny git push'. Delete branch deletes only a merged branch.",
+    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, never with force. It does not ask. A policy can turn it off with 'deny git push'. Delete branch deletes only a merged branch.",
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
     name: "previous", kind: "expression",
     syntax: "the previous output",
-    description: "All the print output of the last script, as text. The host shows at most 1000 lines or 30 KB (less with 'limit output to' in AGENTS.talk), and cuts the middle of longer output; this has all of it. Each script replaces it, so to keep it: set $log to the previous output.",
+    description: "All the print output of the last script, as text. The host shows at most 1000 lines or 30 KB (less with 'limit output to' in AGENTS.talk), and cuts the middle of longer output. This value has all of it. Each script replaces it. To keep it: set $log to the previous output.",
     examples: ["print lines 1001 to 1500 of the previous output", "set failures to find 'not ok' in the previous output"],
   },
   {
     name: "audit", kind: "expression",
     syntax: "the audit | audit as json (in AGENTS.talk)",
-    description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to talk/audit/<date>.log, which scripts cannot change; 'audit as json' in AGENTS.talk writes JSON Lines instead.",
+    description: "The audit records every step that touches the world: reads, changes, run, git, fetch, ask and tool calls. 'the audit' is this session's records, each with time, script, kind, target, details and from. The host writes them to talk/audit/<date>.log, which scripts cannot change. With 'audit as json' in AGENTS.talk, the host writes JSON Lines.",
     examples: ["for step in the audit\n  if step's kind is 'write'\n    print step's target\n  end\nend"],
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
     syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>', ... | allow secret <NAME> for fetch to '<host>', ... | allow secret <NAME> for run | allow secret <NAME> for subagents | use model '<id>' for subagents [with secret <NAME>]",
-    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without asking; '*.github.com' allows hosts under github.com. 'allow secret ... for fetch to' lets scripts use a secret, and names the hosts it can go to; it does not skip the fetch question. 'allow secret ... for run' lets a run or start in a tool have it, with 'using secret'. A name cannot be in both 'allow env' and 'allow secret'. 'use model' picks the model for subagents; pi lends its own, other harnesses need a key from 'allow secret ... for subagents'.",
+    description: "Only at the top of AGENTS.talk. 'allow env' lists the environment variables that 'run' passes on. 'allow changes to' lists hidden files and folders (names that start with .) that scripts can change. A folder allows all of its files. 'allow fetch from' lists hosts that fetch can reach without a question. '*.github.com' allows hosts under github.com. 'allow secret ... for fetch to' lets scripts use a secret, and names the hosts that it can go to. It does not skip the fetch question. 'allow secret ... for run' lets a run or start in a tool have the secret, with 'using secret'. A name cannot be in both 'allow env' and 'allow secret'. 'use model' sets the model for subagents. pi lends its own model. Other harnesses need a key from 'allow secret ... for subagents'.",
     examples: ["allow env PATH, HOME", "allow changes to @/.github/, @/.gitignore", "allow secret GITHUB_TOKEN for fetch to 'api.github.com'"],
   },
   {
     name: "limit", kind: "command", where: "AGENTS.talk",
     syntax: "limit output to <n> lines [or <n> KB]",
-    description: "Only at the top of AGENTS.talk, or in a policy. The most print output the agent sees from one script; the host cuts the middle of longer output, and the previous output has all of it. It can only make the host's limit (1000 lines or 30 KB) smaller.",
+    description: "Only at the top of AGENTS.talk, or in a policy. The most print output that the agent sees from one script. The host cuts the middle of longer output, and the previous output has all of it. It can only make the host's limit (1000 lines or 30 KB) smaller.",
     examples: ["limit output to 400 lines", "limit output to 400 lines or 20 KB"],
   },
 
@@ -262,7 +262,7 @@ export const HELP = [
   {
     name: "strings", kind: "expression",
     syntax: "'text'  \"text\"  'Hi ${name}'  \"\"\" raw \"\"\"  | text block",
-    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code. The line break right after the opening quotes is not part of the text. To start with a blank line, leave one empty line after the opening quotes. To hold three quotes, open with four and close with four. The text cannot start with a quote, since that makes one more opening quote: start the text on the next line. For code, and for any text with quotes, use a text block: lines that start with |. One space after the | is dropped; the rest is the text, exactly as typed, with no escapes and no ${}. A line with only | is an empty line.",
+    description: "Both quotes work and can span lines; their common indent is removed. ${...} puts in a value (write \\${ for a plain one). A raw string in triple double quotes has no escapes and no ${}, and keeps its indent: use it for code. The line break right after the opening quotes is not part of the text. To start with a blank line, leave one empty line after the opening quotes. To hold three quotes, open with four and close with four. The text cannot start with a quote, since that makes one more opening quote: start the text on the next line. For code, and for any text with quotes, use a text block: lines that start with |. The runtime removes one space after the |. The rest of the line is the text, exactly as typed, with no escapes and no ${}. A line with only | is an empty line.",
     examples: ["print 'Hi ${name}'", "set code to \"\"\"\n  const x = `${y}`\n\"\"\""],
   },
   {
@@ -292,7 +292,7 @@ export const HELP = [
   {
     name: "lines", kind: "expression",
     syntax: "lines of <file or text> | lines <a> to <b> of <file or text> | line <n> of <file or text>",
-    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses line numbers, both ends included. 'line <n> of' gives one line; a number past the end is an error. Put the line in a variable first, then use its fields on the next line.",
+    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses line numbers, both ends included. 'line <n> of' gives one line. A number past the end is an error. Put the line in a variable first, then use its fields on the next line.",
     examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js", "set first to line 1 of ./a.txt\nset name to first's text"],
   },
   {
@@ -310,7 +310,7 @@ export const HELP = [
   {
     name: "sorted", kind: "expression",
     syntax: "sorted <list> | unique <list>",
-    description: "A new list; the old one stays as it was. sorted puts numbers first, as numbers, then text by character code. unique keeps each value once, in the first order. A line compares by its text, and a file by its path.",
+    description: "A new list. The old list does not change. sorted puts numbers first, as numbers, then text by character code. unique keeps each value once, in the first order. A line compares by its text, and a file by its path.",
     examples: ["set names to sorted names", "set failures to unique failures\nprint sorted failures"],
   },
   {

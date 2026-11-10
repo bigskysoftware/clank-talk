@@ -2,22 +2,13 @@
 
 A sandboxed scripting language for AI agents. You give your agent ClankTalk, in place of a shell.
 
-```applescript
-in @/src/config.js
-  replace 'retries: 3' with 'retries: 5'
-
-run_tests
-
-if the result's code is not 0
-  undo
-end
-```
+<img src="docs/img/readme-hero.png" alt="A friendly robot says a ClankTalk script: in @/src/config.js, replace 'retries: 3' with 'retries: 5'. Run the tests. If the result's code is not 0, undo." width="700">
 
 It reads like English, because the agent writes the script but *you* have to read it. And there is no shell: if ClankTalk can't do it, your agent can't do it.
 
 - File access stays inside your project. Hidden files (`.env`, `.git/`) and your tool definitions are off limits.
 - Programs your tools run can go in an OS sandbox (macOS, Linux).
-- Git is built in, with hooks and other ways to run code turned off. Pushes ask you first.
+- Git is built in, with hooks and other ways to run code turned off. Push never uses force.
 - Fetch asks you before it talks to a new host.
 - Every step is written to an audit log your agent can't change, and file changes can be undone.
 

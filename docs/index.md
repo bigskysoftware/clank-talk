@@ -16,34 +16,46 @@ end
 ```
 
 ```talk
-git diff
-print it
+replace
+| total = price * qty
+with
+| total = price * qty * (1 - off)
+in @/src/cart.js
 
-ask 'Commit these changes?' with 'yes' or 'no'
-if the result is 'yes'
-  git commit [./src/app.js] with 'Fix retries'
-end
+run_tests
 ```
 
 ```talk
-set hits to find 'TODO' in ./src/**/*.js
+set tests to run_tests
+set fails to find 'not ok'
+  in tests's output
 
-for line in hits
-  print line
-end
+print first 10 of fails
 ```
 
 ```talk
-fetch https://api.example.com/status as json
+git commit [./src/cart.js]
+  with 'Fix the total'
+git switch to 'main'
+git merge 'fix-total'
+git push
+git delete branch 'fix-total'
+```
 
-if the result's ok is not true
-  ask 'The API is down. Deploy anyway?'
-end
+```talk
+site_server
+set home to http://localhost:8000/
+wait until (fetch home as response)'s
+  status is 200 within 20 seconds
+
+print process 'site'
 ```
 
 </div>
 <img src="img/clanktalk-robot.png" alt="A friendly robot">
 </div>
+<p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable tool language that works with any agent in any harness. Your agents get the tools they need to get work done. You get <a href="docs.html#reading">readable</a>, <a href="docs.html#audit">auditable</a> actions, <a href="docs.html#sandboxing">sandboxes</a>, <a href="docs.html#hooks">security hooks</a>, <a href="docs.html#taint">taint tracking</a>, <a href="docs.html#undo">undo</a>, <a href="docs.html#secrets">secrets support</a> and <a href="docs.html">more</a>.</p>
+<p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
 <div class="install">
 <div class="install-picker">
 <span class="install-label">Install for</span>
@@ -88,8 +100,6 @@ args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
 </div>
 <script src="js/install.js"></script>
 <script src="js/hero.js"></script>
-<p class="subtitle"><a href="docs.html">Docs for Humans</a> &middot; <a href="reference.html">Docs for Agents</a> &middot; <a href="https://github.com/bigskysoftware/clank-talk">GitHub</a></p>
-<p class="subtitle">ClankTalk replaces the wild west of a shell with a small, readable, Agent & harness agnostic tool language. Your agents get the tools they need to do real work. You get readable, auditable actions, sandboxes, security hooks, undo, and the final say in your agentic security profile.</p>
 </div>
 
 <div class="features showcase">

@@ -141,7 +141,7 @@ tail -f talk/audit/*.log
 
 TODO (Carson): every step goes to `talk/audit/`, one file a day. Add `talk/audit/` and `talk/taint.json` to `.gitignore`.
 
-### Reading a Script
+<h3 id="reading">Reading a Script</h3>
 
 TODO (Carson): a short tour for readers. The agent writes this; you need to read it.
 
@@ -354,7 +354,7 @@ allow fetch from 'api.github.com', '*.npmjs.org', 'localhost'
 
 TODO (Carson): the first fetch to a new host asks you; `localhost` and private addresses must be listed; each redirect goes into the audit.
 
-### Secrets
+<h3 id="secrets">Secrets</h3>
 
 ```talk
 # AGENTS.talk
@@ -377,7 +377,7 @@ TODO (Carson): notes.
 - A value that comes back (output, responses, errors, the audit) shows as `<secret NAME>`.
 - Risks: a program with a secret and the network can send it anywhere. Give secrets only to programs whose code the agent cannot change (`npm publish` runs scripts from `package.json`).
 
-### Taint
+<h3 id="taint">Taint</h3>
 
 ```talk
 # AGENTS.talk
@@ -436,7 +436,7 @@ end
 
 TODO (Carson): only you answer; no answer is `null`, which means no.
 
-### Hooks
+<h3 id="hooks">Hooks</h3>
 
 ```talk
 # AGENTS.talk
@@ -449,7 +449,7 @@ end
 
 TODO (Carson): your security policy is code you can read; `before` hooks can `reject` a step; a hook can watch any step or tool.
 
-### Audit
+<h3 id="audit">Audit</h3>
 
 ```text
 == 10:42:01  session claude-code-4f2a  script 12 (main)  done  6 steps ==
@@ -464,7 +464,7 @@ TODO (Carson): your security policy is code you can read; `before` hooks can `re
 
 TODO (Carson): the agent cannot change it; `audit as json` for tools; `the audit` lets the agent read its own steps.
 
-### Undo
+<h3 id="undo">Undo</h3>
 
 ```talk
 undo
