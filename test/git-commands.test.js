@@ -154,36 +154,19 @@ test("git merge is fast-forward only", async () => {
   assert.deepEqual(await errors("git merge '-s'"), ["Not a safe branch name: '-s'. Use letters, digits, -, _, / and ."]);
 });
 
-test("git push asks the human, unless AGENTS.talk allows it", async () => {
+test("git push pushes the branch to origin, and never asks", async () => {
   const bare = await fs.mkdtemp(path.join(os.tmpdir(), "clank-origin-"));
   execFileSync("git", ["init", "-q", "--bare", bare]);
   git(["remote", "add", "origin", bare]);
   const remoteLog = () => execFileSync("git", ["log", "--oneline", "-1", "main"], { cwd: bare, encoding: "utf8" });
   try {
     const questions = [];
-    const no = async (request) => {
-      questions.push(request.question);
-      return "no";
-    };
-    let result = await run("git push", { root, ask: no });
-    assert.match(result.errors[0].message, /^The human did not approve the push\. Nothing was pushed\.\nTo push without asking/);
-    assert.deepEqual(questions, ["Push branch 'main' to origin?"]);
-    assert.throws(() => remoteLog());
-
-    result = await run("git push", { root });
-    assert.match(result.errors[0].message, /^The human did not approve the push: there is no way to ask them here/);
-
-    result = await run("git push", { root, ask: async () => "yes" });
+    const result = await run("git push", { root, ask: async (request) => questions.push(request.question) });
     assert.deepEqual(result.errors, []);
+    assert.deepEqual(questions, []);
     assert.equal(remoteLog(), git(["log", "--oneline", "-1"]));
-
     await fs.writeFile(path.join(root, "AGENTS.talk"), "allow git push");
-    await fs.writeFile(path.join(root, "f.txt"), "f\n");
-    await output("git commit ./f.txt with 'Add f'");
-    result = await run("git push", { root, ask: no });
-    assert.deepEqual(result.errors, []);
-    assert.equal(questions.length, 1);
-    assert.equal(remoteLog(), git(["log", "--oneline", "-1"]));
+    assert.match((await errors("git push"))[0], /^Expected 'env', 'changes to' or 'fetch from'/);
   } finally {
     await fs.rm(path.join(root, "AGENTS.talk"), { force: true });
     git(["remote", "remove", "origin"]);
@@ -199,19 +182,6 @@ test("git delete branch deletes only a merged branch", async () => {
   await output("git commit ./o.txt with 'Add o'\ngit switch to 'main'");
   assert.match((await errors("git delete branch 'open'"))[0], /^git delete failed: .*not fully merged/s);
   assert.deepEqual(await errors("git delete branch '-D'"), ["Not a safe branch name: '-D'. Use letters, digits, -, _, / and ."]);
-});
-
-test("git push with no answer in time pushes nothing, and says why", async () => {
-  const bare = await fs.mkdtemp(path.join(os.tmpdir(), "clank-origin-"));
-  execFileSync("git", ["init", "-q", "--bare", bare]);
-  git(["remote", "add", "origin", bare]);
-  try {
-    const result = await run("git push", { root, ask: () => new Promise(() => {}), askTimeLimit: 30 });
-    assert.match(result.errors[0].message, /^The human did not approve the push: nobody answered in time\. Nothing was pushed\./);
-  } finally {
-    git(["remote", "remove", "origin"]);
-    await fs.rm(bare, { recursive: true, force: true });
-  }
 });
 
 test("git rebase onto a branch moves the branch's commits", async () => {

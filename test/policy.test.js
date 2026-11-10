@@ -79,7 +79,6 @@ test("AGENTS.talk allows outside the policy are load errors that name both lines
     "allow fetch from 'api.github.com', 'evil.com', '*.github.com'",
     "allow env PATH, SECRET",
     "allow changes to @/.github/workflows/, @/.vscode/",
-    "allow git push",
   ].join("\n"));
   const result = await run("print 1", { root, policy: { name: "acme.talk", source: RUN_POLICY } });
   assert.equal(result.status, "failed");
@@ -88,7 +87,6 @@ test("AGENTS.talk allows outside the policy are load errors that name both lines
     "AGENTS.talk 1: 'allow fetch from '*.github.com'' is outside the policy: acme.talk 3:1 limits fetch to api.github.com, *.acme.internal",
     "AGENTS.talk 2: 'allow env SECRET' is outside the policy: acme.talk 4:1 limits env to PATH, HOME",
     "AGENTS.talk 3: 'allow changes to @/.vscode/' is outside the policy: acme.talk 5:1 limits changes to @/.github/",
-    "AGENTS.talk 4: 'allow git push' is not allowed: acme.talk 6:1 denies git push",
   ]);
 });
 

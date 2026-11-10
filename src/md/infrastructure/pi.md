@@ -4,7 +4,7 @@ Status: first version built. Code: `src/js/clank-talk-pi.js` (the entry), `src/j
 
 ## Why
 
-- Over MCP, pi has no elicitation, so `ask`, push approval and fetch approval of a new host always give null (no). Tested in pi 1.5.1 on 2026-11-09.
+- Over MCP, pi has no elicitation, so `ask` and the fetch approval of a new host always give null (no). Tested in pi 1.5.1 on 2026-11-09.
 - Over MCP, the human must start pi with the right flags. The extension locks pi down by itself.
 
 ## Rules

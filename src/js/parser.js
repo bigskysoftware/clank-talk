@@ -1852,7 +1852,6 @@ export function parse(source, options = {}) {
   // at the top of AGENTS.talk:
   //   allow env NAME, NAME
   //   allow changes to @/.github/, @/.gitignore
-  //   allow git push
   //   allow fetch from 'api.github.com', '*.npmjs.org'
   function parseAllow(token) {
     if (isWord("fetch")) {
@@ -1881,17 +1880,8 @@ export function parse(source, options = {}) {
     if (isWord("changes")) {
       return parseAllowChanges(token);
     }
-    if (isWord("git")) {
-      i++;
-      if (!isWord("push")) {
-        error("Expected 'push'");
-        return null;
-      }
-      i++;
-      return { type: "allowGitPush", line: token.line, column: token.column };
-    }
     if (!isWord("env")) {
-      error("Expected 'env', 'changes to', 'git push' or 'fetch from'");
+      error("Expected 'env', 'changes to' or 'fetch from'");
       return null;
     }
     i++;

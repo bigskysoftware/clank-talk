@@ -218,8 +218,6 @@ async function execute(source, options, execution) {
     allowedEnv: agents.allowedEnv,
     // hidden paths that scripts can change, from "allow changes to" in AGENTS.talk, relative to the root
     allowedChanges: agents.allowedChanges,
-    // true if AGENTS.talk has "allow git push": then push does not ask the human
-    allowGitPush: agents.allowGitPush,
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
     fetchHosts: options.fetchHosts || new Set(),
@@ -422,9 +420,6 @@ function checkPolicy(policy, agents) {
         }
       }
     }
-    if (definition.type === "allowGitPush" && denied["git push"]) {
-      errors.push({ message: "'allow git push' is not allowed: " + ruleAt(denied["git push"]) + " denies git push", ...where });
-    }
   }
   // tools and hooks in AGENTS.talk cannot use what the policy denies
   for (const definition of [...Object.values(agents.definitions), ...agents.hooks]) {
@@ -522,7 +517,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowGitPush: false, allowedFetch: [], auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -596,14 +591,6 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedFetch.push(...definition.hosts);
         } else {
           result.errors.push({ message: "'allow fetch from' is only allowed in " + AGENTS_TALK, ...where });
-        }
-        continue;
-      }
-      if (definition.type === "allowGitPush") {
-        if (file.name === AGENTS_TALK) {
-          result.allowGitPush = true;
-        } else {
-          result.errors.push({ message: "'allow git push' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -1515,21 +1502,6 @@ async function runGit(command, state) {
       "A human must remove these settings from .git/config.",
       command,
     );
-  }
-
-  // push asks the human first, unless AGENTS.talk allows it
-  if (command.operation === "push" && !state.allowGitPush) {
-    const current = await spawnProgram("git", [...guardArgs(), "branch", "--show-current"], state.root, env, state.timeLimit, state, command);
-    const branch = current.output.trim();
-    const answer = await askState(state, "Push branch '" + branch + "' to origin?", ["yes", "no"], null);
-    if (answer !== "yes") {
-      throw new ScriptError(
-        "The human did not approve the push" + askReason(state) + ". Nothing was pushed.\n" +
-        "To push without asking, a human can add this line to AGENTS.talk:\n" +
-        "  allow git push",
-        command,
-      );
-    }
   }
 
   if (command.operation === "rebase") {
