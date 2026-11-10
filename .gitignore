@@ -3,6 +3,5 @@ node_modules/
 _site/
 .idea
 .env
-talk/audit/
+.talk/
 .pi/
-talk/taint.json
