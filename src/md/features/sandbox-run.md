@@ -39,8 +39,8 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 ## Where it works
 
 - Approved: macOS: `sandbox-exec` with a generated profile. Apple marks it deprecated, but it ships with macOS. Check it for each macOS version.
-- Approved: Linux: `bubblewrap` (`bwrap`), if it is installed. If not, the error says to install it. We test on macOS only, and ask Linux users to test.
-- Approved (built, not tested on Linux): bwrap hides a secret folder with an empty folder (`--tmpfs`) and a secret file, such as `.env` or `.netrc`, with `/dev/null` (`--ro-bind /dev/null`), because `--tmpfs` needs a folder. A secret that is not there is left out.
+- Approved: Linux: `bubblewrap` (`bwrap`), if it is installed. If not, the error says to install it. CI tests it on Ubuntu (GitHub Actions, `.github/workflows/ci.yml`).
+- Approved (built, tested in CI on Ubuntu): bwrap hides a secret folder with an empty folder (`--tmpfs`) and a secret file, such as `.env` or `.netrc`, with `/dev/null` (`--ro-bind /dev/null`), because `--tmpfs` needs a folder. A secret that is not there is left out.
 - Approved: Windows and other OSs: an error.
 
 ## Proof before trust
@@ -54,4 +54,4 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - macOS: `file-read-metadata` is allowed everywhere, so a program can see that a file exists, and its size, but not its content.
 - Linux: hidden files, `.talk` files and `@/talk` are read only only if they exist when the program starts, and only at the top of the project. A program can make a new hidden file, or change one deeper in the tree. Landlock can close this later.
 - Linux: with no network, a server in the sandbox has its own network, so the host cannot reach it. A sandboxed `start` on Linux needs `with network`.
-- Tested on macOS only (Darwin 27, Node 26). Linux needs testers.
+- Tested on macOS (Darwin 27, Node 26), and in CI on Ubuntu and macOS with Node 22 and 26. On Ubuntu 24.04, bwrap needs `kernel.apparmor_restrict_unprivileged_userns=0`; CI sets it. In the self-test, the host checks the outside write and the home folder names after the run, because on Linux the sandbox has its own `/tmp` and a home folder with only the bound folders.
