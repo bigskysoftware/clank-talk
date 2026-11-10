@@ -65,9 +65,9 @@ end
 - Approved: `deny <what>`: `git push`, `start`, `fetch`, `run`, `writes` (read-only session). A tool in AGENTS.talk that uses a denied thing is a load error.
 - Approved: policy hooks run before AGENTS.talk hooks, and AGENTS.talk cannot remove them.
 - Approved: `allow git push` in AGENTS.talk does nothing under `deny git push`: it is a load error.
-- Proposed (built): `deny writes` denies file changes (`write`, `append`, line edits, `replace` in a file, `undo`) and git changes (`switch`, `commit`, `merge`, `delete`). It does not cover programs: a program in a sandbox can write in the project. For a read-only session, also `deny run` and `deny start`.
-- Proposed (built): the rules apply at load time to AGENTS.talk tools and hooks, and again at run time to each step. Thus a script cannot get around them.
-- Proposed (built): under `limit fetch`, a host outside the limit is refused. The human is not asked.
+- Approved (built): `deny writes` denies file changes (`write`, `append`, line edits, `replace` in a file, `undo`) and git changes (`switch`, `commit`, `merge`, `delete`). It does not cover programs: a program in a sandbox can write in the project. For a read-only session, also `deny run` and `deny start`.
+- Approved (built): the rules apply at load time to AGENTS.talk tools and hooks, and again at run time to each step. Thus a script cannot get around them.
+- Approved (built): under `limit fetch`, a host outside the limit is refused. The human is not asked.
 
 ## Errors
 
