@@ -213,3 +213,45 @@ test("git push with no answer in time pushes nothing, and says why", async () =>
     await fs.rm(bare, { recursive: true, force: true });
   }
 });
+
+test("git rebase onto a branch moves the branch's commits", async () => {
+  await output("git switch to 'main'\ngit switch to new branch 'topic'");
+  await fs.writeFile(path.join(root, "t1.txt"), "t1\n");
+  await output("git commit ./t1.txt with 'Add t1'\ngit switch to 'main'");
+  await fs.writeFile(path.join(root, "m1.txt"), "m1\n");
+  await output("git commit ./m1.txt with 'Add m1'\ngit switch to 'topic'\ngit rebase onto 'main'");
+  assert.equal(git(["log", "-2", "--format=%s"]), "Add t1\nAdd m1\n");
+});
+
+test("git rebase stops on a conflict, and leaves the branch as it was", async () => {
+  await fs.writeFile(path.join(root, "m1.txt"), "topic\n");
+  await output("git commit ./m1.txt with 'Topic m1'\ngit switch to 'main'");
+  await fs.writeFile(path.join(root, "m1.txt"), "main\n");
+  await output("git commit ./m1.txt with 'Main m1'\ngit switch to 'topic'");
+  const [message] = await errors("git rebase onto 'main'");
+  assert.equal(message, "git rebase stopped: these files have conflicts, so the branch is as it was:\nm1.txt\nMerge by hand, or ask the human");
+  assert.equal(git(["log", "-1", "--format=%s"]), "Topic m1\n");
+  assert.equal(git(["status", "--porcelain", "--untracked-files=no"]), "");
+  await assert.rejects(fs.access(path.join(root, ".git", "rebase-merge")));
+});
+
+test("git rebase checks the branch first", async () => {
+  assert.deepEqual(await errors("git rebase onto 'topic'"), ["git rebase cannot put topic onto itself. Switch to the branch to move first"]);
+  assert.deepEqual(await errors("git rebase onto '--exec=x'"), ["Not a safe branch name: '--exec=x'. Use letters, digits, -, _, / and ."]);
+  await fs.writeFile(path.join(root, "t1.txt"), "changed\n");
+  try {
+    assert.match((await errors("git rebase onto 'main'"))[0], /^git rebase needs a clean branch\. Commit the changes first:\n M t1\.txt$/);
+  } finally {
+    git(["checkout", "--", "t1.txt"]);
+  }
+  const bare = await fs.mkdtemp(path.join(os.tmpdir(), "clank-origin-"));
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  git(["remote", "add", "origin", bare]);
+  try {
+    git(["push", "-q", "origin", "topic"]);
+    assert.deepEqual(await errors("git rebase onto 'main'"), ["git rebase refused: topic has commits on a remote, and a rebase rewrites them. A human must do this rebase"]);
+  } finally {
+    git(["remote", "remove", "origin"]);
+    await fs.rm(bare, { recursive: true, force: true });
+  }
+});

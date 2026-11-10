@@ -433,7 +433,7 @@ git merge 'fix-parser'
 git delete branch 'fix-parser'
 ```
 
-`git commit` commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards. `git push` asks you first, every time, unless you add `allow git push` to `AGENTS.talk`.
+`git commit` commits only the files you name, so your agent can't sweep in something you didn't expect. `git merge` only fast-forwards. Branch fell behind? `git rebase onto 'main'` moves it up to date, or, on a conflict, leaves it just as it was. `git push` asks you first, every time, unless you add `allow git push` to `AGENTS.talk`.
 
 Git can run programs from its config: hooks, pagers, filters, and more. So ClankTalk turns all of those off, and starts git with a clean environment. If the repo's own config still asks git to run a program, git won't run at all, and your agent tells you what to remove.
 

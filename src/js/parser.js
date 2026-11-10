@@ -13,7 +13,7 @@ import { tokenize } from "./tokenizer.js";
 // how deep expressions and blocks can nest
 const MAX_NESTING = 100;
 
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "push", "delete"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "push", "delete"];
 
 /**
  * @typedef {Object} ParseError
@@ -990,6 +990,18 @@ export function parse(source, options = {}) {
         i++;
         command.create = true;
       }
+      command.value = parseExpression();
+      if (command.value === null) {
+        return null;
+      }
+    }
+    // git rebase onto <branch>
+    if (op.value === "rebase") {
+      if (!isWord("onto")) {
+        error("Expected 'onto'");
+        return null;
+      }
+      i++;
       command.value = parseExpression();
       if (command.value === null) {
         return null;

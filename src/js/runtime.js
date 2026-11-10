@@ -26,7 +26,7 @@ const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
 // git operations that change files or branches; "deny writes" denies them
-const GIT_WRITES = ["switch", "commit", "merge", "delete"];
+const GIT_WRITES = ["switch", "commit", "merge", "rebase", "delete"];
 const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
@@ -1433,6 +1433,10 @@ async function runGit(command, state) {
     }
   }
 
+  if (command.operation === "rebase") {
+    await checkRebase(step.branch, state, env, command);
+  }
+
   // commit adds the named files first, so new files can be committed too;
   // the commit then has only those files, even if other files are staged
   if (command.operation === "commit") {
@@ -1444,6 +1448,9 @@ async function runGit(command, state) {
 
   const forPush = command.operation === "push";
   const result = await spawnProgram("git", [...guardArgs(forPush), ...args], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
+  if (result.code !== 0 && command.operation === "rebase") {
+    await stopRebase(state, env, command);
+  }
   if (result.code !== 0) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
@@ -1451,6 +1458,41 @@ async function runGit(command, state) {
   state.result = result.output;
   await runHooks("after", ["git"], step, state, command);
   return result.output;
+}
+
+// git with the hardened arguments, for the checks around an operation
+async function gitCheck(args, state, env, command) {
+  const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
+  return result.output.trimEnd();
+}
+
+// a rebase rewrites the branch's commits, so it runs only on a clean branch that is not on a remote
+async function checkRebase(onto, state, env, command) {
+  const current = await gitCheck(["branch", "--show-current"], state, env, command);
+  if (current === "") {
+    throw new ScriptError("git rebase needs a branch. Switch to a branch first", command);
+  }
+  if (current === onto) {
+    throw new ScriptError("git rebase cannot put " + current + " onto itself. Switch to the branch to move first", command);
+  }
+  const changes = await gitCheck(["status", "--porcelain", "--untracked-files=no"], state, env, command);
+  if (changes !== "") {
+    throw new ScriptError("git rebase needs a clean branch. Commit the changes first:\n" + changes, command);
+  }
+  const all = await gitCheck(["rev-list", "--count", onto + "..HEAD"], state, env, command);
+  const local = await gitCheck(["rev-list", "--count", onto + "..HEAD", "--not", "--remotes"], state, env, command);
+  if (all !== local) {
+    throw new ScriptError("git rebase refused: " + current + " has commits on a remote, and a rebase rewrites them. A human must do this rebase", command);
+  }
+}
+
+// after a failed rebase: find the files in conflict, then put the branch back as it was
+async function stopRebase(state, env, command) {
+  const conflicts = await gitCheck(["diff", "--name-only", "--diff-filter=U"], state, env, command);
+  await gitCheck(["rebase", "--abort"], state, env, command);
+  if (conflicts !== "") {
+    throw new ScriptError("git rebase stopped: these files have conflicts, so the branch is as it was:\n" + conflicts + "\nMerge by hand, or ask the human", command);
+  }
 }
 
 // the fixed git arguments for each operation, with the checked values from the script
@@ -1489,6 +1531,15 @@ async function gitArgs(command, state, step) {
   // the current branch, to a branch with the same name on origin; never force
   if (op === "push") {
     return ["push", "--no-verify", "origin", "HEAD"];
+  }
+  // the current branch onto another; runGit checks it first, and stops it on a conflict
+  if (op === "rebase") {
+    const name = toText(await evaluate(command.value, state));
+    if (!isSafeBranchName(name)) {
+      throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
+    }
+    step.branch = name;
+    return ["rebase", "--no-autosquash", "--no-autostash", name];
   }
   // fast-forward only: a merge never makes a commit, so it needs no message and cannot conflict
   if (op === "merge") {

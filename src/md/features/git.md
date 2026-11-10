@@ -52,6 +52,7 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved (built): push keeps the user's credential helper (from their global config), and gets `SSH_AUTH_SOCK` for their ssh agent. Repo config with a `pushurl` that starts with `ext::` is refused too.
 - Approved (built): `git merge <branch>` is `merge --ff-only <branch>`. It never makes a commit, so it needs no message and cannot conflict. If a fast-forward is not possible, it is an error.
 - Approved (built): repo config with `merge.<driver>.driver` is refused too: a merge driver runs a program.
+- Approved (built): `git rebase onto <branch>` rebases the current branch onto the branch (`rebase --no-autosquash --no-autostash <branch>`). It is all or nothing: on a conflict, it runs `rebase --abort` and gives an error with the files in conflict, so the repo is never left in a rebase. It refuses with no current branch, onto the branch itself, with uncommitted changes to tracked files, and if the branch has commits on a remote, because a rebase rewrites them. No interactive mode and no `--exec`. After a rebase, run the tests before the merge.
 - Approved, for the rest of the first version:
   - `git diff` with no path: all changes
   - `git log`, and `git log 20` for the last 20 commits

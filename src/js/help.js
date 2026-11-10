@@ -205,7 +205,7 @@ export const HELP = [
   },
   {
     name: "git", kind: "command",
-    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git push | git delete branch <branch>",
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git push | git delete branch <branch>",
     description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, and asks the human first, unless AGENTS.talk has 'allow git push'. Delete branch deletes only a merged branch.",
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
@@ -413,6 +413,11 @@ export const RECIPES = [
     name: "Commit your work",
     description: "Look at what changed, then commit only the files you mean.",
     example: "git status\nprint it\ngit diff ./src/cart.js\nprint it\ngit commit [./src/cart.js, ./test/cart.test.js] with 'Fix the cart total'",
+  },
+  {
+    name: "Catch up, test, then merge",
+    description: "Rebase the branch onto main, and run the tests again before the merge.",
+    example: "git rebase onto 'main'\nset tests to run_tests\nif tests's code is not 0\n  print 'The tests fail after the rebase. Fix them before the merge.'\nelse\n  git switch to 'main'\n  git merge 'fix-cart'\nend",
   },
 ];
 
