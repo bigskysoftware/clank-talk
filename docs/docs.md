@@ -76,6 +76,18 @@ Want to see what your agent is up to? Every step goes to an audit log in `talk/a
 tail -f talk/audit/*.log
 ```
 
+### Subagents
+
+Some agents start helpers of their own. With Claude Code, let it start subagents, and nothing else:
+
+```bash
+claude --tools "Agent" --strict-mcp-config --mcp-config .mcp.json --allowedTools mcp__clank-talk
+```
+
+Subagents get only the tools of the session, so they get ClankTalk too, and nothing else. One catch: a custom subagent that lists `Glob` or `Grep` in its `tools:` gets them anyway, so don't list them.
+
+Each subagent can pass its name as `agent` when it calls ClankTalk. Then it gets its own undo list and its own `$` variables, so one helper can't undo another's work, and the audit says who did what.
+
 ## The Language
 
 A quick tour. The [docs for agents](reference.html) have the rest.

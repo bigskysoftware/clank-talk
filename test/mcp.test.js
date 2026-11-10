@@ -192,3 +192,31 @@ test('a change to AGENTS.talk sends tools/list_changed, once', async () => {
   assert.deepEqual(sent, [{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
   assert.equal(await toolsChanged(session), false);
 });
+
+function callAs(agent, script) {
+  return handleMessage({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'clank_talk', arguments: { script, agent } } }, session);
+}
+
+test('each agent name has its own undo list and $ globals', async () => {
+  session.audit = { scripts: 0, records: [] };
+  await callAs('writer', "write 'A' to ./a.txt\nset $mine to 'writer'");
+  await callAs('tester', "write 'B' to ./b.txt");
+  // the tester's undo takes back only the tester's script
+  await callAs('tester', 'undo');
+  await assert.rejects(fs.access(path.join(root, 'b.txt')));
+  assert.equal(await fs.readFile(path.join(root, 'a.txt'), 'utf8'), 'A');
+  assert.equal((await callAs('tester', 'print $mine')).result.content[0].text, 'null');
+  assert.equal((await callAs('writer', 'print $mine')).result.content[0].text, 'writer');
+  // with no name, the session's own state
+  assert.match((await call('undo')).result.content[0].text, /Nothing to undo/);
+  // the audit names the agent
+  const [file] = await fs.readdir(path.join(root, 'talk', 'audit'));
+  const text = await fs.readFile(path.join(root, 'talk', 'audit', file), 'utf8');
+  assert.match(text, /script 1 \(agent writer\)  done/);
+  assert.match(text, /script 2 \(agent tester\)  done/);
+});
+
+test('a bad agent name is an error', async () => {
+  const response = await callAs('no spaces please', 'print 1');
+  assert.match(response.error.message, /^The argument 'agent' must be a name/);
+});

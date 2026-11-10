@@ -115,6 +115,7 @@ function lineLabel(line) {
  * @param {Map} [options.seen]                       files read so far; pass the same Map to check stale writes across runs
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
+ * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
  * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to talk/audit/
  * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
  * @param {number} [options.askTimeLimit]            how long a question waits with no "within", in ms (default: 2 minutes)
@@ -229,6 +230,8 @@ async function execute(source, options, execution) {
     auditReads: new Set(),
     auditFrom: "script",
     auditFormat: agents.auditFormat,
+    // the name of the agent that sent the script, or null; the audit records it
+    agent: options.agent || null,
   };
   state.audit.scripts++;
   state.auditScript = state.audit.scripts;
@@ -1978,7 +1981,7 @@ function localDate(date) {
 
 // one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
 function auditStep(state, kind, target, details) {
-  const record = { time: clock(new Date()), script: state.auditScript, kind, target: String(target), details: details || "", from: state.auditFrom };
+  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: String(target), details: details || "", from: state.auditFrom };
   state.auditSteps.push(record);
   state.audit.records.push(record);
   if (state.audit.records.length > AUDIT_RECORDS) {
@@ -2020,12 +2023,13 @@ async function writeAudit(state, source, status, errors) {
     let name = localDate(now) + ".log";
     if (state.auditFormat === "json") {
       name = localDate(now) + ".jsonl";
-      text += JSON.stringify({ type: "script", time: now.toISOString(), script: state.auditScript, status, steps: state.execution.steps, source, errors }) + "\n";
+      text += JSON.stringify({ type: "script", time: now.toISOString(), script: state.auditScript, agent: state.agent, status, steps: state.execution.steps, source, errors }) + "\n";
       for (const record of state.auditSteps) {
         text += JSON.stringify({ type: "step", ...record }) + "\n";
       }
     } else {
-      text += "== " + clock(now) + "  script " + state.auditScript + "  " + status + "  " + state.execution.steps + " steps ==\n";
+      const who = state.agent === null ? "" : " (agent " + state.agent + ")";
+      text += "== " + clock(now) + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps ==\n";
       text += source.trim() + "\n--\n";
       for (const record of state.auditSteps) {
         text += auditLine(record) + "\n";

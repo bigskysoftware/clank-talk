@@ -38,7 +38,8 @@ const RULES = `Rules:
   ask goes to the human, never to you. null means no answer: treat it as no.
   Tools can run programs in an OS sandbox ('in a sandbox'). If a sandboxed program fails for a missing read, write or network, tell the human what the tool needs.
 
-help lists everything. help <word> shows one command or expression, with examples: help replace. help recipes shows common tasks done well.`;
+help lists everything. help <word> shows one command or expression, with examples: help replace. help recipes shows common tasks done well.
+If you are one of several agents (a subagent), pass your name as 'agent' in each call, so your undo list and $ globals stay yours.`;
 
 // the syntax summary comes from the help table, so it cannot drift from help
 const SYNTAX = INTRO + "\n\n" + syntaxSummary() + "\n\n" + RULES;
@@ -184,7 +185,10 @@ export async function handleMessage(message, session) {
           description: session.toolsDescription,
           inputSchema: {
             type: "object",
-            properties: { script: { type: "string", description: "The ClankTalk script to run" } },
+            properties: {
+              script: { type: "string", description: "The ClankTalk script to run" },
+              agent: { type: "string", description: "Your name, if you are one of several agents, such as 'tester'. Each name has its own undo list and $ globals." },
+            },
             required: ["script"],
           },
         },
@@ -200,6 +204,12 @@ export async function handleMessage(message, session) {
     if (typeof script !== "string") {
       return replyError(id, -32602, "The argument 'script' must be text");
     }
+    // agent: a subagent's name; each name has its own undo list, $ globals and reads
+    const agent = params.arguments.agent;
+    if (agent !== undefined && (typeof agent !== "string" || !AGENT_NAME.test(agent))) {
+      return replyError(id, -32602, "The argument 'agent' must be a name of 1 to 40 letters, digits, -, _ or .");
+    }
+    const scope = agentScope(session, agent);
     // the client asks for progress with a token
     // a timer sends where the script is, also while a slow tool runs
     // no total: the step budget says nothing about how long a script takes
@@ -226,7 +236,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: session.globals, seen: session.seen, undo: session.undo, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -242,6 +252,24 @@ export async function handleMessage(message, session) {
   }
 
   return replyError(id, -32601, "Method not found: " + message.method);
+}
+
+// an agent name: letters, digits, -, _ and ., at most 40
+const AGENT_NAME = /^[A-Za-z0-9_.-]{1,40}$/;
+
+// the per-agent part of a session: $ globals, the files it read (for the stale-write check), and its undo list
+// with no name, the session's own; background processes, fetch approvals and the audit stay shared
+function agentScope(session, agent) {
+  if (agent === undefined) {
+    return { globals: session.globals, seen: session.seen, undo: session.undo };
+  }
+  if (!session.agents) {
+    session.agents = new Map();
+  }
+  if (!session.agents.has(agent)) {
+    session.agents.set(agent, { globals: Object.create(null), seen: new Map(), undo: [] });
+  }
+  return session.agents.get(agent);
 }
 
 // send a request to the client, and wait for its answer: the whole message, or null if cancelled

@@ -16,6 +16,7 @@ The runtime records every step that touches the world outside the script, so a h
 - Approved: `print` and `set` are not recorded: they do not touch the world.
 - Approved: never the content of files, only paths and counts. Undo holds the text.
 - Approved: each record says where it ran: the script, a tool (by name), or a hook.
+- Approved (built): each record has the `agent` name that sent the script, or null. The text header shows it: `script 12 (agent tester)`.
 
 ## Where
 
