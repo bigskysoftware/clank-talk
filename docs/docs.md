@@ -389,7 +389,7 @@ allow fetch from 'api.github.com', '*.npmjs.org', 'localhost'
 
 ### Asking You
 
-`ask` puts a question to you, and waits. Only you answer, never the agent. If nobody can answer, it gives `null`, which means no:
+`ask` puts a question to you, and waits, two minutes at most, unless you say `within`. Only you answer, never the agent. If nobody answers, it gives `null`, which means no:
 
 ```talk
 ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes

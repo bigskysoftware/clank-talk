@@ -185,3 +185,16 @@ test("git delete branch deletes only a merged branch", async () => {
   assert.match((await errors("git delete branch 'open'"))[0], /^git delete failed: .*not fully merged/s);
   assert.deepEqual(await errors("git delete branch '-D'"), ["Not a safe branch name: '-D'. Use letters, digits, -, _, / and ."]);
 });
+
+test("git push with no answer in time pushes nothing, and says why", async () => {
+  const bare = await fs.mkdtemp(path.join(os.tmpdir(), "clank-origin-"));
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  git(["remote", "add", "origin", bare]);
+  try {
+    const result = await run("git push", { root, ask: () => new Promise(() => {}), askTimeLimit: 30 });
+    assert.match(result.errors[0].message, /^The human did not approve the push: nobody answered in time\. Nothing was pushed\./);
+  } finally {
+    git(["remote", "remove", "origin"]);
+    await fs.rm(bare, { recursive: true, force: true });
+  }
+});

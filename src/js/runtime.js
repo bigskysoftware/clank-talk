@@ -117,6 +117,7 @@ function lineLabel(line) {
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
  * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to talk/audit/
  * @param {Function} [options.ask]                   asks the human: async ({ question, choices, signal }) => text or null
+ * @param {number} [options.askTimeLimit]            how long a question waits with no "within", in ms (default: 2 minutes)
  */
 export function start(source, options = {}) {
   const controller = new AbortController();
@@ -215,6 +216,9 @@ async function execute(source, options, execution) {
     recordedChanges: 0,
     // the host's way to ask the human: async ({ question, choices, signal }) => text or null
     ask: options.ask || null,
+    // how long a question waits when it has no "within"; a host can change it
+    askTimeLimit: options.askTimeLimit || ASK_TIME_LIMIT,
+    askTimedOut: false,
     // the audit: the session (script count and records; a host keeps it), this script's steps,
     // the files this script read, where a step runs (script, a tool name, or a hook), and the format
     audit: options.audit || { scripts: 0, records: [] },
@@ -1186,7 +1190,7 @@ async function runGit(command, state) {
     const answer = await askState(state, "Push branch '" + branch + "' to origin?", ["yes", "no"], null);
     if (answer !== "yes") {
       throw new ScriptError(
-        "The human did not approve the push" + (state.ask === null ? ": there is no way to ask them here" : "") + ". Nothing was pushed.\n" +
+        "The human did not approve the push" + askReason(state) + ". Nothing was pushed.\n" +
         "To push without asking, a human can add this line to AGENTS.talk:\n" +
         "  allow git push",
         command,
@@ -1845,7 +1849,7 @@ async function checkFetchHost(url, state, node) {
   }
   const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
   if (answer !== "yes") {
-    throw new ScriptError("The human did not approve a fetch from " + host + (state.ask === null ? ": there is no way to ask them here" : "") + ".\n" + allowLine, node);
+    throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
   }
   state.fetchHosts.add(host);
 }
@@ -1898,10 +1902,30 @@ async function askHuman(command, state) {
   return await askState(state, question, choices, limit);
 }
 
-// ask through the host, with a time limit in ms or null; used by ask and git push
+// a question to the human waits at most this long, unless "within" says otherwise;
+// a client that cannot show the dialog (for example on a phone) must not hang the script
+const ASK_TIME_LIMIT = 2 * 60 * 1000;
+
+// why an approval did not come: no way to ask, or no answer in time; empty for a plain "no"
+function askReason(state) {
+  if (state.ask === null) {
+    return ": there is no way to ask them here";
+  }
+  if (state.askTimedOut) {
+    return ": nobody answered in time";
+  }
+  return "";
+}
+
+// ask through the host, with a time limit in ms (null: the default); used by ask, git push and fetch
+// state.askTimedOut tells the caller that nobody answered in time
 async function askState(state, question, choices, limit) {
+  state.askTimedOut = false;
   if (state.ask === null) {
     return null;
+  }
+  if (limit === null) {
+    limit = state.askTimeLimit;
   }
   let timer = null;
   let answer = null;
@@ -1911,7 +1935,10 @@ async function askState(state, question, choices, limit) {
       answer = await asking;
     } else {
       const timeout = new Promise((resolve) => {
-        timer = setTimeout(() => resolve(null), limit);
+        timer = setTimeout(() => {
+          state.askTimedOut = true;
+          resolve(null);
+        }, limit);
       });
       answer = await Promise.race([asking, timeout]);
     }
@@ -1925,7 +1952,11 @@ async function askState(state, question, choices, limit) {
   if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
     answer = null;
   }
-  auditStep(state, "ask", question, answer === null ? "no answer" : "answer: " + answer);
+  let answerText = "answer: " + answer;
+  if (answer === null) {
+    answerText = state.askTimedOut ? "no answer within " + Math.round(limit / 1000) + " s" : "no answer";
+  }
+  auditStep(state, "ask", question, answerText);
   return answer;
 }
 

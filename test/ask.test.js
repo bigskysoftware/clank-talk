@@ -38,3 +38,10 @@ test("a host that fails to ask gives null", async () => {
   };
   assert.deepEqual(await output("ask 'Name?'\nprint it", { ask }), ["null"]);
 });
+
+test("a question with no answer gives up after the time limit", async () => {
+  const never = () => new Promise(() => {});
+  assert.deepEqual(await output("ask 'Name?'\nprint it", { ask: never, askTimeLimit: 30 }), ["null"]);
+  const result = await run("ask 'Name?'", { ask: never, askTimeLimit: 30 });
+  assert.deepEqual(result.errors, []);
+});

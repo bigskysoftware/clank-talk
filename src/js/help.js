@@ -194,7 +194,7 @@ export const HELP = [
   {
     name: "ask", kind: "command",
     syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
-    description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text they type, or the choice they pick. With no way to ask, no answer in time, or a 'no thanks', the result is null, so treat null as no.",
+    description: "Ask the human, and wait. Only the human answers, never the agent. The result is the text they type, or the choice they pick. With no way to ask, no answer in time (2 minutes, unless 'within' says otherwise), or a 'no thanks', the result is null, so treat null as no.",
     examples: ["ask 'Which branch should I use?'\nprint it", "ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes\nif the result is 'yes'\n  print 'ok'\nend"],
   },
   {
