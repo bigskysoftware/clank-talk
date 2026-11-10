@@ -215,3 +215,14 @@ test("a glob leaves out links that point to nothing or outside the root", async 
     await fs.rm(path.join(dir, "secret.txt"));
   }
 });
+
+test("exists is false for a link to outside the root, whether the file is there or not", async () => {
+  await fs.symlink(path.join(dir, "no-such-file.txt"), path.join(root, "gone.txt"));
+  try {
+    const result = await run("print ./escape.txt exists\nprint ./gone.txt exists", { root });
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.output, ["false", "false"]);
+  } finally {
+    await fs.rm(path.join(root, "gone.txt"));
+  }
+});

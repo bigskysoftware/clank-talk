@@ -2865,8 +2865,17 @@ async function realPath(file, state, node) {
   return real;
 }
 
+// exists: false for a missing file, and also for a link to a file outside the root,
+// so a script cannot learn what is outside the root
 async function fileExists(file, state, node) {
-  return (await realPath(file, state, node)) !== null;
+  try {
+    return (await realPath(file, state, node)) !== null;
+  } catch (err) {
+    if (err instanceof ScriptError && err.message.startsWith("Path is outside the project root")) {
+      return false;
+    }
+    throw err;
+  }
 }
 
 async function readText(file, state, node) {
