@@ -17,6 +17,9 @@ function fakePi() {
   pi.setActiveTools = (names) => {
     pi.active = names;
   };
+  pi.flags = {};
+  pi.registerFlag = () => {};
+  pi.getFlag = (name) => pi.flags[name];
   return pi;
 }
 
@@ -96,4 +99,39 @@ test("ask goes to a pi dialog, and with no UI the answer is null", async () => {
 test("a bad agent name is an error", async () => {
   const result = await pi.tools.clank_talk.execute("id-2", { script: "print 1", agent: "a b" }, undefined, undefined, { cwd: root });
   assert.equal(result.isError, true);
+});
+
+test("the description lists the tools from AGENTS.talk, after session_start", async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-tools-"));
+  await fs.writeFile(path.join(project, "AGENTS.talk"), "# Runs the tests.\ntool run_tests\nend");
+  try {
+    const other = fakePi();
+    clankTalkExtension(other, Type);
+    assert.doesNotMatch(other.tools.clank_talk.description, /run_tests/);
+    await other.handlers.session_start({}, { cwd: project });
+    assert.match(other.tools.clank_talk.description, /run_tests    Runs the tests\./);
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
+});
+
+test("--clank-policy sets a harness policy, and a wrong hash refuses every call", async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-policy-"));
+  const policyFile = path.join(project, "p.talk");
+  await fs.writeFile(policyFile, "policy 'p'\nlimit output to 3 lines");
+  try {
+    const other = fakePi();
+    clankTalkExtension(other, Type);
+    other.flags["clank-policy"] = policyFile;
+    await other.handlers.session_start({}, { cwd: project });
+    const cut = await other.tools.clank_talk.execute("1", { script: "repeat 10 times\n  print 'x'\nend" }, undefined, undefined, { cwd: project });
+    assert.match(cut.content[0].text, /lines cut/);
+    other.flags["clank-policy-hash"] = "0".repeat(64);
+    await other.handlers.session_start({}, { cwd: project });
+    const refused = await other.tools.clank_talk.execute("2", { script: "print 1" }, undefined, undefined, { cwd: project });
+    assert.equal(refused.isError, true);
+    assert.match(refused.content[0].text, /^ClankTalk does not run: the policy .* does not match --clank-policy-hash/);
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
 });

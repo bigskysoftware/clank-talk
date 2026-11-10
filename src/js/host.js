@@ -2,11 +2,36 @@
 // the hosts are the MCP server (mcp.js) and the pi extension (pi-host.js)
 
 import { readFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import nodePath from "node:path";
 import { listTools } from "./clank-talk.js";
 import { syntaxSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
+
+// read a harness policy file, and check it against its sha256 if a hash is given
+// file null: no policy; flags names the host's options, for the errors
+// gives { policy: { name, source } or null } or { error }; see src/md/features/policy.md
+export function loadPolicy(file, hash, flags) {
+  if (file === null) {
+    return { policy: null };
+  }
+  if (!file) {
+    return { error: flags.file + " needs a file" };
+  }
+  let source;
+  try {
+    source = readFileSync(nodePath.resolve(file), "utf8");
+  } catch (err) {
+    return { error: "cannot read the policy " + file + ": " + err.message };
+  }
+  if (hash !== null) {
+    const actual = createHash("sha256").update(source).digest("hex");
+    if (hash.toLowerCase() !== actual) {
+      return { error: "the policy " + file + " does not match " + flags.hash + ". It was changed, so " + flags.stops };
+    }
+  }
+  return { policy: { name: nodePath.basename(file), source } };
+}
 
 // a name for one host session, for the audit: the client's name and 4 random characters, such as claude-code-4f2a
 export function sessionName(client) {

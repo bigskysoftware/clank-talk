@@ -7,11 +7,9 @@
 //
 // Logs go to stderr. stdout is only for protocol messages.
 
-import { readFileSync, watch } from "node:fs";
-import { createHash } from "node:crypto";
-import nodePath from "node:path";
+import { watch } from "node:fs";
 import { run, stopAllProcesses, VERSION } from "./clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName } from "./host.js";
+import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "./host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -232,28 +230,10 @@ function replyError(id, code, message) {
 // gives { policy: { name, source } or null } or { error }; a changed policy file stops the server
 export function readPolicy(args) {
   const index = args.indexOf("--policy");
-  if (index === -1) {
-    return { policy: null };
-  }
-  const file = args[index + 1];
-  if (!file) {
-    return { error: "--policy needs a file" };
-  }
-  let source;
-  try {
-    source = readFileSync(nodePath.resolve(file), "utf8");
-  } catch (err) {
-    return { error: "cannot read the policy " + file + ": " + err.message };
-  }
   const hashIndex = args.indexOf("--policy-hash");
-  if (hashIndex !== -1) {
-    const expected = (args[hashIndex + 1] || "").toLowerCase();
-    const actual = createHash("sha256").update(source).digest("hex");
-    if (expected !== actual) {
-      return { error: "the policy " + file + " does not match --policy-hash. It was changed, so the server does not start" };
-    }
-  }
-  return { policy: { name: nodePath.basename(file), source } };
+  const file = index === -1 ? null : args[index + 1];
+  const hash = hashIndex === -1 ? null : args[hashIndex + 1] || "";
+  return loadPolicy(file, hash, { file: "--policy", hash: "--policy-hash", stops: "the server does not start" });
 }
 
 /**
