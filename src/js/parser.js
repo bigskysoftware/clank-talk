@@ -10,6 +10,9 @@
 
 import { tokenize } from "./tokenizer.js";
 // the words after "git"; see src/md/features/git.md
+// how deep expressions and blocks can nest
+const MAX_NESTING = 100;
+
 export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "push", "delete"];
 
 /**
@@ -127,7 +130,7 @@ export function parse(source, options = {}) {
     if (token === undefined || token.type !== "word") {
       return false;
     }
-    return COMMANDS[token.value] !== undefined || token.value === "end" || token.value === "else" || token.value === "then";
+    return Object.hasOwn(COMMANDS, token.value) || token.value === "end" || token.value === "else" || token.value === "then";
   }
 
   function isOp(value) {
@@ -178,7 +181,21 @@ export function parse(source, options = {}) {
   }
 
   function parseExpression() {
-    return parseLogic();
+    return nested(parseLogic);
+  }
+
+  // how deep expressions and blocks are; a cap keeps a deep script from overflowing the stack
+  let depth = 0;
+  function nested(parseInner) {
+    depth++;
+    if (depth > MAX_NESTING) {
+      throw { tooDeep: true, token: current() || tokens[tokens.length - 1] };
+    }
+    try {
+      return parseInner();
+    } finally {
+      depth--;
+    }
   }
 
   function parseLogic() {
@@ -428,7 +445,7 @@ export function parse(source, options = {}) {
         i += 2;
         return node("undoList", next, {});
       }
-      if (next !== undefined && next.type === "word" && COMMANDS[next.value] !== undefined) {
+      if (next !== undefined && next.type === "word" && Object.hasOwn(COMMANDS, next.value)) {
         i++;
         return node("variable", next, { name: next.value });
       }
@@ -1278,7 +1295,8 @@ export function parse(source, options = {}) {
       return null;
     }
 
-    const parser = COMMANDS[token.value];
+    // own names only: a script word such as __proto__ is not a command
+    const parser = Object.hasOwn(COMMANDS, token.value) ? COMMANDS[token.value] : undefined;
     if (parser !== undefined) {
       i++;
       const errorCount = errors.length;
@@ -1309,6 +1327,10 @@ export function parse(source, options = {}) {
   // commands up to an 'end' or the end of the source
   // 'then' between commands is skipped
   function parseCommands() {
+    return nested(parseCommandList);
+  }
+
+  function parseCommandList() {
     const commands = [];
     while (!atEnd() && !isWord("end") && !isWord("else")) {
       if (isWord("then")) {
@@ -1995,17 +2017,26 @@ export function parse(source, options = {}) {
 
   // ----- script -----
 
-  if (options.definitions) {
-    return { script: { type: "definitions", definitions: parseDefinitions() }, errors };
-  }
+  try {
+    if (options.definitions) {
+      return { script: { type: "definitions", definitions: parseDefinitions() }, errors };
+    }
 
-  const commands = parseCommands();
-  while (!atEnd()) {
-    // only a stray 'end' or 'else' can stop parseCommands before the end of the source
-    error("Unexpected '" + current().value + "'");
-    i++;
-    commands.push(...parseCommands());
-  }
+    const commands = parseCommands();
+    while (!atEnd()) {
+      // only a stray 'end' or 'else' can stop parseCommands before the end of the source
+      error("Unexpected '" + current().value + "'");
+      i++;
+      commands.push(...parseCommands());
+    }
 
-  return { script: { type: "script", commands }, errors };
+    return { script: { type: "script", commands }, errors };
+  } catch (err) {
+    if (!err.tooDeep) {
+      throw err;
+    }
+    const at = err.token || { line: 1, column: 1 };
+    errors.push({ message: "The script nests more than " + MAX_NESTING + " levels deep. Use variables for parts of it", line: at.line, column: at.column });
+    return { script: options.definitions ? { type: "definitions", definitions: [] } : { type: "script", commands: [] }, errors };
+  }
 }

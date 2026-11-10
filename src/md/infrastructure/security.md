@@ -27,6 +27,9 @@ Feature: [../features/runtime.md](../features/runtime.md).
 
 - Every path is checked against the project root, before symlinks (`path.resolve`) and after them (`fs.realpath`). A path or symlink that goes outside the root is an error.
 - Glob results are checked one by one.
+- Proposed (built): a glob leaves out a link that points to nothing or to a file outside the root. Thus a glob does not show names from outside the root, and does not fail with a raw error.
+- Proposed (built): expressions and blocks can nest 100 levels deep. A deeper script is a parse error, not a stack overflow.
+- Proposed (built): only the parser's own command names are commands. A script word such as `__proto__` or `constructor` is an unknown command.
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
 - Writes use the same checks. For a new file, the nearest folder that exists must be inside the root after symlinks, before any folder is made. Thus a symlinked folder cannot lead a new file outside the root.
 - Approved (built): a write through a link that points to nothing is an error. The write would follow the link to a path that no check saw (outside the root, a `.talk` file, a hidden file).

@@ -199,3 +199,17 @@ test('in <target> do ... end', () => {
   assert.deepEqual(block.body.map((c) => c.target), [{ type: 'path', value: './a.js' }, { type: 'path', value: './a.js' }]);
   assert.match(errors("in ./a.js do\n  replace 'x' with 'y'")[0], /Expected 'end'/);
 });
+
+test("names from Object.prototype are not commands", () => {
+  for (const word of ["__proto__", "hasOwnProperty", "constructor", "toString"]) {
+    assert.deepEqual(parse(word).errors.map((e) => e.message), ["Unknown command '" + word + "'"], word);
+  }
+});
+
+test("a script that nests too deep is an error, not a stack overflow", () => {
+  const deep = "print " + "(".repeat(5000) + "1" + ")".repeat(5000);
+  assert.match(parse(deep).errors[0].message, /^The script nests more than 100 levels deep/);
+  const blocks = "if true\n".repeat(200) + "print 1\n" + "end\n".repeat(200);
+  assert.match(parse(blocks).errors[0].message, /^The script nests more than 100 levels deep/);
+  assert.deepEqual(parse("print " + "(".repeat(50) + "1" + ")".repeat(50)).errors, []);
+});

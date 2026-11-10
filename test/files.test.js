@@ -199,3 +199,19 @@ test('a glob skips node_modules and .git, unless the pattern names them', async 
     await fs.rm(project, { recursive: true, force: true });
   }
 });
+
+test("a glob leaves out links that point to nothing or outside the root", async () => {
+  await fs.symlink(path.join(root, "nothere.txt"), path.join(root, "dangle.txt"));
+  await fs.writeFile(path.join(dir, "secret.txt"), "s");
+  await fs.symlink(path.join(dir, "secret.txt"), path.join(root, "out.txt"));
+  try {
+    const result = await run("print ./*.txt", { root });
+    assert.deepEqual(result.errors, []);
+    assert.ok(!result.output.join("\n").includes("dangle.txt"), result.output.join("\n"));
+    assert.ok(!result.output.join("\n").includes("out.txt"), result.output.join("\n"));
+  } finally {
+    await fs.rm(path.join(root, "dangle.txt"));
+    await fs.rm(path.join(root, "out.txt"));
+    await fs.rm(path.join(dir, "secret.txt"));
+  }
+});

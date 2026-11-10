@@ -2823,7 +2823,11 @@ async function globFiles(base, pattern, state, node) {
   for await (const match of fs.glob(pattern, { cwd: base, exclude })) {
     const absolute = nodePath.resolve(base, match);
     checkInsideRoot(absolute, state, node, match);
-    const stats = await fs.stat(absolute);
+    // a link that points to nothing, or to a file outside the root, is not in the list
+    const stats = await fs.stat(absolute).catch(() => null);
+    if (stats === null || !isInside(await fs.realpath(absolute), await fs.realpath(state.root))) {
+      continue;
+    }
     if (stats.isFile()) {
       files.push(new FileRef(absolute, state.root));
     }
