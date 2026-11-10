@@ -49,6 +49,13 @@ test("arguments by name", async () => {
   assert.deepEqual(await output("deploy with version: '1.2', env: 'prod'\nprint it"), ["prod@1.2"]);
 });
 
+test("a tool call is also a value, and leaves the result as it was", async () => {
+  await agentsTalk("tool greet\n  set the result to 'hi'\nend\ntool add with a, b\n  set the result to a + b\nend\ntool deploy with env, version\n  set the result to '${env}@${version}'\nend");
+  assert.deepEqual(await output("set g to greet\nprint g"), ["hi"]);
+  assert.deepEqual(await output("set sum to add 1, 2\nprint sum"), ["3"]);
+  assert.deepEqual(await output("set the result to 'before'\nset d to deploy with env: 'prod', version: '1.2'\nprint d\nprint the result"), ["prod@1.2", "before"]);
+});
+
 test("a missing argument is null", async () => {
   await agentsTalk("tool show with a, b\n  set the result to b\nend");
   assert.deepEqual(await output("show 1\nprint it"), ["null"]);

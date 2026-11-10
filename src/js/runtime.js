@@ -1151,6 +1151,16 @@ async function evaluate(node, state) {
   if (type === "undoList") {
     return undoList(state);
   }
+  // a tool call as a value: set tests to run_tests
+  // it runs as the command does, with hooks and the audit, but leaves the result as it was
+  if (type === "toolCall") {
+    takeStep(node, state, state.maxSteps);
+    const saved = state.result;
+    await runCommand(node, state, state.tools, state.maxSteps);
+    const value = state.result;
+    state.result = saved;
+    return value;
+  }
   // fetch as a value: (fetch url as response)'s status
   if (type === "fetch") {
     return await runFetch(node, state);

@@ -61,7 +61,7 @@ async function describeTool(root) {
         text += "    " + tool.description.split("\n")[0];
       }
     }
-    text += "\n  Add 'within 5 minutes' to a call to set a time limit. A tool gives back the result, often { code, output }.";
+    text += "\n  Add 'within 5 minutes' to a call to set a time limit. A tool gives back the result, often { code, output }. A call is also a value: set tests to run_tests.";
   }
   if (errors.length > 0) {
     text += "\n\nAGENTS.talk has errors: " + errors.map((e) => e.message + " at " + e.line + ":" + e.column).join("; ");

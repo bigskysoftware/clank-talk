@@ -62,6 +62,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - Variables without a prefix are local to the script or feature. `$` variables are global and stay for the session.
 - `on error ... end` handles errors. It can go anywhere in a script or feature, and covers all of that script or feature. It can use `stop`, or `continue` to go on with the line after the one that failed. The default is `stop`.
 - A tool call gives back `code` and `output`. Arguments can be by position (`run_test 'UserTest'`) or by name (`run_test with name: 'UserTest', mode: 'fast'`), with commas between them.
+- Approved (built): a tool call is also a value, as `read`, `fetch` and `find` are: `set tests to run_tests`. It takes the same arguments and `within`. It runs as the command does, with hooks, the audit and a step, but leaves `the result` as it was. The docs put the value in a variable, then use it on the next line, not `(run_tests)'s code`.
 - Hooks: `before` and `after` for `read`, `write`, `fetch`, `run` and tool calls. Extensions can add more. An `after` hook sees `the result`.
 
 ## Expressions

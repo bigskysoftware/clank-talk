@@ -134,7 +134,7 @@ export const HELP = [
   {
     name: "tool", kind: "command", where: "AGENTS.talk",
     syntax: "tool <name> [with <param>, ...] ... end",
-    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result.",
+    description: "Only in AGENTS.talk. Define a tool the agent can call by name. The '#' comment lines just above it are its help. The tool gives back the result. A call is also a value, which leaves the result as it was: set tests to run_tests.",
     examples: ["# Runs one test class.\ntool run_test with name\n  run 'mvn' with 'test', '-Dtest=' + name\nend"],
   },
   {
@@ -250,7 +250,7 @@ export const HELP = [
   {
     name: "it", kind: "expression",
     syntax: "it | the result",
-    description: "The value from the last command: read, fetch, replace, a tool call, and more.",
+    description: "The value from the last command: read, fetch, replace, a tool call, and more. Each command sets it again, so to keep a value, put it in a variable: set tests to run_tests.",
     examples: ["read ./a.txt\nprint it"],
   },
   {
@@ -387,12 +387,12 @@ export const RECIPES = [
   {
     name: "Change, test, undo",
     description: "Make the change, run the tests, and take the change back if they fail. Undo in a script takes back that script's own changes first.",
-    example: "in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'\nrun_tests\nif the result's code is not 0\n  undo\nend",
+    example: "in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'\nset tests to run_tests\nif tests's code is not 0\n  undo\nend",
   },
   {
     name: "Read only the failures",
     description: "Test output is long. Find the lines that matter.",
-    example: "run_tests\nfind 'not ok' in the result's output\nif the result is empty\n  print 'all green'\nelse\n  print the result\nend",
+    example: "set tests to run_tests\nset failures to find 'not ok' in tests's output\nif failures is empty\n  print 'all green'\nelse\n  print failures\nend",
   },
   {
     name: "Find, then rename",

@@ -550,6 +550,11 @@ export function parse(source, options = {}) {
     }
 
     const token = current();
+    // a tool call as a value: set tests to run_tests
+    if (token !== undefined && token.type === "word" && tools.includes(token.value)) {
+      i++;
+      return parseToolCall(token);
+    }
     // a command word on the same line is likely a name; on a new line it starts the next command
     const before = tokens[i - 1];
     if (token !== undefined && token.type === "word" && Object.hasOwn(COMMANDS, token.value) && before !== undefined && before.line === token.line) {

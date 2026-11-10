@@ -352,12 +352,19 @@ Your agent calls tools by name:
 
 ```talk
 run_tests within 5 minutes
-if the result's code is not 0
-  find 'FAIL' in the result's output
-  print it
-end
+print the result's code
 
 run_test with file: './test/app.test.js'
+```
+
+A call is a value too, so you can give its answer a name. Then the next command can't wipe it out:
+
+```talk
+set tests to run_tests within 5 minutes
+if tests's code is not 0
+  set failures to find 'FAIL' in tests's output
+  print failures
+end
 ```
 
 `run` only works inside a tool, never uses a shell, and passes on only the environment variables that `allow env` lists. Got a set of tools you like? Put them in their own `.talk` file, and `import ./talk/git.talk`.
