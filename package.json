@@ -18,6 +18,9 @@
   "bin": {
     "clank-talk-mcp": "bin/clank-talk-mcp.js"
   },
+  "pi": {
+    "extensions": ["./src/js/pi.js"]
+  },
   "files": [
     "bin/",
     "src/js/"
