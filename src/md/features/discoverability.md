@@ -34,3 +34,6 @@ Approved:
 - Approved: the MCP tool description also has a short hand-written part: what ClankTalk is, strings and access in one paragraph, and the rules for the agent (refused changes, line edits, ask, sandbox).
 - Approved: the human docs (`docs/docs.md`) tell the story, and link to the Reference for the exact syntax.
 - Thus: put the most important rule of each entry in its first sentence, because the tool description shows only that.
+## Recipes
+
+- Proposed: `help recipes` shows common tasks done well: look before you edit, change and test and undo, read only the failures, find then rename, ask before something big, start a server and wait, commit your work. They teach habits, not syntax. They live in `RECIPES` in `src/js/help.js`, show in the docs for agents, and every recipe must parse (test/help.test.js). The MCP rules name `help recipes` in one line. No new grammar: `help <word>` already exists, like `help tools`.

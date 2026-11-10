@@ -372,8 +372,61 @@ export function helpIndex(tools, only) {
     lines.push("");
   }
   lines.push("Use help <word> for details and examples, for example: help replace");
-  lines.push("Use help commands, help expressions or help tools for one group.");
+  lines.push("Use help commands, help expressions or help tools for one group, and help recipes for common tasks.");
   return lines.join("\n");
+}
+
+// recipes: common tasks done well, for "help recipes" and the docs for agents
+// they may call the tools run_tests and dev_server; test/help.test.js parses them with those names
+export const RECIPES = [
+  {
+    name: "Look before you edit",
+    description: "Read the lines you will change, edit by line number, then look again. Use a raw string for code, so the indent stays exact.",
+    example: 'print lines 40 to 52 of ./src/cart.js\nreplace lines 48 to 49 of ./src/cart.js with """\n  const total = items.reduce((sum, item) => sum + item.price, 0);\n  return total;\n"""\nprint lines 46 to 52 of ./src/cart.js',
+  },
+  {
+    name: "Change, test, undo",
+    description: "Make the change, run the tests, and take the change back if they fail. Undo in a script takes back that script's own changes first.",
+    example: "in ./src/config.js\n  replace 'retries: 3' with 'retries: 5'\nrun_tests\nif the result's code is not 0\n  undo\nend",
+  },
+  {
+    name: "Read only the failures",
+    description: "Test output is long. Find the lines that matter.",
+    example: "run_tests\nfind 'not ok' in the result's output\nif the result is empty\n  print 'all green'\nelse\n  print the result\nend",
+  },
+  {
+    name: "Find, then rename",
+    description: "See every use first, then change them all, and check that none are left.",
+    example: "find 'getTotal(' in ./src/**/*.js\nprint the result\nfor file in ./src/**/*.js\n  replace 'getTotal(' with 'cartTotal(' in file\nend\nfind 'getTotal(' in ./src/**/*.js\nprint the result is empty",
+  },
+  {
+    name: "Ask before something big",
+    description: "Only the human answers. No answer is null: treat it as no.",
+    example: "find 'TODO' in ./src/**/*.js\nask 'Remove all ' + the length of the result + ' TODO lines?' with 'yes' or 'no'\nif the result is not 'yes'\n  print 'Left them alone'\nend",
+  },
+  {
+    name: "Start a server, and wait for it",
+    description: "A tool starts it; wait until it answers; look at its output if it does not.",
+    example: "dev_server\nwait until (fetch http://localhost:8000/ as response)'s status is 200 within 15 seconds\non error\n  print the output of process 'dev'\nend",
+  },
+  {
+    name: "Commit your work",
+    description: "Look at what changed, then commit only the files you mean.",
+    example: "git status\nprint it\ngit diff ./src/cart.js\nprint it\ngit commit [./src/cart.js, ./test/cart.test.js] with 'Fix the cart total'",
+  },
+];
+
+// help recipes: every recipe, with its code
+function recipesText() {
+  const lines = ["Recipes: common tasks, done well.", ""];
+  for (const recipe of RECIPES) {
+    lines.push(recipe.name, "  " + recipe.description, "");
+    for (const line of recipe.example.split("\n")) {
+      lines.push("    " + line);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
 }
 
 /**
@@ -382,6 +435,9 @@ export function helpIndex(tools, only) {
 export function helpFor(word, tools) {
   if (word === "commands" || word === "expressions" || word === "tools") {
     return helpIndex(tools, word);
+  }
+  if (word === "recipes") {
+    return recipesText();
   }
   for (const tool of tools) {
     if (tool.name === word) {
@@ -434,6 +490,10 @@ export function referenceMarkdown() {
         lines.push("```talk", example, "```", "");
       }
     }
+  }
+  lines.push("## Recipes", "", "Common tasks, done well. In a script, `help recipes` shows the same.", "");
+  for (const recipe of RECIPES) {
+    lines.push("### " + recipe.name, "", recipe.description, "", "```talk", recipe.example, "```", "");
   }
   return lines.join("\n");
 }

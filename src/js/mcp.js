@@ -38,7 +38,7 @@ const RULES = `Rules:
   ask goes to the human, never to you. null means no answer: treat it as no.
   Tools can run programs in an OS sandbox ('in a sandbox'). If a sandboxed program fails for a missing read, write or network, tell the human what the tool needs.
 
-help lists everything. help <word> shows one command or expression, with examples: help replace`;
+help lists everything. help <word> shows one command or expression, with examples: help replace. help recipes shows common tasks done well.`;
 
 // the syntax summary comes from the help table, so it cannot drift from help
 const SYNTAX = INTRO + "\n\n" + syntaxSummary() + "\n\n" + RULES;

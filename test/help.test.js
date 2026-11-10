@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { run, parse } from "../src/js/clank-talk.js";
-import { HELP, referenceMarkdown, syntaxSummary } from "../src/js/help.js";
+import { HELP, RECIPES, referenceMarkdown, syntaxSummary, helpFor } from "../src/js/help.js";
 
 let root;
 
@@ -91,4 +91,18 @@ test('the syntax summary has one line for each entry', () => {
   for (const entry of HELP) {
     assert.ok(summary.includes('  ' + entry.syntax + '   '), entry.name);
   }
+});
+
+test('every recipe parses, and shows in help recipes and the reference', async () => {
+  const text = helpFor('recipes', []);
+  const md = referenceMarkdown();
+  assert.ok(RECIPES.length >= 5);
+  for (const recipe of RECIPES) {
+    const { errors } = parse(recipe.example, { tools: ['run_tests', 'dev_server'] });
+    assert.deepEqual(errors, [], recipe.name);
+    assert.ok(text.includes(recipe.name), recipe.name);
+    assert.ok(md.includes('```talk\n' + recipe.example + '\n```'), recipe.name);
+  }
+  const result = await run('help recipes');
+  assert.match(result.output[0], /^Recipes: common tasks, done well\./);
 });
