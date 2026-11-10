@@ -9,6 +9,8 @@ import { run } from "../src/js/clank-talk.js";
 let root;
 let server;
 let base;
+let otherServer;
+let otherBase;
 
 before(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-fetch-"));
@@ -28,6 +30,12 @@ before(async () => {
       } else if (request.url === "/to-localhost") {
         response.writeHead(302, { Location: "http://localhost:" + server.address().port + "/text" });
         response.end();
+      } else if (request.url === "/to-other-echo") {
+        response.writeHead(302, { Location: otherBase + "/echo" });
+        response.end();
+      } else if (request.url === "/to-other-307") {
+        response.writeHead(307, { Location: otherBase + "/echo" });
+        response.end();
       } else if (request.url === "/to-text") {
         response.writeHead(302, { Location: "/text" });
         response.end();
@@ -41,11 +49,18 @@ before(async () => {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = "http://127.0.0.1:" + server.address().port;
+  // a second server: another origin, for redirects
+  otherServer = http.createServer((request, response) => {
+    response.end(JSON.stringify({ key: request.headers["x-key"] || null }));
+  });
+  await new Promise((resolve) => otherServer.listen(0, "127.0.0.1", resolve));
+  otherBase = "http://127.0.0.1:" + otherServer.address().port;
   await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
 });
 
 after(async () => {
   server.close();
+  otherServer.close();
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -127,7 +142,7 @@ test("private hosts in every form are refused, and a *. pattern does not allow t
   for (const [url, host] of Object.entries(hosts)) {
     assert.match((await errors(`fetch '${url}'`))[0], new RegExp("^fetch refused: " + host.replace(/[.[\]]/g, "\\$&") + " is a local or private address"), url);
   }
-  await fs.rm(path.join(root, "AGENTS.talk"));
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
 });
 
 test("hooks can watch and reject fetch", async () => {
@@ -146,4 +161,11 @@ test("wait until, with fetch as a value", async () => {
   assert.match(message, /^wait until did not come true within 500ms\. The last error: fetch failed: /);
   assert.deepEqual(await errors("wait until false within 300ms"), ["wait until did not come true within 300ms"]);
   assert.deepEqual(await output(`set page to fetch '${base}/text'\nprint page`), ["hello"]);
+});
+
+test("a redirect to another origin drops the script's headers, and does not send the body on", async () => {
+  const [text] = await output(`print fetch '${base}/to-other-echo' with headers: { 'X-Key': 'secret' }`);
+  assert.deepEqual(JSON.parse(text), { key: null });
+  const [message] = await errors(`fetch '${base}/to-other-307' with method: 'POST', body: 'data'`);
+  assert.equal(message, "fetch will not send the body on to another host: " + base + " redirects to " + otherBase);
 });

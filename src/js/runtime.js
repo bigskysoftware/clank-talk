@@ -1920,7 +1920,7 @@ async function runFetch(command, state) {
   const url = parseUrl(toText(await evaluate(command.url, state)), command.url);
 
   let method = "GET";
-  const headers = {};
+  let headers = {};
   let body;
   for (const arg of command.named) {
     const value = await evaluate(arg.value, state);
@@ -1982,7 +1982,16 @@ async function runFetch(command, state) {
     if (hops >= FETCH_MAX_REDIRECTS) {
       throw new ScriptError("fetch stopped after " + FETCH_MAX_REDIRECTS + " redirects: " + url.href, command);
     }
+    const previous = current;
     current = parseUrl(new URL(location, current).href, command);
+    // on a redirect to another origin (scheme, host or port), the script's headers stay behind,
+    // because they often hold a key for the first host; a body is not sent on, it is an error
+    if (current.origin !== previous.origin) {
+      headers = {};
+      if (body !== undefined && (response.status === 307 || response.status === 308)) {
+        throw new ScriptError("fetch will not send the body on to another host: " + previous.origin + " redirects to " + current.origin, command);
+      }
+    }
     // a 303, or a 301 or 302 after a POST, goes on as a GET with no body, as browsers do
     if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST")) {
       method = "GET";
