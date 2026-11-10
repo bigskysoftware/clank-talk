@@ -16,7 +16,8 @@ The runtime records every step that touches the world outside the script, so a h
 - Approved: `print` and `set` are not recorded: they do not touch the world.
 - Approved: never the content of files, only paths and counts. Undo holds the text.
 - Approved: each record says where it ran: the script, a tool (by name), or a hook.
-- Approved (built): each record has the `agent` name that sent the script, or null. The text header shows it: `script 12 (agent tester)`.
+- Approved (built): each record has the `agent` name that sent the script, or null. The text header shows it: `script 12 (agent tester)`, or `script 12 (main)` with no name. `(main)` means no name was given: the main agent, or a subagent that did not pass its name. Claude Code sends no caller id, so ClankTalk cannot tell them apart.
+- Approved (built): the header names the host session: `session claude-code-4f2a`, from the MCP client's name (`clientInfo.name`) and 4 random characters; `pi-...` in pi. The JSON format has a `session` field. Why: two sessions on one day write to the same file, and each counts its scripts from 1.
 
 ## Where
 
@@ -31,7 +32,7 @@ The runtime records every step that touches the world outside the script, so a h
 - Approved: `audit as json` in AGENTS.talk writes JSON Lines (`.jsonl`) instead: one line for each step, and one line for each script.
 
 ```
-== 10:42:01  script 12  done  14 steps ==
+== 10:42:01  session claude-code-4f2a  script 12 (main)  done  14 steps ==
   in @/src/config.js
     replace 'retries: 3' with 'retries: 5'
   run_tests

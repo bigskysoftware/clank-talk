@@ -2,7 +2,7 @@
 // clank-talk-pi.js is the entry file. It gives this module pi's TypeBox, so the tests can run without pi.
 
 import { run, stopAllProcesses } from "./clank-talk.js";
-import { SYNTAX, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput } from "./host.js";
+import { SYNTAX, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName } from "./host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -72,6 +72,7 @@ export function clankTalkExtension(pi, Type) {
         onStep: progressFor(onUpdate),
         signal,
         previousOutput: scope.output.text,
+        session: session.name,
       });
       scope.output.text = keptOutput(result);
       return {
@@ -84,7 +85,7 @@ export function clankTalkExtension(pi, Type) {
 }
 
 function newSession(root) {
-  return { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
+  return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
 }
 
 // "ask" in a script goes to a pi dialog, so the human answers, never the model

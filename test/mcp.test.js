@@ -245,3 +245,8 @@ test('a bad agent name is an error', async () => {
   const response = await callAs('no spaces please', 'print 1');
   assert.match(response.error.message, /^The argument 'agent' must be a name/);
 });
+
+test("the MCP server names the session after the client, for the audit", async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', clientInfo: { name: 'Claude Code' } } }, session);
+  assert.match(session.name, /^claude-code-[0-9a-f]{4}$/);
+});

@@ -260,6 +260,8 @@ async function execute(source, options, execution) {
     auditFormat: agents.auditFormat,
     // the name of the agent that sent the script, or null; the audit records it
     agent: options.agent || null,
+    // the host's name for this session, such as claude-code-4f2a; the audit records it
+    session: options.session || null,
     // the harness's policy: name, short hash and rules, or null
     policy: policy.policy,
   };
@@ -2519,14 +2521,16 @@ async function writeAudit(state, source, status, errors) {
     if (state.auditFormat === "json") {
       name = localDate(now) + ".jsonl";
       const policyInfo = state.policy === null ? null : { name: state.policy.name, hash: state.policy.hash };
-      text += JSON.stringify({ type: "script", time: now.toISOString(), script: state.auditScript, agent: state.agent, policy: policyInfo, status, steps: state.execution.steps, source, errors }) + "\n";
+      text += JSON.stringify({ type: "script", time: now.toISOString(), session: state.session, script: state.auditScript, agent: state.agent, policy: policyInfo, status, steps: state.execution.steps, source, errors }) + "\n";
       for (const record of state.auditSteps) {
         text += JSON.stringify({ type: "step", ...record }) + "\n";
       }
     } else {
-      const who = state.agent === null ? "" : " (agent " + state.agent + ")";
+      // (main) means no agent name was given: the main agent, or a subagent that did not pass its name
+      const who = state.agent === null ? " (main)" : " (agent " + state.agent + ")";
+      const session = state.session === null ? "" : "  session " + state.session;
       const under = state.policy === null ? "" : "  (policy " + state.policy.name + " " + state.policy.hash + ")";
-      text += "== " + clock(now) + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps" + under + " ==\n";
+      text += "== " + clock(now) + session + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps" + under + " ==\n";
       // the script is indented, so no line of it can look like a header (==) or the end of the script (--)
       text += source.trim().split("\n").map((line) => ("  " + oneLine(line)).trimEnd()).join("\n") + "\n--\n";
       for (const record of state.auditSteps) {

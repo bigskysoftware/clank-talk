@@ -11,7 +11,7 @@ import { readFileSync, watch } from "node:fs";
 import { createHash } from "node:crypto";
 import nodePath from "node:path";
 import { run, stopAllProcesses, VERSION } from "./clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput } from "./host.js";
+import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName } from "./host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -41,6 +41,8 @@ export async function handleMessage(message, session) {
   if (message.method === "initialize") {
     // a client that supports elicitation can show a question to the human: see "ask"
     session.canAsk = Boolean(params.capabilities && params.capabilities.elicitation);
+    // the audit names the session after the client, such as claude-code-4f2a
+    session.name = sessionName(params.clientInfo && params.clientInfo.name);
     return reply(id, {
       // answer with the version the client asks for
       protocolVersion: params.protocolVersion || "2025-06-18",
@@ -115,7 +117,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
       scope.output.text = keptOutput(result);
     } finally {
       if (timer !== null) {

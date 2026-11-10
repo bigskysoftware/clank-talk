@@ -538,7 +538,7 @@ A hook can watch `read`, `write`, `append`, `replace`, `put`, `remove`, `undo`, 
 Ever wonder what your agent is actually doing? Every step that touches the world is written to `talk/audit/`, one file a day:
 
 ```text
-== 10:42:01  script 12  done  6 steps ==
+== 10:42:01  session claude-code-4f2a  script 12 (main)  done  6 steps ==
   in @/src/config.js
     replace 'retries: 3' with 'retries: 5'
   run_tests

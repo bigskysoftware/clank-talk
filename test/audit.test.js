@@ -30,7 +30,7 @@ test("the text audit: one block for each script, one line for each step", async 
   const { name, text } = await auditText();
   assert.match(name, /^\d{4}-\d\d-\d\d\.log$/);
   const lines = text.split("\n");
-  assert.match(lines[0], /^== \d\d:\d\d:\d\d  script 1  done  6 steps ==$/);
+  assert.match(lines[0], /^== \d\d:\d\d:\d\d  script 1 \(main\)  done  6 steps ==$/);
   assert.equal(lines[1], "  read ./a.txt");
   assert.ok(lines.includes("--"));
   const steps = lines.slice(lines.indexOf("--") + 1).filter((line) => line !== "");
@@ -52,7 +52,7 @@ test("a script cannot fake a header or a step in the text audit", async () => {
 test("a failed script says so, with its error", async () => {
   await run("read ./missing.txt", { root, audit });
   const { text } = await auditText();
-  assert.match(text, /script 1  failed  1 steps/);
+  assert.match(text, /script 1 \(main\)  failed  1 steps/);
   assert.match(text, /!! 1:1 File not found: missing\.txt/);
 });
 
@@ -61,7 +61,7 @@ test("scripts count up in a session, and the audit is a value", async () => {
   const result = await run("for step in the audit\n  print step's script + ' ' + step's kind + ' ' + step's target\nend", { root, audit });
   assert.deepEqual(result.output, ["1 read a.txt"]);
   const { text } = await auditText();
-  assert.match(text, /script 2  done/);
+  assert.match(text, /script 2 \(main\)  done/);
 });
 
 test("audit as json writes JSON Lines", async () => {
@@ -86,4 +86,12 @@ test("a script cannot change the audit", async () => {
 test("without an audit session, no file is written", async () => {
   await run("read ./a.txt", { root });
   await assert.rejects(fs.access(path.join(root, "talk")));
+});
+
+test("the header names the session, and the agent or (main)", async () => {
+  await run("print 1", { root, audit, session: "claude-code-4f2a" });
+  await run("print 2", { root, audit, session: "claude-code-4f2a", agent: "tester" });
+  const { text } = await auditText();
+  assert.match(text, /^== \d\d:\d\d:\d\d  session claude-code-4f2a  script 1 \(main\)  done  1 steps ==$/m);
+  assert.match(text, /^== \d\d:\d\d:\d\d  session claude-code-4f2a  script 2 \(agent tester\)  done  1 steps ==$/m);
 });

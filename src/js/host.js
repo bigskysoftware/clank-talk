@@ -2,10 +2,17 @@
 // the hosts are the MCP server (mcp.js) and the pi extension (pi-host.js)
 
 import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import nodePath from "node:path";
 import { listTools } from "./clank-talk.js";
 import { syntaxSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
+
+// a name for one host session, for the audit: the client's name and 4 random characters, such as claude-code-4f2a
+export function sessionName(client) {
+  const base = String(client || "session").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "session";
+  return base.slice(0, 30) + "-" + randomBytes(2).toString("hex");
+}
 
 // the step budget for each call
 export const MAX_STEPS = 10_000;
