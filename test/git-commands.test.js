@@ -235,3 +235,18 @@ test("git move moves a tracked file, so git sees a rename", async () => {
   assert.deepEqual(await errors("git move ./moved/a.txt to ./b.txt"), ["Cannot move moved/a.txt to b.txt: that file is already there. git move does not replace files"]);
   assert.match((await errors("git move ./moved/a.txt to ./.env"))[0], /^A script cannot change hidden files/);
 });
+
+test("git diff and git show do not show a .env file that is in git", async () => {
+  await output("git switch to 'main'");
+  await fs.writeFile(path.join(root, ".env.example"), "KEY=one\n");
+  git(["add", "-f", ".env.example"]);
+  git(["commit", "-q", "-m", "Add env"]);
+  const [shown] = await output("git show 'HEAD'\nprint it");
+  assert.match(shown, /diff --git a\/\.env\.example b\/\.env\.example\n\(a \.env file: not shown, since it holds secrets\)/);
+  assert.doesNotMatch(shown, /KEY=one/);
+  await fs.writeFile(path.join(root, ".env.example"), "KEY=two\n");
+  const [diff] = await output("git diff\nprint it");
+  assert.doesNotMatch(diff, /KEY=/);
+  assert.deepEqual(await errors("git diff ./.env.example"), ["A script cannot read .env files, because they hold secrets: .env.example"]);
+  git(["checkout", "--", ".env.example"]);
+});

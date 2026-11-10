@@ -15,7 +15,7 @@ Agents must use secrets (API keys, tokens) without seeing their values.
 ### Where secrets come from
 
 - Proposed: secrets live in `.env` (and later, maybe, the OS keychain). The runtime reads `.env` itself. Scripts cannot.
-- Approved (built): scripts cannot read `.env` or `.env.*` in any folder: `read`, `text`, `lines`, `first`, `last` and `find` give `A script cannot read .env files, because they hold secrets: <path>`. The check uses the path as written and the path after links. Globs leave these files out. `exists` still works. Later, with `secret NAME`, the error can say to use a secret by name. Not covered: `git show` or `git diff` of a `.env` file that is in git, and the output of programs.
+- Approved (built): scripts cannot read `.env` or `.env.*` in any folder: `read`, `text`, `lines`, `first`, `last` and `find` give `A script cannot read .env files, because they hold secrets: <path>`. The check uses the path as written and the path after links. Globs leave these files out. `exists` still works. Later, with `secret NAME`, the error can say to use a secret by name. In `git diff` and `git show` output, the part for a `.env` file is one line: `(a .env file: not shown, since it holds secrets)`, and `git diff` that names a `.env` file is refused. Not covered: the output of programs.
 - Proposed: AGENTS.talk lists which secrets exist for scripts, and where each may go:
 
 ```talk

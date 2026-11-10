@@ -1535,9 +1535,25 @@ async function runGit(command, state) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
   auditStep(state, "git", args.join(" "), "");
+  // a .env file in git must not show in a diff either, since scripts cannot read it
+  if (command.operation === "diff" || command.operation === "show") {
+    result.output = hideSecretDiffs(result.output);
+  }
   state.result = result.output;
   await runHooks("after", ["git"], step, state, command);
   return result.output;
+}
+
+// in a diff, replace the part for each .env or .env.* file with one line
+function hideSecretDiffs(text) {
+  const parts = text.split(/(?=^diff --git )/m);
+  return parts.map((part) => {
+    const header = /^diff --git a\/(.*) b\/(.*)$/m.exec(part);
+    if (header !== null && part.startsWith("diff --git ") && (isSecretFile(header[1]) || isSecretFile(header[2]))) {
+      return "diff --git a/" + header[1] + " b/" + header[2] + "\n(a .env file: not shown, since it holds secrets)\n";
+    }
+    return part;
+  }).join("");
 }
 
 // git with the hardened arguments, for the checks around an operation
@@ -1711,6 +1727,9 @@ async function gitArgs(command, state, step) {
       for (const file of files) {
         if (!(file instanceof FileRef)) {
           throw new ScriptError("git diff needs a file or a list of files, found " + describe(file), command.value);
+        }
+        if (isSecretFile(file.path)) {
+          throw new ScriptError("A script cannot read .env files, because they hold secrets: " + file.path, command.value);
         }
         args.push(file.path);
       }
