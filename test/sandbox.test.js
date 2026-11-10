@@ -7,7 +7,9 @@ import { execFileSync } from "node:child_process";
 import { sandboxKind, installDirs, sandboxPlan, macosProfile, bwrapArgs, wrapCommand, selfTest } from "../src/js/sandbox.js";
 
 // the real sandbox tests cannot run inside a sandbox: a sandbox cannot start inside another
-const realMac = process.platform === "darwin" && process.env.CLANK_TALK_SANDBOXED !== "1";
+const realKind = process.env.CLANK_TALK_SANDBOXED === "1" ? null : (await sandboxKind()).kind;
+const realMac = realKind === "macos";
+const realLinux = realKind === "linux";
 
 test("sandboxKind: macOS, Linux with bwrap, and nothing else", async () => {
   assert.match((await sandboxKind("darwin", "", { CLANK_TALK_SANDBOXED: "1" })).reason, /already runs in a ClankTalk sandbox/);
@@ -57,8 +59,8 @@ test("the macOS profile: deny by default, the project, no secrets, network only 
   await assert.rejects(sandboxPlan({ root: '/p/a"b', tmp: "/t" }), /cannot hold a quote/);
 });
 
-test("on macOS, the sandbox really holds", { skip: !realMac }, async () => {
-  assert.deepEqual(await selfTest("macos"), { ok: true, problems: [] });
+test("the sandbox really holds", { skip: realKind === null }, async () => {
+  assert.deepEqual(await selfTest(realKind), { ok: true, problems: [] });
 });
 
 test("on macOS: a sandboxed program can write the project, but not .git, a hidden file, or outside", { skip: !realMac }, async () => {
@@ -75,6 +77,31 @@ test("on macOS: a sandboxed program can write the project, but not .git, a hidde
     const wrapped = await wrapCommand("macos", plan, "node", ["-e", script], plan.root);
     const out = execFileSync(wrapped.program, wrapped.args, { cwd: plan.root, env: { PATH: process.env.PATH, TMPDIR: tmp }, encoding: "utf8" });
     assert.equal(out.trim(), "yes yes no no no no no yes no no");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("on Linux: a sandboxed program can write the project, but not .git, outside, or a protected file that exists", { skip: !realLinux }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-sbx-t-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "clank-sbx-tt-"));
+  await fs.mkdir(path.join(root, ".git"));
+  await fs.mkdir(path.join(root, "talk"));
+  await fs.writeFile(path.join(root, ".env"), "SECRET=1");
+  await fs.writeFile(path.join(root, "x.talk"), "tool a\nend\n");
+  try {
+    const plan = await sandboxPlan({ root, tmp, programDirs: await installDirs("node", process.env.PATH), allowedChanges: [".github"] });
+    const script = [
+      "const fs = require('fs');",
+      "const tryIt = (p) => { try { fs.mkdirSync(require('path').dirname(p), { recursive: true }); fs.writeFileSync(p, 'x'); return 'yes'; } catch (e) { return 'no'; } };",
+      "console.log(['a.txt', 'src/b.txt', '.git/x', '.env', 'x.talk', 'talk/y', '.github/ci.yml', '../outside.txt'].map(tryIt).join(' '));",
+      "console.log(JSON.stringify(fs.readFileSync('.env', 'utf8')));",
+    ].join("\n");
+    const wrapped = await wrapCommand("linux", plan, "node", ["-e", script], plan.root);
+    const out = execFileSync(wrapped.program, wrapped.args, { cwd: plan.root, env: { PATH: process.env.PATH, TMPDIR: tmp }, encoding: "utf8" });
+    assert.equal(out, "yes yes no no no no yes no\n\"\"\n");
+    assert.equal(await fs.readFile(path.join(root, ".env"), "utf8"), "SECRET=1");
   } finally {
     await fs.rm(root, { recursive: true, force: true });
     await fs.rm(tmp, { recursive: true, force: true });

@@ -2,6 +2,7 @@
 
 allow env PATH, HOME
 allow fetch from 'localhost', '127.0.0.1'
+allow changes to @/.github/
 
 # Runs the full test suite.
 tool run_tests
