@@ -29,7 +29,10 @@ test("installDirs finds the folder above bin/", async () => {
 });
 
 test("installDirs never gives /, the home folder, or a folder above it", async () => {
-  assert.deepEqual(await installDirs("sh", "/bin"), ["/bin"]);
+  // on Linux, /bin is often a link to /usr/bin, so /usr can be there too
+  const shDirs = await installDirs("sh", "/bin");
+  assert.ok(shDirs.includes("/bin"), shDirs.join(", "));
+  assert.ok(!shDirs.includes("/"), shDirs.join(", "));
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "clank-home-"));
   try {
     await fs.mkdir(path.join(home, "bin"));
@@ -95,13 +98,18 @@ test("on Linux: a sandboxed program can write the project, but not .git, outside
     const script = [
       "const fs = require('fs');",
       "const tryIt = (p) => { try { fs.mkdirSync(require('path').dirname(p), { recursive: true }); fs.writeFileSync(p, 'x'); return 'yes'; } catch (e) { return 'no'; } };",
-      "console.log(['a.txt', 'src/b.txt', '.git/x', '.env', 'x.talk', 'talk/y', '.github/ci.yml', '../outside.txt'].map(tryIt).join(' '));",
-      "console.log(JSON.stringify(fs.readFileSync('.env', 'utf8')));",
+      "console.log(['a.txt', 'src/b.txt', '.git/x', '.env', 'x.talk', 'talk/y', '.github/ci.yml'].map(tryIt).join(' '));",
+      // /tmp in the sandbox is private, so this write can work there; the host checks that it did not reach the real /tmp
+      "tryIt('../outside.txt');",
+      "try { console.log(fs.readFileSync('.env', 'utf8')); } catch (e) { console.log('refused'); }",
     ].join("\n");
     const wrapped = await wrapCommand("linux", plan, "node", ["-e", script], plan.root);
     const out = execFileSync(wrapped.program, wrapped.args, { cwd: plan.root, env: { PATH: process.env.PATH, TMPDIR: tmp }, encoding: "utf8" });
-    assert.equal(out, "yes yes no no no no yes no\n\"\"\n");
+    const [writes, secret] = out.trim().split("\n");
+    assert.equal(writes, "yes yes no no no no yes");
+    assert.doesNotMatch(secret, /SECRET/);
     assert.equal(await fs.readFile(path.join(root, ".env"), "utf8"), "SECRET=1");
+    await assert.rejects(fs.access(path.join(path.dirname(root), "outside.txt")));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
     await fs.rm(tmp, { recursive: true, force: true });

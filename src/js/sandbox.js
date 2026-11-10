@@ -341,14 +341,17 @@ const net = require("net");
 const [outside, gitFile, port] = process.argv.slice(1);
 const broken = [];
 const tryIt = (name, f) => { try { f(); broken.push(name); } catch (err) {} };
-tryIt("a write outside the project", () => fs.writeFileSync(outside, "x"));
+// on Linux, /tmp in the sandbox is private, so the host checks the outside write after the run
+try { fs.writeFileSync(outside, "x"); } catch (err) {}
 tryIt("a write to .git", () => fs.writeFileSync(gitFile, "x"));
-tryIt("a read of the home folder", () => fs.readdirSync(require("os").homedir()));
+// on Linux, the home folder in the sandbox holds only the bound folders, so the host checks the names
+let home = [];
+try { home = fs.readdirSync(require("os").homedir()); } catch (err) {}
 try { fs.writeFileSync("ok.txt", "x"); } catch (err) { broken.push("a write in the project failed"); }
 const socket = net.connect(Number(port), "127.0.0.1");
 socket.on("connect", () => { broken.push("a network connection"); socket.destroy(); done(); });
 socket.on("error", () => done());
-function done() { console.log(JSON.stringify(broken)); }
+function done() { console.log(JSON.stringify({ broken, home })); }
 `;
 
 /**
@@ -388,11 +391,26 @@ export async function selfTest(kind) {
       child.on("error", (err) => resolve({ code: -1, output: err.message }));
       child.on("close", (code) => resolve({ code, output }));
     });
-    let problems;
+    let seen;
     try {
-      problems = JSON.parse(result.output.trim().split("\n").pop());
+      seen = JSON.parse(result.output.trim().split("\n").pop());
     } catch (err) {
       return { ok: false, problems: ["the self-test did not run: " + result.output.trim().slice(0, 300)] };
+    }
+    const problems = seen.broken;
+    if (await fs.access(outside).then(() => true, () => false)) {
+      problems.push("a write outside the project");
+    }
+    // the names in the home folder that the plan binds, such as .npm for ~/.npm/_cacache
+    const bound = new Set();
+    for (const path of [...plan.reads, ...plan.writes, ...plan.secrets]) {
+      const relative = nodePath.relative(plan.home, path);
+      if (relative !== "" && !relative.startsWith("..") && !nodePath.isAbsolute(relative)) {
+        bound.add(relative.split(nodePath.sep)[0]);
+      }
+    }
+    if (seen.home.some((name) => !bound.has(name))) {
+      problems.push("a read of the home folder");
     }
     return { ok: problems.length === 0, problems };
   } finally {
