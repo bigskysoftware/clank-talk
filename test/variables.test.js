@@ -34,7 +34,7 @@ test("set a field named __proto__ makes a plain field", async () => {
 });
 
 test("set on null is an error", async () => {
-  assert.deepEqual(await errors("set x's y to 1"), ["Cannot set 'y' on null"]);
+  assert.deepEqual(await errors("set x to null\nset x's y to 1"), ["Cannot set 'y' on null"]);
 });
 
 test("set a field that cannot change is an error", async () => {
@@ -84,7 +84,7 @@ test("increment needs a number", async () => {
 
 test("local variables do not stay between runs", async () => {
   await output("set x to 1");
-  assert.deepEqual(await output("print x"), ["null"]);
+  assert.deepEqual(await output("print x exists"), ["false"]);
 });
 
 test("$ globals stay when the host passes the same globals object", async () => {

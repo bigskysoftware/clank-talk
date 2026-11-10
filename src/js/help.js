@@ -14,7 +14,7 @@ export const HELP = [
   {
     name: "set", kind: "command",
     syntax: "set <variable or property> to <value>",
-    description: "Set a variable, a property, or the result. A plain name is local to the script or tool. A $name is a global that stays between runs.",
+    description: "Set a variable, a property, or the result. A plain name is local to the script or tool. A $name is a global that stays between runs. A variable that is not set is an error, but 'x exists' asks if it is set, and an unset $name is null.",
     examples: ["set total to 0", "set config's version to 2", "set $last to 'build ok'", "set the result to 'done'"],
   },
   {

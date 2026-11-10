@@ -23,7 +23,7 @@ test("for with index, both forms", async () => {
 });
 
 test("for over null makes no passes", async () => {
-  assert.deepEqual(await output("for x in nothing print x end print 'done'"), ["done"]);
+  assert.deepEqual(await output("set nothing to null\nfor x in nothing print x end print 'done'"), ["done"]);
 });
 
 test("for over something else is an error", async () => {

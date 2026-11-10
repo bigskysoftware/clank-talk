@@ -1015,12 +1015,13 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "increment" || command.type === "decrement") {
-    const current = await evaluate(command.target, state);
+    // a variable that is not set yet starts at 0, so it is not an unknown variable here
+    const unset = command.target.type === "variable" && !Object.hasOwn(scopeFor(command.target.name, state), command.target.name);
+    const current = unset ? null : await evaluate(command.target, state);
     let amount = toNumber(await evaluate(command.amount, state), command);
     if (command.type === "decrement") {
       amount = -amount;
     }
-    // a variable that is not set yet starts at 0
     const start = current === null ? 0 : toNumber(current, command);
     await assign(command.target, start + amount, state);
     return;
@@ -1172,7 +1173,11 @@ async function evaluate(node, state) {
     if (Object.hasOwn(scope, node.name)) {
       return scope[node.name];
     }
-    return null;
+    // a $ global that is not set yet is null, so "if $last is null" works on the first run
+    if (node.name.startsWith("$")) {
+      return null;
+    }
+    throw new ScriptError(unknownVariable(node.name, scope), node);
   }
   if (type === "list") {
     const items = [];
@@ -1256,6 +1261,11 @@ async function evaluate(node, state) {
     return evaluateUnary(node, await evaluate(node.value, state));
   }
   if (type === "check") {
+    // "x exists" asks if a variable is set, so an unset variable is not an error here
+    const isWhether = node.operator === "exists" || node.operator === "does not exist";
+    if (isWhether && node.value.type === "variable" && !Object.hasOwn(scopeFor(node.value.name, state), node.value.name)) {
+      return node.operator === "does not exist";
+    }
     let value = await evaluate(node.value, state);
     if (value instanceof Line) {
       value = value.text;
@@ -2692,6 +2702,30 @@ function loopItems(value, node) {
     return value;
   }
   throw new ScriptError("Cannot loop over " + describe(value) + ", expected a list", node);
+}
+
+// the error for a name that no command set; it names a set variable with a close spelling
+function unknownVariable(name, scope) {
+  let message = "Unknown variable '" + name + "'.";
+  const close = Object.keys(scope).find((other) => editDistance(name, other) <= 2);
+  if (close !== undefined) {
+    message += " Did you mean '" + close + "'?";
+  }
+  return message + " Set it before you use it, for example: set " + name + " to 0";
+}
+
+// how many letters to add, remove or change to make one word from the other
+function editDistance(a, b) {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const change = a[i - 1] === b[j - 1] ? 0 : 1;
+      current.push(Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + change));
+    }
+    previous = current;
+  }
+  return previous[b.length];
 }
 
 // $name is a global, any other name is local to the script

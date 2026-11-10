@@ -75,8 +75,11 @@ test("property access", async () => {
   assert.deepEqual(await output("print {a: {b: 2}}.a.b print [5, 6][1] print 'abc'.length"), ["2", "6", "3"]);
 });
 
-test("missing properties and variables are null", async () => {
-  assert.deepEqual(await output("print {}.a print x print x's y"), ["null", "null", "null"]);
+test("a missing property is null, and an unknown variable is an error", async () => {
+  assert.deepEqual(await output("print {}.a print {}.a's b"), ["null", "null"]);
+  assert.deepEqual(await errors("print x"), ["Unknown variable 'x'. Set it before you use it, for example: set x to 0 @1:7"]);
+  assert.deepEqual(await errors("set total to 1\nprint totl + 1"), ["Unknown variable 'totl'. Did you mean 'total'? Set it before you use it, for example: set totl to 0 @2:7"]);
+  assert.deepEqual(await output("print $never"), ["null"]);
 });
 
 test("JavaScript internals are not visible", async () => {

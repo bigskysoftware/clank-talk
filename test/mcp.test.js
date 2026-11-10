@@ -128,8 +128,8 @@ test('no progress without a token', async () => {
 });
 
 test('an error shows the script line, with an arrow at the column', async () => {
-  const response = await call('print 1\n\tprint 2 * x');
-  assert.equal(response.result.content[0].text, '1\n\n--- failed ---\n2:10 Expected a number, found null\n  2 | \tprint 2 * x\n    | \t        ^');
+  const response = await call("print 1\n\tprint 2 * 'x'");
+  assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:10 Expected a number, found 'x'\n  2 | \tprint 2 * 'x'\n    | \t        ^");
 });
 
 test('warnings show before errors, with an arrow', async () => {
@@ -139,9 +139,9 @@ test('warnings show before errors, with an arrow', async () => {
 });
 
 test('an error in AGENTS.talk shows its line, with an arrow', async () => {
-  await fs.writeFile(path.join(root, 'AGENTS.talk'), "tool bad\n  print 1\n  print 2 * x\nend");
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), "tool bad\n  print 1\n  print 2 * 'x'\nend");
   const response = await call('bad');
-  assert.equal(response.result.content[0].text, '1\n\n--- failed ---\nAGENTS.talk 3:11 Expected a number, found null\n  3 |   print 2 * x\n    |           ^');
+  assert.equal(response.result.content[0].text, "1\n\n--- failed ---\nAGENTS.talk 3:11 Expected a number, found 'x'\n  3 |   print 2 * 'x'\n    |           ^");
 });
 
 test('ask goes to the human as an MCP elicitation', async () => {

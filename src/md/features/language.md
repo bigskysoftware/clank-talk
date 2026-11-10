@@ -83,6 +83,7 @@ Approved:
 Approved (from hyperscript):
 
 - Values: `true`, `false`, `null`.
+- Approved (built): an unknown variable is an error at run time: `Unknown variable 'totl'. Did you mean 'total'? Set it before you use it, for example: set totl to 0`. "Did you mean" names a set variable 1 or 2 letters away. Not errors: an unset `$` global is null (`if $last is null` on the first run); `x exists` and `x does not exist` ask if a variable is set; `increment` and `decrement` start an unset variable at 0; a missing property is null; a missing tool argument is null. Why: a typo, or a name that is not a value (such as a tool name before tool calls were values), gave a silent null.
 - Access: `x's y`, `x.y`, `x[0]`.
 - Unary: `not x`, `-x`, `no x` (true if `x` is `null`, or an empty string or list).
 - Math: `+ - * /` and `mod`.
