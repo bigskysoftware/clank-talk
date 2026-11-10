@@ -22,6 +22,8 @@ The risk: a fetch can send project data to any host, in the URL or the body. A w
 - Approved: `allow fetch from 'api.github.com', 'registry.npmjs.org'` in AGENTS.talk lets those hosts go without asking. `'*.github.com'` allows sub-hosts.
 - Approved: only `http` and `https`.
 - Approved: `localhost`, and hosts that are IP addresses in private ranges (`127.*`, `10.*`, `192.168.*`, `169.254.*`, ...), are refused unless AGENTS.talk names them. Thus a script cannot reach the cloud metadata service or local admin pages by mistake.
+- Proposed (built): the check covers every form of these addresses: a trailing dot (`localhost.`), IPv6 forms that hold an IPv4 address (`::127.0.0.1`, `::ffff:`, NAT64 `64:ff9b::`, 6to4 `2002::`), IPv6 unique local, link-local, site-local and multicast, and the IPv4 ranges `192.0.0.*`, `198.18-19.*`, and `224.*` and above.
+- Proposed (built): a private host needs its own line in AGENTS.talk, such as `allow fetch from 'localhost'`. A `*.` pattern does not allow it.
 - Approved: a redirect is followed only to a host that is allowed in the same way.
 - Limit: the host check uses the name, not the address. A public name that points to a private address (DNS rebinding) is not caught.
 

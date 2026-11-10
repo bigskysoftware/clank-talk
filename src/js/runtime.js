@@ -2059,19 +2059,21 @@ async function readLimited(response, url, node) {
 // a host is allowed if AGENTS.talk names it, or the human said yes in this session
 // a local or private address must be named in AGENTS.talk
 async function checkFetchHost(url, state, node) {
-  const host = url.hostname.toLowerCase();
+  // localhost. and localhost are the same host
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
   const limit = state.policy === null ? undefined : state.policy.rules.find((rule) => rule.type === "limit" && rule.what === "fetch");
   if (limit !== undefined && !isAllowedFetchHost(host, limit.values)) {
     throw new ScriptError("fetch refused: " + host + " is outside the policy '" + state.policy.name + "' (" + ruleAt(limit) + ")", node);
   }
-  if (isAllowedFetchHost(host, state.allowedFetch)) {
-    return;
-  }
   const allowLine = "To allow it, a human can add this line to AGENTS.talk:\n  allow fetch from '" + host + "'";
+  // a private host needs its own line in AGENTS.talk; a *. pattern is not enough
   if (isPrivateHost(host)) {
+    if (state.allowedFetch.includes(host)) {
+      return;
+    }
     throw new ScriptError("fetch refused: " + host + " is a local or private address.\n" + allowLine, node);
   }
-  if (state.fetchHosts.has(host)) {
+  if (isAllowedFetchHost(host, state.allowedFetch) || state.fetchHosts.has(host)) {
     return;
   }
   const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
@@ -2094,22 +2096,45 @@ function isAllowedFetchHost(host, allowed) {
   return false;
 }
 
-// localhost, and IP addresses in loopback, private and link-local ranges
+// localhost, and IP addresses that are not plain public ones: loopback, private, link-local,
+// shared, benchmark, multicast and reserved; for IPv6 also the forms that hold an IPv4 address
+// the URL parser already gives a normal form: 127.1 and 0x7f.1 are 127.0.0.1, IPv6 is lower case hex
 function isPrivateHost(host) {
   if (host === "localhost" || host.endsWith(".localhost")) {
     return true;
   }
   // IPv6 hosts come in brackets
   if (host.startsWith("[")) {
-    const ip = host.slice(1, -1);
-    return ip === "::1" || ip === "::" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80") || ip.startsWith("::ffff:");
+    const groups = ipv6Groups(host.slice(1, -1));
+    const [g0, g1] = groups;
+    // ::/96 (::, ::1, ::127.0.0.1) and ::ffff:0:0/96 (mapped IPv4)
+    if (groups.slice(0, 5).every((g) => g === 0) && (groups[5] === 0 || groups[5] === 0xffff)) {
+      return true;
+    }
+    // NAT64 64:ff9b::/96 and 6to4 2002::/16 hold an IPv4 address
+    if ((g0 === 0x64 && g1 === 0xff9b) || g0 === 0x2002) {
+      return true;
+    }
+    // fc00::/7 unique local; fe80::/10 link-local and fec0::/10 site-local; ff00::/8 multicast
+    return (g0 & 0xfe00) === 0xfc00 || g0 >= 0xfe80;
   }
   const parts = host.split(".");
   if (parts.length !== 4 || !parts.every((part) => /^\d+$/.test(part))) {
     return false;
   }
-  const [a, b] = parts.map(Number);
-  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  const [a, b, c] = parts.map(Number);
+  return a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) || (a === 192 && b === 0 && c === 0) || (a === 198 && (b === 18 || b === 19));
+}
+
+// the 8 numbers of an IPv6 address in the URL parser's form, such as ::ffff:7f00:1
+function ipv6Groups(ip) {
+  const [head, tail] = ip.includes("::") ? ip.split("::") : [ip, null];
+  const left = head === "" ? [] : head.split(":");
+  const right = tail === null || tail === "" ? [] : tail.split(":");
+  const middle = tail === null ? [] : new Array(8 - left.length - right.length).fill("0");
+  return [...left, ...middle, ...right].map((group) => parseInt(group, 16));
 }
 
 // ----- ask -----

@@ -108,6 +108,28 @@ test("limits", async () => {
   assert.deepEqual(await errors("fetch 'http://10.0.0.1/'"), ["fetch refused: 10.0.0.1 is a local or private address.\nTo allow it, a human can add this line to AGENTS.talk:\n  allow fetch from '10.0.0.1'"]);
 });
 
+test("private hosts in every form are refused, and a *. pattern does not allow them", async () => {
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '*.localhost'");
+  const hosts = {
+    "http://localhost./": "localhost",
+    "http://a.localhost/": "a.localhost",
+    "http://[::127.0.0.1]/": "[::7f00:1]",
+    "http://[::ffff:127.0.0.1]/": "[::ffff:7f00:1]",
+    "http://[64:ff9b::7f00:1]/": "[64:ff9b::7f00:1]",
+    "http://[2002:7f00:1::]/": "[2002:7f00:1::]",
+    "http://[fe90::1]/": "[fe90::1]",
+    "http://[fec0::1]/": "[fec0::1]",
+    "http://192.0.0.192/": "192.0.0.192",
+    "http://198.18.0.1/": "198.18.0.1",
+    "http://224.0.0.1/": "224.0.0.1",
+    "http://0x7f.1/": "127.0.0.1",
+  };
+  for (const [url, host] of Object.entries(hosts)) {
+    assert.match((await errors(`fetch '${url}'`))[0], new RegExp("^fetch refused: " + host.replace(/[.[\]]/g, "\\$&") + " is a local or private address"), url);
+  }
+  await fs.rm(path.join(root, "AGENTS.talk"));
+});
+
 test("hooks can watch and reject fetch", async () => {
   await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '127.0.0.1'\nbefore fetch\n  if the fetch's method is 'POST'\n    reject 'no posts'\n  end\nend");
   try {
