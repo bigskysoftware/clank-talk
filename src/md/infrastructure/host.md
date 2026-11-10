@@ -28,7 +28,7 @@ Approved:
 - Approved: the docs recommend a short `## Tools` block in the project's AGENTS.md: use clank_talk for all work, no shell or other file tools, and stop and tell the human if ClankTalk cannot do a task. Why: someone will forget the `--tools ""` flags. The note is a request; the flags make it a rule. For Claude Code, a CLAUDE.md with `@AGENTS.md` imports it.
 - Logs go to stderr. stdout is only for protocol messages.
 - Proposed: progress. When a `tools/call` has `_meta.progressToken`, a timer sends `notifications/progress` every 500 ms while the script runs, also while a tool runs. There is no `total`, because the step budget says nothing about how long a script takes. `progress` counts the notifications, because each one must have a larger value. `message` is the current line, command, step and time: `line 3: run (step 3, 0.4s)`. In a tool, the line is in AGENTS.talk. Claude Code showed a percentage with the first version, which used `total`. With no `total`, Claude Code shows the message in small text, such as `(step 3, 2s)`, and no percentage. Later: a better UI, for example a Claude Code panel.
-- `--log <file>` appends a readable log of each run: a header with the time, status and steps, the script as written, then the same text the agent gets. The host writes it, so the sandbox does not apply. Humans watch it with `tail -f`. This is the start of the audit feature.
+- Approved: no `--log` option. The audit in `talk/audit/` replaces it: humans watch it with `tail -f`.
 
 ## Dogfood
 

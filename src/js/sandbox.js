@@ -395,7 +395,12 @@ export async function selfTest(kind) {
     try {
       seen = JSON.parse(result.output.trim().split("\n").pop());
     } catch (err) {
-      return { ok: false, problems: ["the self-test did not run: " + result.output.trim().slice(0, 300)] };
+      let problem = "the self-test did not run: " + result.output.trim().slice(0, 300);
+      // Ubuntu 23.10 and later can block the user namespaces that bwrap needs
+      if (kind === "linux" && result.output.includes("bwrap:")) {
+        problem += ". On Ubuntu, AppArmor can block the user namespaces that bwrap needs; see the Sandboxes part of the docs";
+      }
+      return { ok: false, problems: [problem] };
     }
     const problems = seen.broken;
     if (await fs.access(outside).then(() => true, () => false)) {

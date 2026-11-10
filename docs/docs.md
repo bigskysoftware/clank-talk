@@ -400,6 +400,12 @@ The options are `with network`, `with local network` (localhost only, for tests 
 
 It works on macOS (`sandbox-exec`) and Linux (`bubblewrap`). Anywhere else, a sandboxed `run` is an error. It never quietly runs without the sandbox. Before the first sandboxed run, ClankTalk tests that the sandbox really holds.
 
+On Ubuntu 23.10 and later, AppArmor can block the user namespaces that `bubblewrap` needs, and the self-test fails with a `bwrap:` error. Ask your admin to allow them for `bwrap`, with an AppArmor profile, or for the whole machine:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
 ### Servers
 
 A tool can also start something that keeps running, like a dev server:

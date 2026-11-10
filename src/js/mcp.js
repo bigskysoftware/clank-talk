@@ -7,7 +7,6 @@
 //
 // Logs go to stderr. stdout is only for protocol messages.
 
-import fs from "node:fs/promises";
 import { readFileSync, watch } from "node:fs";
 import { createHash } from "node:crypto";
 import nodePath from "node:path";
@@ -29,7 +28,7 @@ const Q3 = '"'.repeat(3);
 // the hand-written part of the tool description: what ClankTalk is, and what the summary cannot say
 const INTRO = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
 Each block ends with 'end'. A new line or 'then' separates commands. # starts a comment.
-Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactly, with no escapes and no \${}: use it for code edits. A line break right after the opening ${Q3} is not part of the text. To hold ${Q3}, open and close with four quotes.
+Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactly, with no escapes and no \${}: use it for code edits. A line break right after the opening ${Q3} is not part of the text. To hold ${Q3}, open and close with four quotes. To start the text with a quote, start it on the next line.
 x's y, x.y and y of x are the same. 'the' is optional. it, or the result, is the value from the last command.`;
 
 const RULES = `Rules:
@@ -239,9 +238,6 @@ export async function handleMessage(message, session) {
         clearInterval(timer);
       }
     }
-    if (session.log) {
-      await writeLog(session.log, script, result, session.root);
-    }
     return reply(id, {
       content: [{ type: "text", text: formatResult(result, script, session.root) }],
       isError: result.status !== "done",
@@ -356,15 +352,6 @@ function watchTalkFiles(session) {
   }
 }
 
-// a log that humans can read: each script as written, then what happened
-// the host writes it, not the script, so the sandbox does not apply
-async function writeLog(file, script, result, root) {
-  const time = new Date().toISOString().replace("T", " ").slice(0, 19);
-  const entry = "\n=== " + time + "  " + result.status + "  " + result.steps + " steps ===\n" + script + "\n\n" + formatResult(result, script, root) + "\n";
-  await fs.mkdir(nodePath.dirname(file), { recursive: true });
-  await fs.appendFile(file, entry);
-}
-
 function reply(id, result) {
   return { jsonrpc: "2.0", id, result };
 }
@@ -403,20 +390,13 @@ export function readPolicy(args) {
 
 /**
  * Start the server on stdin and stdout.
- * @param {string[]} args  command line arguments: [--root <dir>] [--log <file>] [--policy <file> [--policy-hash <sha256>]]
+ * @param {string[]} args  command line arguments: [--root <dir>] [--policy <file> [--policy-hash <sha256>]]
  */
 export function main(args) {
   let root = process.cwd();
   const rootIndex = args.indexOf("--root");
   if (rootIndex !== -1 && args[rootIndex + 1]) {
     root = args[rootIndex + 1];
-  }
-
-  // --log <file>: append a readable log of each run
-  let log = null;
-  const logIndex = args.indexOf("--log");
-  if (logIndex !== -1 && args[logIndex + 1]) {
-    log = nodePath.resolve(args[logIndex + 1]);
   }
 
   // --policy <file> [--policy-hash <sha256>]: the harness's policy for this session; see src/md/features/policy.md
@@ -427,7 +407,7 @@ export function main(args) {
   }
 
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, policy: policy.policy, log };
+  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, policy: policy.policy };
 
   // when the client goes away, stop the background processes, so nothing is left running
   const stopAll = () => stopAllProcesses(session.processes);
