@@ -171,6 +171,20 @@ pre {
 .page-robot { float: right; width: 110px; height: auto; margin: 0 0 1rem 1.5rem; }
 .features h2 { margin: 3rem 0 0.4rem; font-size: 1.4rem; }
 
+/* the docs pages (not the home page): sections, entries, and the list of areas */
+.features:not(.showcase) h2 { padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+.features:not(.showcase) h3 { margin: 2.2rem 0 0.4rem; font-size: 1.1rem; }
+.areas { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.5rem 0; padding: 0; list-style: none; }
+.areas a {
+  display: inline-block; padding: 4px 12px;
+  font-size: 0.9rem; text-decoration: none;
+  border: 1px solid var(--border); border-radius: 999px;
+}
+.areas a:hover { border-color: var(--accent); }
+.examples-label { margin: 0.8rem 0 0.2rem; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+/* a syntax line in the docs for agents: light, so the examples stand out */
+.features pre:has(> code.language-text) { background: var(--bg-subtle); color: var(--text); border: 1px solid var(--border); }
+
 /* side by side code, wider than the text column */
 .compare {
   display: grid;

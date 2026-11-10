@@ -526,30 +526,56 @@ const GROUPS = [
   { title: "AGENTS.talk", match: (entry) => entry.where === "AGENTS.talk" },
 ];
 
+// the areas of the reference page, in order; each entry of HELP is in one area
+export const AREAS = [
+  { title: "Basics", intro: "Output, variables, the result, and help.", names: ["help", "print", "set", "increment", "decrement", "it", "the", "of", "then", "previous"] },
+  { title: "Values and Text", intro: "Values, text, paths, lists and checks.", names: ["values", "strings", "paths", "operators", "contains", "as", "lines", "first", "last", "sorted", "pattern"] },
+  { title: "Control Flow", intro: "Conditions, loops, waits, time limits and errors.", names: ["if", "for", "repeat", "break", "continue", "wait", "within", "on error", "stop"] },
+  { title: "Files", intro: "Read, find, change, move and delete files. Undo takes changes back.", names: ["read", "find", "write", "append", "replace", "in", "put", "remove", "move", "delete", "undo"] },
+  { title: "Git", intro: "A hardened git.", names: ["git"] },
+  { title: "Web and the Human", intro: "Fetch from the web, and ask the human.", names: ["fetch", "ask"] },
+  { title: "Safety", intro: "Secrets, taint labels and the audit.", names: ["secret", "untrusted", "audit"] },
+  { title: "Tools", intro: "Only in AGENTS.talk: tools, programs, background processes and imports.", names: ["tool", "run", "start", "process", "import"] },
+  { title: "Hooks and Rules", intro: "Only in AGENTS.talk: hooks, and the allow and limit lines.", names: ["before", "after", "reject", "allow", "limit"] },
+];
+
+// an id for a link: "Values and Text" gives "values-and-text"
+function slug(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 /**
- * The full reference, as Markdown, for the site: every command and expression, with examples.
- * The same entries make "help", so the two cannot drift apart.
+ * The full reference, as Markdown, for the site: every command and expression, by area, with examples.
+ * The same entries make "help".
  */
 export function referenceMarkdown() {
   const lines = [
     "# ClankTalk Docs for Agents",
     "",
-    "Every command and expression, with examples. This page is made from the same table as `help` in a script, so the two always agree. For the story, read the [docs for humans](docs.html).",
+    "This page lists each ClankTalk command and expression, with examples. You do not need to read all of it. In a script, `help` lists everything, `help <word>` shows one entry, and `help recipes` shows common tasks. Use `help` when you need it.",
     "",
+    "For people: read the [docs for humans](docs.html).",
+    "",
+    "<ul class=\"areas\">",
   ];
-  for (const group of GROUPS) {
-    lines.push("## " + group.title, "");
-    for (const entry of HELP) {
-      if (!group.match(entry)) {
-        continue;
+  for (const area of AREAS) {
+    lines.push("<li><a href=\"#" + slug(area.title) + "\">" + area.title + "</a></li>");
+  }
+  lines.push("<li><a href=\"#recipes\">Recipes</a></li>", "</ul>", "");
+  for (const area of AREAS) {
+    lines.push("<h2 id=\"" + slug(area.title) + "\">" + area.title + "</h2>", "", area.intro, "");
+    for (const name of area.names) {
+      const entry = HELP.find((item) => item.name === name);
+      lines.push("### " + entry.name, "", "```text", entry.syntax, "```", "", entry.description, "");
+      if (entry.examples.length > 0) {
+        lines.push("<p class=\"examples-label\">Examples</p>", "");
       }
-      lines.push("### " + entry.name, "", "`" + entry.syntax + "`", "", entry.description, "");
       for (const example of entry.examples) {
         lines.push("```talk", example, "```", "");
       }
     }
   }
-  lines.push("## Recipes", "", "Common tasks, done well. In a script, `help recipes` shows the same.", "");
+  lines.push("<h2 id=\"recipes\">Recipes</h2>", "", "Common tasks, done well. In a script, `help recipes` shows the same.", "");
   for (const recipe of RECIPES) {
     lines.push("### " + recipe.name, "", recipe.description, "", "```talk", recipe.example, "```", "");
   }

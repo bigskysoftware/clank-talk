@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { run, parse } from "../src/js/clank-talk.js";
-import { HELP, RECIPES, referenceMarkdown, syntaxSummary, helpFor } from "../src/js/help.js";
+import { HELP, RECIPES, AREAS, referenceMarkdown, syntaxSummary, helpFor } from "../src/js/help.js";
 
 let root;
 
@@ -82,8 +82,13 @@ test('the reference has every entry, with its examples', () => {
       assert.ok(md.includes('```talk\n' + example + '\n```'), entry.name);
     }
   }
-  assert.ok(md.indexOf('## Commands') < md.indexOf('## Expressions'));
-  assert.ok(md.indexOf('## Expressions') < md.indexOf('## AGENTS.talk'));
+  assert.ok(md.indexOf('id="basics"') < md.indexOf('id="files"'));
+  assert.ok(md.includes('`help <word>` shows one entry'));
+});
+
+test('each help entry is in exactly one area of the reference', () => {
+  const names = AREAS.flatMap((area) => area.names);
+  assert.deepEqual([...names].sort(), HELP.map((entry) => entry.name).sort());
 });
 
 test('the syntax summary has one line for each entry', () => {
