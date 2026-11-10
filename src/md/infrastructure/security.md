@@ -29,6 +29,7 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - Glob results are checked one by one.
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
 - Writes use the same checks. For a new file, the nearest folder that exists must be inside the root after symlinks, before any folder is made. Thus a symlinked folder cannot lead a new file outside the root.
+- Proposed (built): a write through a link that points to nothing is an error. The write would follow the link to a path that no check saw (outside the root, a `.talk` file, a hidden file).
 
 ## Hidden files and folders
 
@@ -47,7 +48,7 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 
 - A script cannot write, append to or replace in any `.talk` file, or anything in `@/talk/`, or make them. Thus an agent cannot change its own tools.
 - Scripts can read them.
-- The check uses the path as written and the path after symlinks, in any letter case. For AGENTS.talk it also compares the file on disk (device and inode), so a hard link to it is refused too.
+- The check uses the path as written and the path after symlinks, in any letter case. For a new file, it uses the real path of the nearest folder that exists, plus the rest, as the hidden check does. For AGENTS.talk it also compares the file on disk (device and inode), so a hard link to it is refused too.
 - `import` loads only `.talk` files from inside the project, checked before and after symlinks. Scripts cannot import. `.js` imports are not allowed: they would run with the user's full rights.
 - Limit: a hard link with another name to another `.talk` file is not caught. Only the user or a `run` program can make one.
 - Limit: a program that `run` starts can still change these files. Only an OS sandbox closes this.

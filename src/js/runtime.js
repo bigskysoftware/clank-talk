@@ -1491,7 +1491,7 @@ async function gitArgs(command, state, step) {
         throw new ScriptError("git commit needs a file or a list of files, found " + describe(file), command.value);
       }
       // a hidden file, such as .env, often holds secrets
-      const hidden = await isHidden(file, state);
+      const hidden = await isHidden(file, state, command.value);
       if (hidden !== null) {
         throw new ScriptError(
           "A script cannot commit hidden files or folders (a name that starts with .): " + file.path + "\n" +
@@ -2406,7 +2406,7 @@ async function restoreFile(path, text, state, node) {
   if (await isProtected(file, state, node)) {
     throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
   }
-  if ((await isHidden(file, state)) !== null) {
+  if ((await isHidden(file, state, node)) !== null) {
     throw new ScriptError("A script cannot change hidden files or folders (a name that starts with .): " + file.path, node);
   }
   const step = changeStep("undo", file, { text });
@@ -2921,7 +2921,7 @@ async function writeText(file, text, append, state, node) {
   if (await isProtected(file, state, node)) {
     throw new ScriptError("A script cannot change .talk files or the @/talk folder: " + file.path, node);
   }
-  const hidden = await isHidden(file, state);
+  const hidden = await isHidden(file, state, node);
   if (hidden !== null) {
     throw new ScriptError(
       "A script cannot change hidden files or folders (a name that starts with .): " + file.path + "\n" +
@@ -2973,13 +2973,8 @@ async function isProtected(file, state, node) {
   if (isProtectedPath(file.path)) {
     return true;
   }
-  const real = await realPath(file, state, node);
-  if (real === null) {
-    return false;
-  }
-  const realRoot = await fs.realpath(state.root);
-  const realRelative = nodePath.relative(realRoot, real).split(nodePath.sep).join("/");
-  if (isProtectedPath(realRelative)) {
+  const { real, relative } = await realTarget(file, state, node);
+  if (isProtectedPath(relative)) {
     return true;
   }
   try {
@@ -3007,22 +3002,11 @@ function isHiddenPath(relative) {
 // the check uses the path as written, and the real path after symlinks;
 // for a new file, the real path of its nearest folder that exists, plus the rest
 // gives the refused path, relative to the root, or null if the change is allowed
-async function isHidden(file, state) {
+async function isHidden(file, state, node) {
   if (isHiddenPath(file.path) && !isAllowedChange(file.path, state)) {
     return file.path;
   }
-  let existing = file.absolute;
-  while (true) {
-    try {
-      await fs.stat(existing);
-      break;
-    } catch (err) {
-      existing = nodePath.dirname(existing);
-    }
-  }
-  const real = nodePath.join(await fs.realpath(existing), nodePath.relative(existing, file.absolute));
-  const realRoot = await fs.realpath(state.root);
-  const relative = nodePath.relative(realRoot, real).split(nodePath.sep).join("/");
+  const { relative } = await realTarget(file, state, node);
   if (isHiddenPath(relative) && !isAllowedChange(relative, state)) {
     return relative;
   }
@@ -3058,22 +3042,39 @@ function isAllowedChange(relative, state) {
 // the nearest folder that exists must be inside the root after symlinks,
 // so a symlinked folder cannot lead a new file outside the root
 async function makeParentFolders(file, state, node) {
-  const parent = nodePath.dirname(file.absolute);
-  let existing = parent;
+  await realTarget(file, state, node);
+  await fs.mkdir(nodePath.dirname(file.absolute), { recursive: true });
+}
+
+// where a write really goes, after symlinks, also for a new file:
+// the real path of its nearest part that exists, plus the rest; it must be inside the root
+// a link that points to nothing is refused: a write follows it to a place no check saw
+// gives { real, relative }, relative to the real root
+async function realTarget(file, state, node) {
+  let existing = file.absolute;
   while (true) {
     try {
       await fs.stat(existing);
       break;
     } catch (err) {
+      let isLink = false;
+      try {
+        isLink = (await fs.lstat(existing)).isSymbolicLink();
+      } catch (lstatErr) {
+        isLink = false;
+      }
+      if (isLink) {
+        throw new ScriptError("A script cannot write through a link that points to nothing: " + file.path, node);
+      }
       existing = nodePath.dirname(existing);
     }
   }
-  const realExisting = await fs.realpath(existing);
+  const real = nodePath.join(await fs.realpath(existing), nodePath.relative(existing, file.absolute));
   const realRoot = await fs.realpath(state.root);
-  if (!isInside(realExisting, realRoot)) {
+  if (!isInside(real, realRoot)) {
     throw new ScriptError("Path is outside the project root: " + file.path, node);
   }
-  await fs.mkdir(parent, { recursive: true });
+  return { real, relative: nodePath.relative(realRoot, real).split(nodePath.sep).join("/") };
 }
 
 // a replace that finds nothing is often a mistake, such as a wrong line break or indent

@@ -336,3 +336,22 @@ test('in a do block, an in on the next line starts a new command', async () => {
   assert.equal(await readProject('a.txt'), 'X\nvar y\n');
   assert.equal(await readProject('b.txt'), 'B\n');
 });
+
+test("a link that points to nothing cannot lead a write anywhere", async () => {
+  await fs.symlink(path.join(dir, "outside", "new.txt"), path.join(root, "dangle"));
+  await fs.symlink(path.join(root, "nothere.talk"), path.join(root, "dangle-talk"));
+  await fs.symlink(path.join(root, ".hidden-new"), path.join(root, "dangle-hidden"));
+  for (const name of ["dangle", "dangle-talk", "dangle-hidden"]) {
+    assert.deepEqual(await errors(`write 'x' to ./${name}`), ["A script cannot write through a link that points to nothing: " + name]);
+  }
+  assert.deepEqual(await fs.readdir(path.join(dir, "outside")), []);
+  await assert.rejects(fs.access(path.join(root, "nothere.talk")));
+  await assert.rejects(fs.access(path.join(root, ".hidden-new")));
+});
+
+test("a new file in a linked folder that leads into talk/ is refused", async () => {
+  await fs.mkdir(path.join(root, "talk"));
+  await fs.symlink(path.join(root, "talk"), path.join(root, "tl"));
+  assert.match((await errors(`write 'x' to ./tl/y.txt`))[0], /^A script cannot change .talk files or the @\/talk folder/);
+  assert.deepEqual(await fs.readdir(path.join(root, "talk")), []);
+});
