@@ -1558,6 +1558,29 @@ function hideSecretDiffs(text) {
   }).join("");
 }
 
+// the branch name of a git command; a bare word that is no variable is a branch name with no quotes
+async function branchName(command, state) {
+  const node = command.value;
+  if (node.type === "variable" && !node.name.startsWith("$") && !Object.hasOwn(scopeFor(node.name, state), node.name)) {
+    throw new ScriptError("A branch name is text, in quotes: " + gitExample(command, "'" + node.name + "'"), node);
+  }
+  return toText(await evaluate(node, state));
+}
+
+// the git command written out, for an error
+function gitExample(command, name) {
+  if (command.operation === "switch") {
+    return "git switch to " + (command.create ? "new branch " : "") + name;
+  }
+  if (command.operation === "delete") {
+    return "git delete branch " + name;
+  }
+  if (command.operation === "rebase") {
+    return "git rebase onto " + name;
+  }
+  return "git merge " + name;
+}
+
 // git with the hardened arguments, for the checks around an operation
 async function gitCheck(args, state, env, command) {
   const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
@@ -1607,7 +1630,7 @@ async function gitArgs(command, state, step) {
     return ["branch", "--list"];
   }
   if (op === "switch") {
-    const name = toText(await evaluate(command.value, state));
+    const name = await branchName(command, state);
     if (!isSafeBranchName(name)) {
       throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
     }
@@ -1619,7 +1642,7 @@ async function gitArgs(command, state, step) {
   }
   // only a branch that is merged: --delete, never --force
   if (op === "delete") {
-    const name = toText(await evaluate(command.value, state));
+    const name = await branchName(command, state);
     if (!isSafeBranchName(name)) {
       throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
     }
@@ -1648,7 +1671,7 @@ async function gitArgs(command, state, step) {
   }
   // the current branch onto another; runGit checks it first, and stops it on a conflict
   if (op === "rebase") {
-    const name = toText(await evaluate(command.value, state));
+    const name = await branchName(command, state);
     if (!isSafeBranchName(name)) {
       throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
     }
@@ -1657,7 +1680,7 @@ async function gitArgs(command, state, step) {
   }
   // fast-forward only: a merge never makes a commit, so it needs no message and cannot conflict
   if (op === "merge") {
-    const name = toText(await evaluate(command.value, state));
+    const name = await branchName(command, state);
     if (!isSafeBranchName(name)) {
       throw new ScriptError("Not a safe branch name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
     }

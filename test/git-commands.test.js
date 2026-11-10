@@ -250,3 +250,12 @@ test("git diff and git show do not show a .env file that is in git", async () =>
   assert.deepEqual(await errors("git diff ./.env.example"), ["A script cannot read .env files, because they hold secrets: .env.example"]);
   git(["checkout", "--", ".env.example"]);
 });
+
+test("a branch name with no quotes gives an error that shows the quoted form", async () => {
+  assert.deepEqual(await errors("git switch to new branch fix-parser"), ["A branch name is text, in quotes: git switch to new branch 'fix-parser'"]);
+  assert.deepEqual(await errors("git merge fix-parser"), ["A branch name is text, in quotes: git merge 'fix-parser'"]);
+  assert.deepEqual(await errors("git delete branch old"), ["A branch name is text, in quotes: git delete branch 'old'"]);
+  assert.deepEqual(await errors("git rebase onto main"), ["A branch name is text, in quotes: git rebase onto 'main'"]);
+  // a variable that holds the name still works
+  await output("set target to 'main'\ngit switch to target");
+});
