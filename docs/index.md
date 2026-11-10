@@ -231,10 +231,6 @@ You pick the imports. Your agent doesn't, and it can't touch a `.talk` file.
 import ./tools/deploy.talk
 ```
 
-## Coming Soon
-
-- **Taint tracking:** values remember where they came from, so data from the web can't sneak into places it shouldn't
-
 <div class="construction">
 
 ClankTalk is under construction. Expect things to change.

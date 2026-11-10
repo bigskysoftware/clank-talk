@@ -3,7 +3,7 @@
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
 Built: the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, the audit notes, the questions at the sinks, and file labels in `talk/taint.json`.
-Not built yet: the docs (branch 4).
+Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
 
 Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 

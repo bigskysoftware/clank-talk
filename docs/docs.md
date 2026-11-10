@@ -84,7 +84,7 @@ tool run_tests
 end
 ```
 
-Want to see what your agent is up to? Every step goes to an audit log in `talk/audit/`, one file a day. Add that folder to your `.gitignore`, and watch it:
+Want to see what your agent is up to? Every step goes to an audit log in `talk/audit/`, one file a day. Add that folder, and `talk/taint.json`, to your `.gitignore`, and watch it:
 
 ```bash
 tail -f talk/audit/*.log
@@ -542,6 +542,40 @@ TODO (Carson): the risks, in your words.
 - Only give secrets to programs whose code the agent can't change. `npm publish` runs scripts from `package.json`, and the agent can change that file.
 - Limits: the runtime hides only the exact text. A file that holds a token is not hidden from a script.
 
+### Taint
+
+TODO (Carson): intro. ClankTalk remembers where text came from.
+
+```talk
+set page to fetch https://example.com/notes
+if page is untrusted
+  print 'This came from the web'
+end
+```
+
+TODO (Carson): prose for these points.
+
+- Two labels. `untrusted`: text from fetch, and from a tool marked `untrusted tool`. `private`: text from files, git and programs.
+- Labels follow the value: through `+`, variables, lists, tool calls, and into files you write (kept in `talk/taint.json`).
+- Untrusted text in `run`, `start`, a commit message or a branch name asks you first.
+- Private text in a fetch asks you once for each host.
+- Hooks see `the fetch's labels`, and the audit notes them on every step.
+
+Mark tools that bring in web text:
+
+```talk
+# AGENTS.talk
+untrusted tool issue with id
+  run 'gh' with 'issue', 'view', id
+end
+```
+
+TODO (Carson): the limits, in your words.
+
+- Your agent reads what a script prints, and can type it back with no label. Keep raw web text out of the output.
+- An `if` does not pass labels to what it sets.
+- Taint can't see inside a program. A tool that brings in web text needs `untrusted tool`.
+
 ### Asking You
 
 `ask` puts a question to you, and waits, two minutes at most, unless you say `within`. Only you answer, never the agent. If nobody answers, it gives `null`, which means no:
@@ -594,10 +628,11 @@ Ever wonder what your agent is actually doing? Every step that touches the world
 
 Your agent can't change it: scripts can't touch `talk/`. Want it for tools instead of eyes? Add `audit as json` to `AGENTS.talk`. And your agent can read its own: `the audit` holds this session's steps, so you can ask it what it did.
 
-One tip: the audit is a log, not source. Keep it out of git with one line in your `.gitignore`:
+One tip: the audit is a log, not source. Keep it out of git, with the taint labels (see Taint), in your `.gitignore`:
 
 ```text
 talk/audit/
+talk/taint.json
 ```
 
 ### Undo
