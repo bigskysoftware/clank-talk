@@ -464,6 +464,8 @@ Scripts can't change `.talk` files, so your agent can't change its own tools. Th
 allow changes to @/.github/, @/.gitignore
 ```
 
+And `.env` files are off limits all the way: a script can't even read them, in any folder. Your secrets stay out of the agent's context.
+
 ### Git
 
 ClankTalk has git built in, with the dangerous parts taken out:

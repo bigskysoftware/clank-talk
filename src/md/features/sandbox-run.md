@@ -12,6 +12,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 
 - Approved: on each `run` and `start`: `run 'npm test' in a sandbox`, `start 'npm run dev' as 'site' in a sandbox`.
 - Approved: options after `with`: `network`, `local network`, `writes to <path>`, `reads of <path>`.
+- Approved (built): the path after `writes to` and `reads of` must be written out in AGENTS.talk, as text or a path (`'~/.m2'`, `@/out/`). A variable, a tool argument or `${}` is a load error. Why: the human must see each grant, and a tool argument comes from the agent, who could then pick any folder on the machine.
 - Approved (built): `with local network` allows connections to and from localhost only. On macOS, the program can reach servers on the host's localhost. On Linux, it gets its own loopback: it can use servers that it starts, but not servers on the host. For example: `run 'npm install' in a sandbox with network`, `run 'mvn test' in a sandbox with writes to '~/.m2'`, `run 'gh pr list' in a sandbox with network, reads of '~/.config/gh'`.
 - Approved (built): `in a sandbox` comes after the arguments, and before `within`: `run 'npm' with 'test' in a sandbox within 10 minutes`. `in` is claimed while the arguments parse (the follows set).
 - Approved (built): a `run` with no `in a sandbox` works as now. A hook can require a sandbox: the step's `sandbox` is null without one.

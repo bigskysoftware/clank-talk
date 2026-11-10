@@ -267,3 +267,25 @@ test("a list of files can hold globs, and a file named twice is there once", asy
   assert.deepEqual(await output("for f in [./notes.txt, ./src/**/*.js]\n  print f's path\nend"), ["notes.txt", "src/a.js", "src/b.js", "src/deep/c.js"]);
   assert.deepEqual(await output("print find 'var' in ./src/**/*.{js,md}"), ["src/a.js:1: var a = 1\nsrc/deep/c.js:1: var c = 3"]);
 });
+
+test(".env and .env.* files cannot be read, also through a link, and globs leave them out", async () => {
+  await fs.writeFile(path.join(root, ".env"), "SECRET=1\n");
+  await fs.mkdir(path.join(root, "app"), { recursive: true });
+  await fs.writeFile(path.join(root, "app", ".env.local"), "SECRET=2\n");
+  await fs.symlink(path.join(root, ".env"), path.join(root, "env-link.txt"));
+  try {
+    const message = (name) => "A script cannot read .env files, because they hold secrets: " + name;
+    assert.deepEqual(await errors("read ./.env"), [message(".env")]);
+    assert.deepEqual(await errors("print ./app/.env.local's text"), [message("app/.env.local")]);
+    assert.deepEqual(await errors("print lines of ./.env"), [message(".env")]);
+    assert.deepEqual(await errors("read ./env-link.txt"), [message("env-link.txt")]);
+    assert.deepEqual(await errors("find 'SECRET' in ./.env"), [message(".env")]);
+    const found = await output("print find 'SECRET' in ./**/*");
+    assert.doesNotMatch(found[0], /SECRET=/);
+    assert.deepEqual(await output("print ./.env exists"), ["true"]);
+  } finally {
+    await fs.rm(path.join(root, ".env"));
+    await fs.rm(path.join(root, "app"), { recursive: true });
+    await fs.rm(path.join(root, "env-link.txt"));
+  }
+});

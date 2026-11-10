@@ -91,6 +91,22 @@ test("the shorter limit wins", async () => {
   assert.match(r.errors[0].message, /did not finish within 50ms$/);
 });
 
+test("a program that prints too much is stopped, so it cannot fill the server's memory", async () => {
+  await agentsTalk(`tool big\n  run '${NODE}' with '-e', 'process.stdout.write("x".repeat(11 * 1024 * 1024))'\nend`);
+  const r = await result("big");
+  assert.equal(r.errors[0].message, `'${NODE}' gave more than 10 MB of output, so it was stopped. Make it print less, for example with a quieter reporter`);
+});
+
+test("a stop also stops the programs that the program started", { skip: process.platform === "win32" }, async () => {
+  const script = 'const { spawn } = require("child_process"); const c = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore" }); require("fs").writeFileSync("child.pid", String(c.pid)); setTimeout(() => {}, 10000)';
+  await agentsTalk(`tool family\n  run '${NODE}' with '-e', '${script}' within 500ms\nend`);
+  const r = await result("family");
+  assert.match(r.errors[0].message, /did not finish within 500ms$/);
+  const pid = Number(await fs.readFile(path.join(root, "child.pid"), "utf8"));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+});
+
 test("durations", async () => {
   await agentsTalk(`tool quick\n  run '${NODE}' with '-e', '1' within 2 seconds\nend`);
   assert.deepEqual(await output("quick within 1 minute\nprint it.code"), ["0"]);
@@ -115,4 +131,14 @@ test("run uses the current directory", async () => {
   await agentsTalk(`tool where\n  run '${NODE}' with '-e', 'console.log(process.cwd())'\nend`);
   const [where] = await output("where\nprint it.output", { cwd: "sub" });
   assert.equal(await fs.realpath(where.trim()), await fs.realpath(path.join(root, "sub")));
+});
+
+test("a sandbox grant must be a path written out, not a variable or a tool argument", async () => {
+  await agentsTalk("tool copy with folder\n  run 'cat' with 'x' in a sandbox with reads of folder\nend");
+  const r = await result("print 1");
+  assert.equal(r.errors[0].message, "'reads of' needs a path written out, such as reads of '~/.m2'. It cannot come from a variable or a tool argument");
+  await agentsTalk("tool copy with folder\n  run 'cat' with 'x' in a sandbox with writes to '${folder}'\nend");
+  assert.match((await result("print 1")).errors[0].message, /^'writes to' needs a path written out/);
+  await agentsTalk("tool ok\n  run 'cat' with 'x' in a sandbox with reads of '~/.m2', writes to @/out/\nend");
+  assert.deepEqual((await result("print 1")).errors, []);
 });

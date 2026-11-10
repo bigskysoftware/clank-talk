@@ -1726,24 +1726,41 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
   const signal = state.execution.signal;
   return new Promise((resolve, reject) => {
     let output = "";
+    let bytes = 0;
     let timedOut = false;
+    let tooMuch = false;
     let timer = null;
 
-    const child = spawn(program, args, { cwd, env, signal, shell: false });
+    // its own process group (not on Windows), so a stop also stops the programs it started
+    const child = spawn(program, args, { cwd, env, shell: false, detached: process.platform !== "win32" });
+    const stop = () => killGroup(child);
+    signal.addEventListener("abort", stop, { once: true });
+    if (signal.aborted) {
+      stop();
+    }
 
     if (limit !== null) {
       timer = setTimeout(() => {
         timedOut = true;
-        child.kill();
+        stop();
       }, limit);
     }
 
-    child.stdout.on("data", (chunk) => {
+    // at most RUN_OUTPUT_BYTES, so a program cannot fill the server's memory
+    const collect = (chunk) => {
+      if (tooMuch) {
+        return;
+      }
+      bytes += chunk.length;
+      if (bytes > RUN_OUTPUT_BYTES) {
+        tooMuch = true;
+        stop();
+        return;
+      }
       output += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      output += chunk;
-    });
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
 
     child.on("error", (err) => {
       clearTimeout(timer);
@@ -1758,15 +1775,42 @@ function spawnProgram(program, args, cwd, env, limit, state, node) {
 
     child.on("close", (code) => {
       clearTimeout(timer);
+      signal.removeEventListener("abort", stop);
       if (signal.aborted) {
         reject(new Cancelled("Cancelled", node));
       } else if (timedOut) {
         reject(new ScriptError("'" + program + "' did not finish within " + limit + "ms", node));
+      } else if (tooMuch) {
+        reject(new ScriptError("'" + program + "' gave more than " + RUN_OUTPUT_BYTES / (1024 * 1024) + " MB of output, so it was stopped. Make it print less, for example with a quieter reporter", node));
       } else {
         resolve({ code: code === null ? -1 : code, output });
       }
     });
   });
+}
+
+// the most output that run and git can give, stdout and stderr together
+const RUN_OUTPUT_BYTES = 10 * 1024 * 1024;
+
+// stop a program and the programs it started: its whole process group, where the OS has them
+// a program that does not stop on SIGTERM gets SIGKILL 2 seconds later
+function killGroup(child) {
+  if (child.pid === undefined) {
+    return;
+  }
+  const send = (name) => {
+    try {
+      if (process.platform === "win32") {
+        child.kill(name);
+      } else {
+        process.kill(-child.pid, name);
+      }
+    } catch (err) {
+      // the group is already gone
+    }
+  };
+  send("SIGTERM");
+  setTimeout(() => send("SIGKILL"), 2000).unref();
 }
 
 // ----- sandbox -----
@@ -3088,10 +3132,15 @@ async function globFiles(base, pattern, state, node) {
     checkInsideRoot(absolute, state, node, match);
     // a link that points to nothing, or to a file outside the root, is not in the list
     const stats = await fs.stat(absolute).catch(() => null);
-    if (stats === null || !isInside(await fs.realpath(absolute), await fs.realpath(state.root))) {
+    if (stats === null) {
       continue;
     }
-    if (stats.isFile()) {
+    const real = await fs.realpath(absolute);
+    if (!isInside(real, await fs.realpath(state.root))) {
+      continue;
+    }
+    // .env files are left out, since a script cannot read them
+    if (stats.isFile() && !isSecretFile(absolute) && !isSecretFile(real)) {
       files.push(new FileRef(absolute, state.root));
     }
   }
@@ -3149,6 +3198,10 @@ async function readText(file, state, node) {
   if (real === null) {
     throw new ScriptError("File not found: " + file.path, node);
   }
+  // by the path as written and the path after links, so a link to a .env file is refused too
+  if (isSecretFile(file.path) || isSecretFile(real)) {
+    throw new ScriptError("A script cannot read .env files, because they hold secrets: " + file.path, node);
+  }
   const stats = await fs.stat(real);
   if (!stats.isFile()) {
     throw new ScriptError("Not a file: " + file.path, node);
@@ -3163,6 +3216,12 @@ async function readText(file, state, node) {
   auditRead(state, file.path);
   await runHooks("after", ["read"], step, state, node);
   return text;
+}
+
+// .env and .env.* in any folder hold secrets, so scripts cannot read them; see src/md/features/secrets.md
+function isSecretFile(path) {
+  const name = nodePath.basename(path);
+  return name === ".env" || name.startsWith(".env.");
 }
 
 // write or append text to a file, and record the change

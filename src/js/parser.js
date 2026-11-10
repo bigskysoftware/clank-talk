@@ -1778,7 +1778,7 @@ export function parse(source, options = {}) {
         }
         i++;
         const path = parseBefore(["within"], parseExpression);
-        if (path === null) {
+        if (path === null || !isLiteralGrant(path, "writes to")) {
           return null;
         }
         sandbox.writes.push(path);
@@ -1790,7 +1790,7 @@ export function parse(source, options = {}) {
         }
         i++;
         const path = parseBefore(["within"], parseExpression);
-        if (path === null) {
+        if (path === null || !isLiteralGrant(path, "reads of")) {
           return null;
         }
         sandbox.reads.push(path);
@@ -1804,6 +1804,16 @@ export function parse(source, options = {}) {
       i++;
     }
   }
+  // a sandbox grant must be written out in AGENTS.talk, as text or a path, so the human sees it
+  // a variable or a tool argument could let the agent pick any folder on the machine
+  function isLiteralGrant(path, words) {
+    if (path.type === "string" || path.type === "path") {
+      return true;
+    }
+    errors.push({ message: "'" + words + "' needs a path written out, such as " + words + " '~/.m2'. It cannot come from a variable or a tool argument", line: path.line, column: path.column });
+    return false;
+  }
+
   // start <program> [with <arg>, <arg>] as <name>, only inside a tool: a background process
   function parseStart(token) {
     if (!inTool) {

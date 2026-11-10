@@ -38,21 +38,22 @@ test("a before hook can reject a write", async () => {
 });
 
 test("change covers every kind of file change", async () => {
-  await agentsTalk("before change\n  if the change's path ends with '.env'\n    reject 'no ' + the change's kind\n  end\nend");
-  await fs.writeFile(path.join(root, ".env"), "A=1\n");
+  await agentsTalk("before change\n  if the change's path ends with '.cfg'\n    reject 'no ' + the change's kind\n  end\nend");
+  await fs.writeFile(path.join(root, "prod.cfg"), "A=1\n");
   const cases = [
-    ["write 'x' to ./.env", "no write"],
-    ["append 'x' to ./.env", "no append"],
-    ["replace 'A' with 'B' in ./.env", "no replace"],
-    ["read ./.env\nput 'x' before line 1 of ./.env", "no put"],
-    ["read ./.env\nremove lines 1 to 1 of ./.env", "no remove"],
-    ["read ./.env\nreplace lines 1 to 1 of ./.env with 'y'", "no replace"],
+    ["write 'x' to ./prod.cfg", "no write"],
+    ["append 'x' to ./prod.cfg", "no append"],
+    ["replace 'A' with 'B' in ./prod.cfg", "no replace"],
+    ["read ./prod.cfg\nput 'x' before line 1 of ./prod.cfg", "no put"],
+    ["read ./prod.cfg\nremove lines 1 to 1 of ./prod.cfg", "no remove"],
+    ["read ./prod.cfg\nreplace lines 1 to 1 of ./prod.cfg with 'y'", "no replace"],
+    ["move ./prod.cfg to ./other.txt", "no move"],
   ];
   for (const [source, message] of cases) {
     const [e] = await errors(source);
     assert.equal(e.message, message, source);
   }
-  assert.equal(await fs.readFile(path.join(root, ".env"), "utf8"), "A=1\n");
+  assert.equal(await fs.readFile(path.join(root, "prod.cfg"), "utf8"), "A=1\n");
 });
 
 test("after hooks see the step and the result", async () => {

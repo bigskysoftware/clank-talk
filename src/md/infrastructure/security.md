@@ -95,4 +95,5 @@ Arguments to a tool come from the agent. Treat them as untrusted.
 - Resolve the program to an absolute path when AGENTS.talk loads. Warn when the program is inside the project. (Risk 4)
 - Start the child with an empty environment plus a list of allowed variables. Secrets go in by name only. See [../features/secrets.md](../features/secrets.md). (Risk 5)
 - Time limit and output size limit. Output is tainted. (Risk 6)
+- Approved (built): `run` and git output is at most 10 MB (stdout and stderr together). Above that, the program is stopped, and the error says so. A program runs in its own process group (not on Windows), so a time limit, a cancel or the output limit stops the programs it started too. SIGTERM first, SIGKILL 2 seconds later.
 - The audit log records the full program and argument list.

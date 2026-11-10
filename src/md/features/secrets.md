@@ -6,7 +6,7 @@ Agents must use secrets (API keys, tokens) without seeing their values.
 
 ## The problem today
 
-- Scripts can read `.env`, so an agent sees every secret in it. Hidden files are protected from changes, not from reads.
+- Before 2026-11-09, scripts could read `.env`, so an agent saw every secret in it. Fixed: see the next rule.
 - A tool that needs a secret must get it from the environment through `allow env`, and the agent can print the tool's output, which can hold the secret.
 - Fetch with a token header needs the token in the script as text.
 
@@ -15,7 +15,7 @@ Agents must use secrets (API keys, tokens) without seeing their values.
 ### Where secrets come from
 
 - Proposed: secrets live in `.env` (and later, maybe, the OS keychain). The runtime reads `.env` itself. Scripts cannot.
-- Proposed: scripts cannot read `.env` or `.env.*` at all: a read is an error that says to use a secret by name. This closes the leak today. (Today only the sandbox blocks `.env` reads.)
+- Approved (built): scripts cannot read `.env` or `.env.*` in any folder: `read`, `text`, `lines`, `first`, `last` and `find` give `A script cannot read .env files, because they hold secrets: <path>`. The check uses the path as written and the path after links. Globs leave these files out. `exists` still works. Later, with `secret NAME`, the error can say to use a secret by name. Not covered: `git show` or `git diff` of a `.env` file that is in git, and the output of programs.
 - Proposed: AGENTS.talk lists which secrets exist for scripts, and where each may go:
 
 ```talk
