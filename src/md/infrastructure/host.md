@@ -15,6 +15,7 @@ Approved:
 - The protocol is hand-written: JSON-RPC 2.0 over stdio, one JSON message per line. No dependency. It answers `initialize`, `ping`, `tools/list` and `tools/call`. Notifications get no answer.
 - `initialize` answers with the protocol version that the client asks for.
 - One tool, `clank_talk`, with input `{ script }`. It gives back text: the output lines, then the errors (`file line:column message`), then the changed files. A script that does not finish with status `done` sets `isError`.
+- Approved (built): the changed files show one entry for each file: the first text before against the last text after. The changed lines show as a unified diff, with line numbers and 1 line of context (`-` lines show the old number, the others the new number). At most 20 changed lines for each file and 60 in all, then `... N more changed lines`. A new file shows only its line count. Why: the agent sees a wrong edit at once, such as a wrong escape. Code: `src/js/diff.js` (Myers diff).
 - Approved: each error shows its source line, with a `^` under the column. For an error in a `.talk` file, the server reads that file from the root to show the line.
 - Approved: warnings come in a `--- warnings ---` section, before the errors, in the same form, with the arrow. Warnings do not set `isError`.
 - The root is the folder where the server starts, or `--root`.

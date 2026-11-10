@@ -56,7 +56,7 @@ test("errors are listed, and set isError", async () => {
 
 test("changed files are listed", async () => {
   const response = await call("write 'x' to ./a.txt");
-  assert.equal(response.result.content[0].text, "--- changed files ---\na.txt");
+  assert.equal(response.result.content[0].text, "--- changed files ---\na.txt  (new file, 1 line)");
 });
 
 test("no output", async () => {

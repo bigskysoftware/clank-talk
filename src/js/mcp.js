@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import nodePath from "node:path";
 import { run, listTools, stopAllProcesses, VERSION } from "./clank-talk.js";
 import { syntaxSummary } from "./help.js";
+import { changedFiles } from "./diff.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -81,11 +82,7 @@ export function formatResult(result, script, root) {
     sections.push("--- " + result.status + " ---\n" + formatProblems(result.errors, script, root));
   }
   if (result.changes.length > 0) {
-    const paths = [];
-    for (const change of result.changes) {
-      paths.push(change.path);
-    }
-    sections.push("--- changed files ---\n" + paths.join("\n"));
+    sections.push("--- changed files ---\n" + changedFiles(result.changes));
   }
   if (sections.length === 0) {
     return "(no output)";
