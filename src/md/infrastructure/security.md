@@ -6,10 +6,9 @@ All security decisions in one place. Each decision links to its feature.
 
 Decisions that we put off. Each one needs a human decision later.
 
-- Argument values from the agent are not checked. Later: refuse values that start with `-`, or typed parameters. See `run` below.
+- Typed parameters (`with file as path`). See `run` below.
 - OS sandbox for `run` (later, as a plugin). See `run` below.
 - Ask the human before `run` when the agent changed files since the last approval. Deferred.
-- Resolve the `run` program to an absolute path when AGENTS.talk loads, and warn when it is inside the project. Deferred.
 - `.js` plugins in the protected `@/talk/` folder. Open. Scripts cannot write the folder, but programs that `run` starts can.
 
 ## Values
@@ -71,7 +70,9 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 - Deferred: before `run`, the runtime asks the human if the agent changed files since the last approval. Taint tracks the changes.
 - An OS sandbox for `run` comes later, as a plugin.
 - `run` is where the ClankTalk sandbox ends. Document this for users.
-- For now, the runtime does not check argument values. The tool author must guard against argument injection, for example an agent value `--rulesdir=./evil` passed to `eslint`. Later: refuse values that start with `-`, or typed parameters (`with file as path`).
+- Approved (built): an argument that is not a string written out in the tool must not start with `-`. Thus an agent value `--rulesdir=./evil` cannot reach `eslint` as an option. After a written-out `'--'`, the arguments are not checked. For `run 'mvn test'`, all parts are written out. The same check applies to `start`.
+- Approved (built): a bare program name (no `/`) is found through `PATH` at run time. If the file found is inside the project, the run fails, because the agent can change that file. A relative or empty `PATH` entry counts as inside the project. Otherwise the full path that was found runs, so the program cannot change between the check and the run. A path written out in the tool, such as `run './node_modules/.bin/jest'`, is allowed. Not on Windows. The same check applies to `start`.
+- Deferred: typed parameters (`with file as path`).
 
 ### Analysis
 
@@ -89,10 +90,10 @@ Arguments to a tool come from the agent. Treat them as untrusted.
 #### Mitigations
 
 - `run` takes a program and a list of arguments, and never uses a shell. (Risk 1)
-- Typed or checked parameters. The runtime refuses values that start with `-`, unless the tool allows them. Put `--` before user values where the program supports it. (Risk 2)
+- Built: the runtime refuses agent values that start with `-`. Put `'--'` before agent values where the program supports it. Typed parameters come later. (Risk 2)
 - An OS sandbox for `run`: no network, writes only inside the project, no access to home. macOS `sandbox-exec`, Linux `bubblewrap` or Landlock, or a container. This is the only real fix for risk 3.
 - Optional: ask the human before `run` if the agent changed files since the last approval. Taint can track this. (Risk 3)
-- Resolve the program to an absolute path when AGENTS.talk loads. Warn when the program is inside the project. (Risk 4)
+- Built: a program found through `PATH` inside the project is an error, and the full path runs. (Risk 4)
 - Start the child with an empty environment plus a list of allowed variables. Secrets go in by name only. See [../features/secrets.md](../features/secrets.md). (Risk 5)
 - Time limit and output size limit. Output is tainted. (Risk 6)
 - Approved (built): `run` and git output is at most 10 MB (stdout and stderr together). Above that, the program is stopped, and the error says so. A program runs in its own process group (not on Windows), so a time limit, a cancel or the output limit stops the programs it started too. SIGTERM first, SIGKILL 2 seconds later.

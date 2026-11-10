@@ -2219,6 +2219,7 @@ async function runProgram(command, state) {
   await askUntrusted(state, "Run " + program, args.join(" "), command);
 
   const env = programEnv(command, state);
+  const found = await resolveProgram(program, env, state, command);
   let limit = state.timeLimit;
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
@@ -2227,9 +2228,9 @@ async function runProgram(command, state) {
   let result;
   const started = Date.now();
   if (sandbox === null) {
-    result = await spawnProgram(program, args, state.cwd, env, limit, state, command);
+    result = await spawnProgram(found, args, state.cwd, env, limit, state, command);
   } else {
-    const wrapped = await sandboxCommand(program, args, sandbox, env, false, state, command);
+    const wrapped = await sandboxCommand(found, args, sandbox, env, false, state, command);
     try {
       result = await spawnProgram(wrapped.program, wrapped.args, state.cwd, wrapped.env, limit, state, command);
     } finally {
@@ -2254,20 +2255,66 @@ async function programAndArgs(command, state) {
   const value = await evaluate(command.program, state);
   let program;
   let args = [];
+  // for each argument: is it written out as text in the .talk file?
+  let written = [];
   if (command.args === null) {
     const parts = toText(value).split(/\s+/).filter((part) => part !== "");
     program = parts[0];
     args = parts.slice(1);
+    written = args.map(() => command.program.type === "string");
   } else {
     program = toText(value);
     for (const arg of command.args) {
       args.push(toText(await asText(await evaluate(arg, state), state, arg)));
+      written.push(arg.type === "string");
     }
   }
   if (!program) {
     throw new ScriptError("Nothing to run", command);
   }
+  checkOptionArgs(args, written, command, state);
   return { program, args };
+}
+
+// an argument that is not written out in the .talk file must not start with "-",
+// or a program can read an agent's value as an option, such as --rulesdir=./evil
+// a written-out "--" ends the options, so the arguments after it are not checked
+function checkOptionArgs(args, written, node, state) {
+  for (let index = 0; index < args.length; index++) {
+    if (written[index] && args[index] === "--") {
+      return;
+    }
+    if (!written[index] && args[index].startsWith("-")) {
+      throw new ScriptError("The argument " + describe(args[index]) + " starts with '-', and it is not written out in " + (state.file || AGENTS_TALK) + ". A program can read it as an option. If the program takes '--' to end its options, put '--' before the value in the tool", node);
+    }
+  }
+}
+
+// a bare program name is found through PATH; the file found must be outside the project,
+// or the agent can put its own program there; the full path runs, so nothing changes between check and run
+// a relative or empty PATH entry is the current folder, so it counts as inside the project
+async function resolveProgram(program, env, state, node) {
+  if (program.includes("/") || program.includes("\\") || process.platform === "win32" || env.PATH === undefined) {
+    return program;
+  }
+  for (const entry of env.PATH.split(nodePath.delimiter)) {
+    const candidate = nodePath.join(nodePath.resolve(state.cwd, entry === "" ? "." : entry), program);
+    try {
+      if (!(await fs.stat(candidate)).isFile()) {
+        continue;
+      }
+      await fs.access(candidate, fs.constants.X_OK);
+    } catch (err) {
+      continue;
+    }
+    const real = await fs.realpath(candidate);
+    if (isInside(candidate, state.root) || isInside(real, state.root)) {
+      const shown = nodePath.relative(state.root, candidate).split(nodePath.sep).join("/");
+      throw new ScriptError("run '" + program + "' found " + shown + " inside the project, and the agent can change files there. Write the path in the tool to run it on purpose: run './" + shown + "'", node);
+    }
+    return candidate;
+  }
+  return program;
 }
 
 // only the environment variables that AGENTS.talk allows
@@ -2849,12 +2896,12 @@ async function startProcess(command, state) {
   await runHooks("before", ["start"], step, state, command);
   await askUntrusted(state, "Start " + program, args.join(" "), command);
 
-  let spawnProgramName = program;
-  let spawnArgs = args;
   let env = programEnv(command, state);
+  let spawnProgramName = await resolveProgram(program, env, state, command);
+  let spawnArgs = args;
   let tmp = null;
   if (sandbox !== null) {
-    const wrapped = await sandboxCommand(program, args, sandbox, env, true, state, command);
+    const wrapped = await sandboxCommand(spawnProgramName, args, sandbox, env, true, state, command);
     spawnProgramName = wrapped.program;
     spawnArgs = wrapped.args;
     env = wrapped.env;

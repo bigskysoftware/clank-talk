@@ -44,6 +44,7 @@ Approved:
 - No time limit by default. `run ... within 10 minutes` sets one in a tool. `run_tests within 5 minutes` sets one on a call, for any tool. When both are set, the shorter one wins.
 - Durations as in hyperscript: `100ms`, `2s`, `5 seconds`, `10 minutes`, `1 hour`.
 - `run` gives back `{ code, output }`. `output` is stdout and stderr together, in the order they came. A non-zero code is not an error: check `the result's code`.
+- Approved (built): an argument from a variable or a parameter must not start with `-`, unless a written-out `'--'` comes before it. A program found through `PATH` inside the project is an error. See [../infrastructure/security.md](../infrastructure/security.md).
 - `run` uses the current directory (`cwd`). A missing program is an error. A program that goes over its time limit is stopped, and that is an error. Cancel stops the program too.
 - Later (its own branch): `execution.running`, `execution.pause()` and `execution.resume()`, so the agent can pause a run and look at its output so far.
 

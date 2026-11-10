@@ -63,7 +63,7 @@ test("after hooks see the step and the result", async () => {
 });
 
 test("before run sees the program and its arguments", async () => {
-  await agentsTalk(`allow env PATH\nbefore run\n  if the run's args contains '--force'\n    reject 'no force'\n  end\nend\ntool go with flag\n  run '${NODE}' with '-e', '1', flag\nend`);
+  await agentsTalk(`allow env PATH\nbefore run\n  if the run's args contains '--force'\n    reject 'no force'\n  end\nend\ntool go with flag\n  run '${NODE}' with '-e', '1', '--', flag\nend`);
   const [e] = await errors("go '--force'");
   assert.equal(e.message, "no force");
   assert.deepEqual(await output("go 'safe'\nprint it.code"), ["0"]);

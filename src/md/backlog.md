@@ -69,8 +69,7 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 - **A fetch judge.** Ask a classifier model if an outbound fetch sends project data out. In pi: `ctx.modelRegistry.classify()` (for example Jev). It needs a structured summary of the request, not raw text, and "no" when the judge fails.
 - **A secret in a fetch URL,** with redaction in the audit, hooks and errors. Today it is an error.
-- **`run` arguments that start with `-`.** Refuse them, or typed parameters. See `infrastructure/security.md`.
-- **Programs found through `PATH`.** Resolve each program to a full path when AGENTS.talk loads, and warn if it is inside the project.
+- **Typed parameters** for tools, such as `tool lint with file as path`. The runtime checks the value before `run`. See `infrastructure/security.md`.
 - **The OS keychain** as a source of secrets.
 
 ## Docs
