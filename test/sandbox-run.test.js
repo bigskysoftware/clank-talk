@@ -16,6 +16,9 @@ const processes = new Map();
 before(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-sbxrun-"));
   await fs.mkdir(path.join(root, ".git"));
+  // a folder next to the project, for a grant that is relative to the project
+  await fs.mkdir(root + "-shared");
+  await fs.writeFile(path.join(root + "-shared", "x.txt"), "shared");
   // inside a sandbox with no network, the server cannot open; the tests that need it skip there
   server = net.createServer((socket) => socket.end("hi"));
   let port = 0;
@@ -36,6 +39,9 @@ before(async () => {
     "end",
     "tool write_git",
     "  " + node("require('fs').writeFileSync('.git/x', 'x')") + " in a sandbox",
+    "end",
+    "tool read_shared",
+    "  " + node("console.log(require('fs').readFileSync('../" + path.basename(root) + "-shared/x.txt', 'utf8'))") + " in a sandbox with reads of '../" + path.basename(root) + "-shared'",
     "end",
     "tool read_home",
     "  " + node("console.log(require('fs').readdirSync('" + os.homedir() + "').length > 0)") + " in a sandbox",
@@ -73,6 +79,7 @@ after(async () => {
     server.close();
   }
   await fs.rm(root, { recursive: true, force: true });
+  await fs.rm(root + "-shared", { recursive: true, force: true });
 });
 
 async function call(source) {
@@ -104,6 +111,10 @@ test("in a sandbox: the project is writable, .git is not", { skip: !onMac }, asy
 test("in a sandbox: no home folder, unless 'reads of'", { skip: !onMac }, async () => {
   assert.notDeepEqual(await call("read_home\nprint the result's code"), ["0"]);
   assert.deepEqual(await call("read_home_allowed\nprint the result's output"), ["true\n"]);
+});
+
+test("in a sandbox: a relative grant is from the project, not from where the host started", { skip: !onMac }, async () => {
+  assert.deepEqual(await call("read_shared\nprint the result's output"), ["shared\n"]);
 });
 
 test("in a sandbox: HOME is a fresh folder, with no config files in it", { skip: !onMac }, async () => {

@@ -2782,12 +2782,28 @@ async function sandboxValues(command, state) {
   }
   const values = { network: command.sandbox.network, localNetwork: command.sandbox.localNetwork, reads: [], writes: [] };
   for (const path of command.sandbox.reads) {
-    values.reads.push(toText(await evaluate(path, state)));
+    values.reads.push(grantPath(await evaluate(path, state), state));
   }
   for (const path of command.sandbox.writes) {
-    values.writes.push(toText(await evaluate(path, state)));
+    values.writes.push(grantPath(await evaluate(path, state), state));
   }
   return values;
+}
+
+// a grant as a full path: a file value is its own path; @/x is from the root, ./x from the current folder
+// ~ and ~/x stay as they are, for the sandbox to expand; never from the folder where the host started
+function grantPath(value, state) {
+  if (value instanceof FileRef) {
+    return value.absolute;
+  }
+  const text = toText(value);
+  if (text === "~" || text.startsWith("~/")) {
+    return text;
+  }
+  if (text.startsWith("@/")) {
+    return nodePath.resolve(state.root, text.slice(2));
+  }
+  return nodePath.resolve(state.cwd, text);
 }
 
 // the program and arguments with the OS sandbox around them, its env, and its temp folder
