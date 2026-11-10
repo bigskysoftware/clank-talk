@@ -80,7 +80,7 @@ export const HELP = [
   {
     name: "write", kind: "command",
     syntax: "write <value> to <file>",
-    description: "Replace the text of a file, or make it. If the file changed after this script read it, the write fails.",
+    description: "Replace the text of a file, or make it. If the file changed after this script read it, the write fails. A script cannot change a file that is not UTF-8 text. A file with a BOM keeps it, and a line edit keeps CRLF line breaks. Reads do not show the BOM.",
     examples: ["write 'hello' to ./out.txt", "write config as pretty json to ./config.json"],
   },
   {
@@ -92,7 +92,7 @@ export const HELP = [
   {
     name: "replace", kind: "command",
     syntax: "replace <old> with <new> in <file, files, glob or variable> | replace lines <a> to <b> of <file> with <text>",
-    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. In a list of files or a glob, the runtime checks every file first. If one file cannot change, no file changes. 'replace lines' replaces lines by number. Read the file first. Then the result is the old lines.",
+    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. In a list of files or a glob, the runtime checks every file first. If one file cannot change, no file changes. A replace that gives the same text writes nothing. 'replace lines' replaces lines by number. Read the file first. Then the result is the old lines.",
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "replace 'getTotal(' with 'cartTotal(' in ./src/**/*.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
@@ -122,7 +122,7 @@ export const HELP = [
   {
     name: "put", kind: "command",
     syntax: "put <text> before line <n> of <file> | put <text> after line <n> of <file>",
-    description: "Put new lines into a file. Read the file first. After an edit, the line numbers shift.",
+    description: "Put new lines into a file. Read the file first. After an edit, the line numbers shift. In an empty file, 'put ... before line 1' adds the first line.",
     examples: ["read ./a.js\nput '// top' before line 1 of ./a.js"],
   },
   {
@@ -152,7 +152,7 @@ export const HELP = [
   {
     name: "run", kind: "command", where: "AGENTS.talk",
     syntax: "run <program and args> | run <program> with <arg>, ... [using secret <NAME>, ...] [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>]",
-    description: "Only in a tool. Run a program with no shell. The result is { code, output }. Only the variables from 'allow env' go to the program. A file value is its path, such as './src/a.js'. A list gives one argument for each item. An argument that does not start with text written out in the tool must not start with '-'. Put '--' before it if the program takes '--'. A program that PATH finds inside the project is an error. Write its path to run it, such as './node_modules/.bin/jest'. 'in a sandbox' runs it in an OS sandbox. There it can write only the project (not .git, .talk or hidden files). It can read only system folders, its install folder and tool caches, and it has no network. 'with local network' allows localhost only. On an OS with no sandbox, a sandboxed run is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable. AGENTS.talk needs 'allow secret NPM_TOKEN for run'. The value shows as <secret NPM_TOKEN> in the output. 'run <prompt> in a subagent with only <tools>' gives the task to a model that can call only those tools. Its answer is untrusted.",
+    description: "Only in a tool. Run a program with no shell. The result is { code, output }. Only the variables from 'allow env' go to the program. A file value is its path, such as './src/a.js'. A list gives one argument for each item. An argument that does not start with text written out in the tool must not start with '-'. Put '--' before it if the program takes '--'. A program that PATH finds inside the project is an error. Write its path to run it, such as './node_modules/.bin/jest'. The program must be written out in the tool: run 'npm' with name, not run name. In run 'npm test ${name}', each ${} is one whole argument, also if it has spaces. 'in a sandbox' runs it in an OS sandbox. There it can write only the project (not .git, .talk or hidden files). It can read only system folders, its install folder and tool caches, and it has no network. 'with local network' allows localhost only. On an OS with no sandbox, a sandboxed run is an error, and nothing runs. 'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program that secret as an environment variable. AGENTS.talk needs 'allow secret NPM_TOKEN for run'. The value shows as <secret NPM_TOKEN> in the output. 'run <prompt> in a subagent with only <tools>' gives the task to a model that can call only those tools. Its answer is untrusted.",
     examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend", "# Summarizes the most important open issues.\ntool summarize_issues\n  run 'Summarize the most important open issues' in a subagent with only gh_issues\nend"],
   },
   {
@@ -164,7 +164,7 @@ export const HELP = [
   {
     name: "before", kind: "command", where: "AGENTS.talk",
     syntax: "before <step> ... end",
-    description: "Only in AGENTS.talk. Run commands before a step: read, write, append, replace, put, remove, move, delete, change (any file change), undo, run, start, stop, git, fetch, or a tool name. 'the <step>' holds the step. 'reject' stops the step.",
+    description: "Only in AGENTS.talk. Run commands before a step: read, write, append, replace, put, remove, move, delete, change (any file change), undo, run, start, stop, git, fetch, or a tool name. 'the <step>' holds the step, also for a tool: the deploy's args. 'reject' stops the step. A hook cannot change the step. A hook cannot run a program, or call a tool that runs one.",
     examples: ["before change\n  if the change's path ends with '.env'\n    reject 'Cannot change env files!'\n  end\nend"],
   },
   {
@@ -188,7 +188,7 @@ export const HELP = [
   {
     name: "start", kind: "command", where: "AGENTS.talk",
     syntax: "start <program> [with <arg>, ...] as <name> [using secret <NAME>, ...] [in a sandbox [with ...]] | start <prompt> as <name> in a subagent with only <tool>, ...",
-    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background. Its answer is the output of the process.",
+    description: "Only in a tool. Start a program in the background, such as a dev server, with no shell. It keeps running after the script. The program must be written out in the tool, as in run. 'process <name>' has name, status (running, exited, stopped), code and output. 'the processes' lists them. The host stops them all when the session ends. 'using secret' works as in run. 'start <prompt> as <name> in a subagent with only <tools>' runs a subagent in the background. Its answer is the output of the process.",
     examples: ["tool site_server\n  start 'npm run serve-site' as 'site' in a sandbox\nend"],
   },
   {
@@ -224,7 +224,7 @@ export const HELP = [
   {
     name: "git", kind: "command",
     syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch>",
-    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, never with force. It does not ask. A policy can turn it off with 'deny git push'. Delete branch deletes only a merged branch.",
+    description: "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text. If the repo config can run programs, git does not run. Status is short, with the branch. Log shows 15 commits, one line each. Commit adds and commits only the files you name. Merge is fast-forward only. Push sends the current branch to origin, never with force. It does not ask. A push to a remote that is a folder inside the project is an error. If the project root is a subfolder of the repo, status, diff, show and log cover only the root. A policy can turn it off with 'deny git push'. Delete branch deletes only a merged branch.",
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
@@ -292,7 +292,7 @@ export const HELP = [
   {
     name: "lines", kind: "expression",
     syntax: "lines of <file or text> | lines <a> to <b> of <file or text> | line <n> of <file or text>",
-    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses line numbers, both ends included. 'line <n> of' gives one line. A number past the end is an error. Put the line in a variable first, then use its fields on the next line.",
+    description: "The lines of a file or text. Each line has number (from 1) and text. A range uses whole line numbers, both ends included, and starts at 1 or more. The end of a range can go past the last line. 'line <n> of' gives one line. A number past the end is an error. Put the line in a variable first, then use its fields on the next line.",
     examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js", "set first to line 1 of ./a.txt\nset name to first's text"],
   },
   {
@@ -316,13 +316,13 @@ export const HELP = [
   {
     name: "operators", kind: "expression",
     syntax: "+ - * / mod   is  is not  <  >  <=  >=   and  or  not  no",
-    description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. In + and ${}, a file is its path: write file's text to join its text. 'no x' is true for null and empty values. A hyphen with a letter after it is part of a name (build-dir), so put spaces around a minus between names: a - b.",
+    description: "Math, comparison and logic. Mixing different math operators, or 'and' with 'or', needs parentheses. + joins text. In + and ${}, a file is its path: write file's text to join its text. 'no x' is true for null and empty values. False values are false, null, 0, '', [] and {}. 'is' compares lists and objects by their content. < > <= >= compare numbers only, and text that holds a number counts as a number. A hyphen with a letter after it is part of a name (build-dir), so put spaces around a minus between names: a - b.",
     examples: ["print 1 + (2 * 3)", "if a is 1 and b is not 2 print 'yes' end"],
   },
   {
     name: "contains", kind: "expression",
     syntax: "contains  does not contain  starts with  ends with  matches  is in  is not in  exists  does not exist  is empty  is not empty",
-    description: "Checks for text, lists and files. On a file or line they use its text. matches takes a pattern.",
+    description: "Checks for text, lists and files. On a file or line they use its text. On a list, they compare items by their content. No text contains, starts with or ends with null. matches takes a pattern.",
     examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern '^v[0-9]+' print 'a version' end"],
   },
   {
