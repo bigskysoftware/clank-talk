@@ -221,3 +221,10 @@ test("an in block on the line after a line edit is a new command", () => {
   assert.equal(script.commands.length, 2);
   assert.equal(script.commands[0].type, "replaceLines");
 });
+
+test("a command word as a name gives an error that names the fix", () => {
+  assert.deepEqual(errors("set stop to 5"), ["'stop' is a command word, so it cannot be a name. Use another name, such as 'my_stop', or write 'the stop' @1:5"]);
+  assert.deepEqual(errors("increment find"), ["'find' is a command word, so it cannot be a name. Use another name, such as 'my_find', or write 'the find' @1:11"]);
+  assert.equal(errors("set x to 1\nprint stop")[0], "Expected a value, found the command word 'stop'. If it is a name, write 'the stop' @2:7");
+  assert.deepEqual(errors("set the stop to 5\nprint the stop"), []);
+});

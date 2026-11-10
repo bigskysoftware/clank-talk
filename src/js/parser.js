@@ -550,6 +550,12 @@ export function parse(source, options = {}) {
     }
 
     const token = current();
+    // a command word on the same line is likely a name; on a new line it starts the next command
+    const before = tokens[i - 1];
+    if (token !== undefined && token.type === "word" && Object.hasOwn(COMMANDS, token.value) && before !== undefined && before.line === token.line) {
+      error("Expected a value, found the command word '" + token.value + "'. If it is a name, write 'the " + token.value + "'");
+      return null;
+    }
     if (token === undefined || isCommandStart()) {
       error("Expected a value");
       return null;
@@ -1283,6 +1289,12 @@ export function parse(source, options = {}) {
 
   function parseTarget() {
     const start = current() || { line: 0, column: 0 };
+    // a command word cannot be a name: set stop to 5 fails, set the stop to 5 works
+    if (start.type === "word" && Object.hasOwn(COMMANDS, start.value)) {
+      i++;
+      errors.push({ message: "'" + start.value + "' is a command word, so it cannot be a name. Use another name, such as 'my_" + start.value + "', or write 'the " + start.value + "'", line: start.line, column: start.column });
+      return null;
+    }
     const target = parseAccess();
     if (target === null) {
       return null;

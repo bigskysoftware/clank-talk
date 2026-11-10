@@ -70,6 +70,7 @@ Approved:
 
 - `the` is optional before any expression. It changes nothing. Agents are encouraged to use it where it makes code clearer.
 - Approved: after `the`, a word is always a value, even a command word. Thus `the write's path` works in a hook, and `set the write to ...` sets a variable named `write`. Without `the`, a command word at the start of a value is an error. To refer to a command by name, write `the <command>`.
+- Approved (built): the error for a command word as a name names the fix. `set stop to 5` gives: `'stop' is a command word, so it cannot be a name. Use another name, such as 'my_stop', or write 'the stop'`. A command word in a value gives: `Expected a value, found the command word 'stop'. If it is a name, write 'the stop'`. The grammar does not change.
 - `it` and `result` are special words. A command sets them. `the result` and `result` are the same.
 - Lists `[1, 2]` and objects `{name: 'x'}`, as in JavaScript.
 - No function calls in expressions for now.
