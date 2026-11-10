@@ -238,7 +238,7 @@ export const HELP = [
   {
     name: "paths", kind: "expression",
     syntax: "./x  ../x  @/x  ./src/**/*.js  ./\"my file.txt\"  https://example.com/x",
-    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files, sorted by path, and skip node_modules and .git unless the pattern names them. A file has name, path, text, lines, size and modified. Paths outside the project are refused. A URL (https://...) needs no quotes: it is text.",
+    description: "./ and ../ start from the current folder, @/ from the project root. * and ** make a list of files, sorted by path, and skip .git and what git ignores, unless the pattern names the folder. A file has name, path, text, lines, size and modified. Paths outside the project are refused. A URL (https://...) needs no quotes: it is text.",
     examples: ["print ./src/**/*.js", "print the size of @/README.md"],
   },
   {

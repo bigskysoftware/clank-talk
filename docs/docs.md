@@ -228,7 +228,7 @@ Paths are part of the language:
 
 * `./notes.txt` and `../notes.txt` start from the current folder
 * `@/README.md` starts from the project root
-* `./src/**/*.js` gives a list of files. Globs skip `node_modules` and `.git`, unless you name them in the pattern
+* `./src/**/*.js` gives a list of files. Globs skip `.git` and whatever git ignores, unless you name the folder in the pattern
 * `./"my notes.txt"` holds a path with spaces
 * `https://example.com/api` is a URL, no quotes needed
 

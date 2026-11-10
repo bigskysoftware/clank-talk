@@ -2825,19 +2825,55 @@ async function resolvePath(text, state, node) {
   return new FileRef(absolute, state.root);
 }
 
-// a glob skips these folders, unless the pattern names them: ./node_modules/x/*.js still works
-const SKIPPED_FOLDERS = ["node_modules", ".git"];
+// the parts of a glob before its first wildcard, such as dist/lib for dist/lib/**/*.js
+function fixedPart(pattern) {
+  const fixed = [];
+  for (const part of pattern.split("/")) {
+    if (/[*?[{]/.test(part)) {
+      break;
+    }
+    fixed.push(part);
+  }
+  return fixed.join("/");
+}
+
+// the files and folders that git ignores, as absolute paths, with the hardened git;
+// no git, not a repo, or a repo config that can run programs: none, so a glob skips nothing
+async function gitIgnored(state, node) {
+  const env = gitEnv(process.env);
+  try {
+    const config = await spawnProgram("git", [...guardArgs(), "config", "list", "--show-scope"], state.root, env, state.timeLimit, state, node);
+    if (config.code !== 0 || unsafeConfig(config.output).length > 0) {
+      return new Set();
+    }
+    const listed = await spawnProgram("git", [...guardArgs(), "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"], state.root, env, state.timeLimit, state, node);
+    if (listed.code !== 0) {
+      return new Set();
+    }
+    const entries = listed.output.split("\0").filter((entry) => entry !== "");
+    return new Set(entries.map((entry) => nodePath.resolve(state.root, entry)));
+  } catch (err) {
+    if (err instanceof Cancelled) {
+      throw err;
+    }
+    return new Set();
+  }
+}
 
 async function globFiles(base, pattern, state, node) {
-  const parts = pattern.split("/");
-  const skipped = [];
-  for (const name of SKIPPED_FOLDERS) {
-    if (!parts.includes(name)) {
-      skipped.push(name);
-    }
-  }
+  // a glob skips .git, and what git ignores, unless the fixed part of the pattern names it:
+  // @/**/*.js skips an ignored dist/, but @/dist/**/*.js looks in it
+  const namesGit = pattern.split("/").includes(".git");
+  const ignored = await gitIgnored(state, node);
+  const fixed = nodePath.resolve(base, fixedPart(pattern));
   // fs.glob calls exclude for each file and folder, so a skipped folder is not walked
-  const exclude = (path) => skipped.includes(nodePath.basename(path));
+  const exclude = (path) => {
+    const absolute = nodePath.resolve(base, path);
+    if (nodePath.basename(absolute) === ".git" && !namesGit) {
+      return true;
+    }
+    return ignored.has(absolute) && !isInside(fixed, absolute);
+  };
   const files = [];
   for await (const match of fs.glob(pattern, { cwd: base, exclude })) {
     const absolute = nodePath.resolve(base, match);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { run } from "../src/js/clank-talk.js";
 
 // a temporary project:
@@ -192,16 +193,32 @@ test('find errors', async () => {
   assert.deepEqual((await errors(`find 'x' ./notes.txt`))[0], "Expected 'in'");
 });
 
-test('a glob skips node_modules and .git, unless the pattern names them', async () => {
+test("a glob skips .git and what git ignores, unless the pattern names it", async () => {
   const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-skip-"));
-  await fs.mkdir(path.join(project, "node_modules", "lib"), { recursive: true });
-  await fs.mkdir(path.join(project, ".git"));
+  execFileSync("git", ["init", "-q"], { cwd: project });
+  await fs.mkdir(path.join(project, "dist"));
+  await fs.mkdir(path.join(project, "lib"));
+  await fs.writeFile(path.join(project, ".gitignore"), "dist/\n*.log.js\n");
   await fs.writeFile(path.join(project, "a.js"), "");
-  await fs.writeFile(path.join(project, "node_modules", "lib", "b.js"), "");
-  await fs.writeFile(path.join(project, ".git", "c.js"), "");
+  await fs.writeFile(path.join(project, "x.log.js"), "");
+  await fs.writeFile(path.join(project, "dist", "b.js"), "");
+  await fs.writeFile(path.join(project, "lib", "c.js"), "");
+  await fs.writeFile(path.join(project, ".git", "d.js"), "");
   try {
-    assert.deepEqual(await output(`print ./**/*.js`, { root: project }), ['["a.js"]']);
-    assert.deepEqual(await output(`print ./node_modules/**/*.js`, { root: project }), ['["node_modules/lib/b.js"]']);
+    assert.deepEqual(await output(`print ./**/*.js`, { root: project }), ['["a.js","lib/c.js"]']);
+    assert.deepEqual(await output(`print ./dist/**/*.js`, { root: project }), ['["dist/b.js"]']);
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
+});
+
+test("outside a git repo, a glob skips only .git", async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-skip-"));
+  await fs.mkdir(path.join(project, "node_modules"));
+  await fs.writeFile(path.join(project, "a.js"), "");
+  await fs.writeFile(path.join(project, "node_modules", "b.js"), "");
+  try {
+    assert.deepEqual(await output(`print ./**/*.js`, { root: project }), ['["a.js","node_modules/b.js"]']);
   } finally {
     await fs.rm(project, { recursive: true, force: true });
   }

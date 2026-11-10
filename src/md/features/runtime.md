@@ -41,7 +41,7 @@ Approved. Code: the "files" section of `src/js/runtime.js`.
 
 - A path literal gives a file object. Nothing is read until a property is used.
 - A path with `*` or `?` is a glob. It gives a list of files (not folders), sorted by path.
-- Approved: a glob skips `node_modules` and `.git` folders, unless the pattern names them. Thus `./**/*.js` does not walk `node_modules`, and `./node_modules/lib/*.js` still works. Later, maybe: skip what `.gitignore` lists.
+- Approved (built): a glob skips `.git`, and the files and folders that git ignores (`.gitignore`, `.git/info/exclude`, the global excludes file). The hardened git lists them. If the fixed part of the pattern names an ignored folder, the glob looks in it: `./**/*.js` skips an ignored `dist/`, and `./dist/**/*.js` still works. Outside a git repo, or if the repo config can run programs, a glob skips only `.git`. No folder names are special cases. This replaces the `node_modules` rule.
 - The host gives `root`. `@/` is relative to `root`. `./` and `../` are relative to `cwd` (default: `root`).
 - A file has `name`, `path` (relative to the root, with `/`), `text`, `lines`, `size` (bytes) and `modified` (ISO date).
 - A line has `number` (from 1) and `text`. As text, a line is its content. A final line break does not make an extra line. A `\r` at the end of a line is removed.
