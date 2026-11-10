@@ -242,6 +242,17 @@ test('a second line edit sees the new line numbers', async () => {
   assert.equal(await readProject('a.txt'), 'top\nvar x\n');
 });
 
+test('in an in block, line forms with no of use the block target', async () => {
+  const result = await ok(`in ./a.txt do\n  read ./a.txt\n  print lines 1 to 2\n  set first to line 1\n  print first's text\n  put 'top' before line 1\n  put 'end' after line 3\n  replace lines 2 to 2 with 'var a'\n  remove lines 3 to 3\nend`);
+  assert.deepEqual(result.output, ['1: var x\n2: var y', 'var x']);
+  assert.equal(await readProject('a.txt'), 'top\nvar a\nend\n');
+});
+
+test('in an in block, a loop variable named line still works', async () => {
+  const result = await ok(`in ./a.txt do\n  for line in lines of ./a.txt\n    print line\n  end\nend`);
+  assert.deepEqual(result.output, ['var x', 'var y']);
+});
+
 test('line edits cannot change .talk files', async () => {
   await fs.writeFile(path.join(root, 'x.talk'), 'tool a\nend\n');
   const [message] = await errors(`read ./x.talk\nremove lines 1 to 1 of ./x.talk`);

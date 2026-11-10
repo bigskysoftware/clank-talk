@@ -484,6 +484,10 @@ export function parse(source, options = {}) {
         if (to === null) {
           return null;
         }
+        // in an "in <target> do ... end" block, a range with no "of" uses the block's target
+        if (!isWord("of") && inTarget !== null) {
+          return node("lines", linesToken, { from, to, target: inTarget });
+        }
         if (!isWord("of")) {
           error("Expected 'of'");
           return null;
@@ -514,6 +518,11 @@ export function parse(source, options = {}) {
           return null;
         }
         return node("line", lineToken, { number, target });
+      }
+      // in an "in <target> do ... end" block, "line <n>" with no "of" uses the block's target;
+      // the number must be on the same line, so a loop variable named line still works
+      if (number !== null && inTarget !== null && number.line === lineToken.line) {
+        return node("line", lineToken, { number, target: inTarget });
       }
       // not a line: go back, and forget errors from the try
       i = savedIndex;
@@ -1210,6 +1219,10 @@ export function parse(source, options = {}) {
     const number = parseBefore(["of"], parseMath);
     if (number === null) {
       return null;
+    }
+    // in an "in <target> do ... end" block, a put with no "of" uses the block's target
+    if (!isWord("of") && inTarget !== null) {
+      return { type: "put", text, where, number, file: inTarget, line: token.line, column: token.column };
     }
     if (!isWord("of")) {
       error("Expected 'of'");

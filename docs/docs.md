@@ -296,6 +296,17 @@ put '// added' after line 12 of ./src/app.js
 remove lines 20 to 22 of ./src/app.js
 ```
 
+That is a lot of `of ./src/app.js`. In an `in ... do` block, you can leave it off:
+
+```talk
+in ./src/app.js do
+  read ./src/app.js
+  print lines 10 to 12
+  replace lines 11 to 11 with 'let x = 2'
+  put '// added' after line 12
+end
+```
+
 You and your agent can work on the same files. If you save a file after the agent read it, the agent's next write fails, and it has to read the file again. Your change stays.
 
 ## Tools
