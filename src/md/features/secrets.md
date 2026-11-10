@@ -16,7 +16,7 @@ Agents must use secrets (API keys, tokens) without seeing their values.
 
 - Approved (built): the runtime looks for a value in this order, and the first match wins: the environment of the server process, then `@/.env.local`, then `@/.env`. Why: Vite, Next.js, dotenv-flow and dotenv (Node and Ruby) all let the environment win over the files, and `.env.local` win over `.env`. Not read: mode files such as `.env.development` (ClankTalk has no mode), and files in subfolders. The OS keychain comes later.
 - Approved (built): the `.env` files use the dotenv form: `KEY=value` lines, `#` comments, an optional `export `, and values in single or double quotes. In double quotes, `\n` is a line break. Without quotes, ` #` starts a comment. An empty value counts as no value.
-- Approved (built): scripts cannot read `.env` or `.env.*` in any folder: `read`, `text`, `lines`, `first`, `last` and `find` give `A script cannot read .env files, because they hold secrets: <path>`. The check uses the path as written and the path after links. Globs leave these files out. `exists` still works. In `git diff` and `git show` output, the part for a `.env` file is one line: `(a .env file: not shown, since it holds secrets)`, and `git diff` that names a `.env` file is refused.
+- Approved (built): scripts cannot read `.env`, `.env.*` or `.envrc` (direnv) in any folder: `read`, `text`, `lines`, `first`, `last` and `find` give `A script cannot read .env files, because they hold secrets: <path>`. The check uses the path as written and the path after links. Globs leave these files out. `exists` still works. In `git diff` and `git show` output, the part for a `.env` file is one line: `(a .env file: not shown, since it holds secrets)`, and `git diff` that names a `.env` file is refused.
 - Approved (built): `allow secret NAME for fetch to '<host>', ...` at the top of AGENTS.talk. Only AGENTS.talk can have it, not an imported file. Host patterns work as in `allow fetch from`.
 
 ```talk
@@ -72,6 +72,7 @@ end
 - Approved (built): file reads are not changed. Why: `replace` in a file with a token would write `<secret X>` and lose the token. Gap: a script can read a file with a token and send that text to an allowed host. Taint must close this gap.
 - Approved (built): the changed files that the host shows (before and after text) show a secret's value as `<secret NAME>`. Undo keeps its own copy of the real text, and the files do not change.
 - Limit: redaction finds the exact text only. A program that changes the value (for example base64) can still leak it. Only the sandbox (no network) limits that.
+- Approved, limit: a copy of a secret's value in a file that scripts can read, such as `config.txt`, is ordinary text. A script can cut it (`replace`, `t[5]`) and print it, and redaction does not see the changed text. Keep secrets only in `.env` files, which scripts cannot read.
 
 ### Audit and hooks
 

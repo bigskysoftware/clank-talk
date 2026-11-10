@@ -69,6 +69,27 @@ test("before run sees the program and its arguments", async () => {
   assert.deepEqual(await output("go 'safe'\nprint it.code"), ["0"]);
 });
 
+test("a hook gets a copy of the step, so it cannot change the program's arguments", async () => {
+  await agentsTalk(`allow env PATH\nbefore run\n  set the run's args[3] to '--changed'\nend\ntool go with word\n  run '${NODE}' with '-e', 'console.log(process.argv[1])', '--', word\nend`);
+  assert.deepEqual(await output("go 'safe'\nprint it.output"), ["safe\n"]);
+});
+
+test("a hook for a tool reads the step as the <tool>'s args", async () => {
+  await agentsTalk("before deploy\n  if the deploy's args contains 'prod'\n    reject 'no prod'\n  end\nend\ntool deploy with target\n  set the result to target\nend");
+  const [e] = await errors("deploy 'prod'");
+  assert.equal(e.message, "no prod");
+  assert.deepEqual(await output("deploy 'dev'\nprint it"), ["dev"]);
+});
+
+test("a hook cannot call a tool that runs a program, also through another tool", async () => {
+  await agentsTalk(`tool sh\n  run '${NODE}' with '-e', '1'\nend\ntool outer\n  sh\nend\ntool calm\n  set the result to 1\nend\nbefore write\n  outer\nend`);
+  const [e] = await errors("write 'x' to ./a.txt");
+  assert.match(e.message, /^A hook cannot call 'outer', because it runs a program/);
+  // a tool that runs no program is fine in a hook
+  await agentsTalk("tool calm\n  set the result to 1\nend\nbefore write\n  calm\nend");
+  assert.deepEqual(await output("write 'x' to ./a.txt"), []);
+});
+
 test("before read", async () => {
   await agentsTalk("before read\n  if the read's path is 'secret.txt'\n    reject 'no peeking'\n  end\nend");
   await fs.writeFile(path.join(root, "secret.txt"), "shh");

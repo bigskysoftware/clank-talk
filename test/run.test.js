@@ -36,6 +36,26 @@ test("run gives back the exit code and the output", async () => {
   assert.deepEqual(await output("hello\nprint it.code\nprint it.output"), ["0", "hi\n"]);
 });
 
+test("the program must be written out in the tool, so the agent cannot pick it", async () => {
+  await agentsTalk(`tool go with p\n  run p\nend\ntool go2 with p\n  run '${NODE}/' + p with '-v'\nend\ntool go3 with p\n  start p as 'x'\nend\ntool ok with p\n  run '${NODE} print.js \${p}'\nend`);
+  await fs.writeFile(path.join(root, "x.sh"), "#!/bin/sh\necho ran\n", { mode: 0o755 });
+  await fs.writeFile(path.join(root, "print.js"), "console.log(process.argv[2])\n");
+  for (const call of ["go './x.sh'", "go2 'x'", "go3 './x.sh'"]) {
+    const r = await result(call);
+    assert.match(r.errors[0].message, /^The program for (run|start) must be written out in AGENTS.talk, not given by the agent/, call);
+  }
+  // a template with the program written before the first ${} is fine
+  assert.deepEqual(await output("ok 'hi'\nprint it.output"), ["hi\n"]);
+});
+
+test("in run 'x ${p}', a value is one whole argument, and written-out options are fine", async () => {
+  await fs.writeFile(path.join(root, "args.js"), "console.log(JSON.stringify(process.argv.slice(2)))\n");
+  await agentsTalk(`tool t with p\n  run '${NODE} args.js -x --name=\${p} \${p}'\nend`);
+  assert.deepEqual(await output("t 'a b'\nprint it.output"), ['["-x","--name=a b","a b"]\n']);
+  // the value alone is not written out, so it cannot be an option
+  assert.match((await result("t '-y'")).errors[0].message, /^The argument '-y' starts with '-'/);
+});
+
 test("a failing program is not an error: check the code", async () => {
   await agentsTalk(`tool fail\n  run '${NODE}' with '-e', 'console.error("bad"); process.exit(3)'\nend`);
   assert.deepEqual(await output("fail\nif the result's code is not 0\n  print the result's output\nend"), ["bad\n"]);

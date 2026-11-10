@@ -96,9 +96,11 @@ export function clankTalkExtension(pi, Type) {
           onStep: progressFor(onUpdate),
           signal,
           previousOutput: scope.output.text,
+          previousOutputLabels: scope.output.labels,
           session: session.name,
         });
         scope.output.text = keptOutput(result);
+        scope.output.labels = result.outputLabels || null;
         return {
           content: [{ type: "text", text: formatResult(result, params.script, session.root) }],
           details: { status: result.status, steps: result.steps },

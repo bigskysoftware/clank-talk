@@ -27,7 +27,8 @@ Feature: [../features/runtime.md](../features/runtime.md).
 - Every path is checked against the project root, before symlinks (`path.resolve`) and after them (`fs.realpath`). A path or symlink that goes outside the root is an error.
 - Glob results are checked one by one.
 - Approved (built): a glob leaves out a link that points to nothing or to a file outside the root. Thus a glob does not show names from outside the root, and does not fail with a raw error.
-- Approved (built): expressions and blocks can nest 100 levels deep. A deeper script is a parse error, not a stack overflow.
+- Approved (built): expressions and blocks can nest 100 levels deep. A deeper script is a parse error, not a stack overflow. Each `not`, `-` and `<name> of` is one level, and so is each `${}` inside a `${}`.
+- Approved (built): an expression can have at most 500 operators in a row (`+`, `and`, `as`, `'s`, and more). A longer chain is a parse error. Why: a chain is flat in the source, but it is as deep as it is long when it runs.
 - Approved (built): only the parser's own command names are commands. A script word such as `__proto__` or `constructor` is an unknown command.
 - Approved (built): `exists` is false for a link to a file outside the root, whether that file is there or not. Before, it was an error if the file was there, and false if not.
 - File objects cannot be changed with `set`, and index access cannot see their inside fields.
@@ -64,6 +65,7 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 
 - `run` takes a program and a list of arguments. It never uses a shell.
 - `run 'mvn test'` splits one string on spaces into a program and its arguments. No shell features (quotes, pipes, `$`).
+- Approved (built): with `${}` in the one string, only the written-out text splits on spaces. Each `${}` is one whole argument, or a part of one, as in `--name=${p}`, also if the value has spaces. A word that starts with written-out text is written out, so `-x` in `run 'node a.js -x ${p}'` is fine. Before, the joined text was split, so a value with spaces gave more arguments, and every part counted as not written out.
 - Implementation: Node `child_process.spawn` or `execFile` with an argument array and no `shell` option. Never `exec`.
 - The child process starts with an empty environment, plus the variables that `allow env` in AGENTS.talk lists.
 - `run` is only allowed in tools, never in scripts.
@@ -72,6 +74,7 @@ Feature: [../features/agents-talk.md](../features/agents-talk.md).
 - `run` is where the ClankTalk sandbox ends. Document this for users.
 - Approved (built): an argument that does not start with text written out in the tool must not start with `-`. `'-Dtest=' + name` starts with written-out text, so it is fine. A file value is its `./` path, so it is fine too. Thus an agent value `--rulesdir=./evil` cannot reach `eslint` as an option. After a written-out `'--'`, the arguments are not checked. For `run 'mvn test'`, all parts are written out. The same check applies to `start`.
 - Approved (built): a bare program name (no `/`) is found through `PATH` at run time. If the file found is inside the project, the run fails, because the agent can change that file. A relative or empty `PATH` entry counts as inside the project. Otherwise the full path that was found runs, so the program cannot change between the check and the run. A path written out in the tool, such as `run './node_modules/.bin/jest'`, is allowed. Not on Windows. The same check applies to `start`.
+- Approved (built): the program is written out in the tool: `run 'npm' with p` and `run 'npm test ${p}'` are fine, and `run p` and `run './bin/' + p` are errors. In the one-string form, the program is the first word, before any `${}`. Why: a path that the agent gives skips the PATH check, so the agent could run a file that it wrote. The same rule applies to `start`.
 - Deferred: typed parameters (`with file as path`).
 
 ### Analysis

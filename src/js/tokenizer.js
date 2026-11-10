@@ -122,6 +122,28 @@ function removeIndent(raw) {
   return result.join("\n");
 }
 
+// ${} inside ${} can nest this deep; the parser has the same cap for expressions
+const MAX_TEMPLATE_DEPTH = 100;
+let templateDepth = 0;
+
+function nestedTokens(source) {
+  templateDepth++;
+  try {
+    return tokenize(source);
+  } finally {
+    templateDepth--;
+  }
+}
+
+function tooDeep(line, column) {
+  return { type: "error", value: "The script nests more than " + MAX_TEMPLATE_DEPTH + " levels deep. Use variables for parts of it", line, column };
+}
+
+// every token, and the parts of a template token, get this position
+function placeAt(tokens, line, column) {
+  return tokens.map((t) => ({ ...t, line, column, value: t.type === "template" ? t.value.map((part) => typeof part === "string" ? part : placeAt(part, line, column)) : t.value }));
+}
+
 // turn raw string text into parts: plain text, and token lists for each ${...}
 // escapes: \n, \t, and \x gives x, so \${ gives a plain ${
 function splitTemplate(raw, line, column) {
@@ -147,9 +169,8 @@ function splitTemplate(raw, line, column) {
         parts.push(text);
         text = "";
       }
-      // errors in the expression point at the start of the string
-      const tokens = tokenize(raw.slice(j + 2, end)).map((t) => ({ ...t, line, column }));
-      parts.push(tokens);
+      // errors in the expression point at the start of the string, also in a template inside it
+      parts.push(templateDepth >= MAX_TEMPLATE_DEPTH ? [tooDeep(line, column)] : placeAt(nestedTokens(raw.slice(j + 2, end)), line, column));
       j = end + 1;
       continue;
     }
@@ -377,7 +398,8 @@ export function tokenize(source) {
         continue;
       }
 
-      const parts = splitTemplate(removeIndent(raw), startLine, startColumn);
+      // a script with CRLF line breaks gives LF in a string, as | blocks and raw strings do
+      const parts = splitTemplate(removeIndent(raw.replaceAll("\r\n", "\n")), startLine, startColumn);
       if (parts.length === 1 && typeof parts[0] === "string") {
         push("string", parts[0], startLine, startColumn);
       } else if (parts.length === 0) {
@@ -428,6 +450,14 @@ export function tokenize(source) {
           continue;
         }
         advance();
+        // the path goes on after its quoted part: ./"my dir"/a.txt
+        if (source[i] === "/") {
+          value += readPathRest();
+          if (pathOpen) {
+            push("error", "Unclosed { or [ in a path: " + value, startLine, startColumn);
+            continue;
+          }
+        }
       } else {
         value += readPathRest();
         if (pathOpen) {
@@ -491,9 +521,12 @@ export function tokenize(source) {
       continue;
     }
 
-    // anything else: record it and skip the character
-    advance();
-    push("error", "Unexpected character '" + c + "'", startLine, startColumn);
+    // anything else: record it and skip the character; an emoji is two UTF-16 units, but one character
+    const char = String.fromCodePoint(source.codePointAt(i));
+    for (let k = 0; k < char.length; k++) {
+      advance();
+    }
+    push("error", "Unexpected character '" + char + "'", startLine, startColumn);
   }
 
   return tokens;

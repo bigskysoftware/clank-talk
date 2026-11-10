@@ -41,7 +41,7 @@ use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY
 
 ## How it runs
 
-- Approved (built): the model sees a short system prompt from ClankTalk, the prompt from the `run` line, and the tools after `with only`: each with its `#` comment as the description, and its parameters as text inputs. No `tool_choice` is sent.
+- Approved (built): the model sees a short system prompt from ClankTalk, the prompt from the `run` line, and the tools after `with only`: each with its `#` comment as the description, and its parameters as text inputs. No `tool_choice` is sent. Approved (built): an input that the model sends as a list or an object goes to the tool as JSON text, as `print` shows it.
 - Approved (built): the loop: the model calls tools, ClankTalk runs them, and all results for one turn go back in one message, until the model gives a final answer. The model's reply goes back unchanged, thinking blocks too.
 - Approved (built): each tool call goes through the normal runtime: hooks, the audit (`from subagent <tool>`), the sandbox, secrets. A failed tool call goes back to the model as an error (`is_error`).
 - Approved (built): limits: at most 20 tool calls; 5 minutes (`within` makes it shorter); the calls count against the step budget. A refusal, a reply that is too long, or an API error fails the `run`. The API is tried again on 429, 500 and 529, at most 2 times.

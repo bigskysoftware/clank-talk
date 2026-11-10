@@ -9,6 +9,7 @@ Approved:
 - `before <step> ... end` and `after <step> ... end`.
 - Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `move`, `delete`, `undo`, `run`, `start`, `stop`, `git`, `fetch`, a tool name, and `change` for any file change.
 - In a hook, a local variable with the step's name holds the step: `the write's path`, `the change's kind`.
+- Approved (built): after `the`, a tool name is a variable, as a command word is. Thus a hook for a tool reads its step: `the deploy's args`. A bare `deploy` still calls the tool.
 - `reject <message>` in a `before` hook stops the step. The script gets an error with the message. `on error` can catch it.
 - `after` hooks see `the result`.
 
@@ -20,6 +21,7 @@ Approved:
 - Other errors in a hook point at the hook's file.
 - A hook for an unknown step is an error when AGENTS.talk loads.
 - `run` is not allowed in a hook.
+- Approved (built): a hook cannot call a tool that runs or starts a program, also through other tools. AGENTS.talk does not load. Why: commands in a hook run no hooks, so no `before run` hook would see the program.
 - A hook cannot change the step. A hook cannot change the result.
 
 ## Open questions

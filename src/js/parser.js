@@ -13,6 +13,12 @@ import { tokenize } from "./tokenizer.js";
 // how deep expressions and blocks can nest
 const MAX_NESTING = 100;
 
+// words that end or split a block, so they can never be names
+const BLOCK_WORDS = ["end", "then", "else"];
+
+// an expression can have this many operators in a row, such as a + b + c
+const MAX_CHAIN = 500;
+
 // words that join values, so they never start one: "set sorted to 5" sets a variable named sorted
 const LINK_WORDS = ["to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
 
@@ -201,10 +207,19 @@ export function parse(source, options = {}) {
     }
   }
 
+  // a chain such as a + b + c is as deep as it is long when it runs, so it has a cap too
+  function chainStep(count) {
+    if (count > MAX_CHAIN) {
+      throw { tooLong: true, token: current() };
+    }
+  }
+
   function parseLogic() {
     let left = parseComparison();
     let operator = null;
+    let count = 0;
     while (left !== null && (isWord("and") || isWord("or"))) {
+      chainStep(++count);
       const token = current();
       if (operator !== null && operator !== token.value) {
         error("Mixing 'and' and 'or' needs parentheses");
@@ -352,7 +367,9 @@ export function parse(source, options = {}) {
   function parseMath() {
     let left = parseConversion();
     let operator = null;
+    let count = 0;
     while (left !== null && isMathOperator()) {
+      chainStep(++count);
       const token = current();
       if (operator !== null && operator !== token.value) {
         error("Mixing '" + operator + "' and '" + token.value + "' needs parentheses");
@@ -371,7 +388,9 @@ export function parse(source, options = {}) {
 
   function parseConversion() {
     let value = parseUnary();
+    let count = 0;
     while (value !== null && isWord("as")) {
+      chainStep(++count);
       const token = current();
       i++;
       // "as pretty json" is two words
@@ -395,7 +414,7 @@ export function parse(source, options = {}) {
     const token = current();
     if (isWord("not") || isWord("no") || isOp("-")) {
       i++;
-      const value = parseUnary();
+      const value = nested(parseUnary);
       if (value === null) {
         return null;
       }
@@ -406,7 +425,9 @@ export function parse(source, options = {}) {
 
   function parseAccess() {
     let value = parsePrimary();
+    let count = 0;
     while (value !== null) {
+      chainStep(++count);
       const token = current();
       if (token !== undefined && token.type === "possessive") {
         i++;
@@ -465,7 +486,8 @@ export function parse(source, options = {}) {
         i += 2;
         return node("undoList", next, {});
       }
-      if (next !== undefined && next.type === "word" && Object.hasOwn(COMMANDS, next.value)) {
+      // a command word or a tool name: in a hook for that step, the deploy's args
+      if (next !== undefined && next.type === "word" && (Object.hasOwn(COMMANDS, next.value) || tools.includes(next.value))) {
         i++;
         return node("variable", next, { name: next.value });
       }
@@ -664,6 +686,10 @@ export function parse(source, options = {}) {
       return parseTemplate(token);
     }
     if (token.type === "number") {
+      if (!Number.isFinite(Number(token.value))) {
+        error("The number " + token.value.slice(0, 20) + "... is too large");
+        return null;
+      }
       i++;
       return node("number", token, { value: Number(token.value) });
     }
@@ -708,7 +734,7 @@ export function parse(source, options = {}) {
       // <name> of <value> is the same as <value>'s <name>, as in hyperscript
       if (isWord("of") && !token.value.startsWith("$")) {
         i++;
-        const object = parseAccess();
+        const object = nested(parseAccess);
         if (object === null) {
           return null;
         }
@@ -1449,6 +1475,13 @@ export function parse(source, options = {}) {
       errors.push({ message: "'" + start.value + "' is a command word, so it cannot be a name. Use another name, such as 'my_" + start.value + "', or write 'the " + start.value + "'", line: start.line, column: start.column });
       return null;
     }
+    // a block word cannot be a name either, even after "the": set end to 1 fails
+    const word = start.type === "word" && start.value === "the" ? tokens[i + 1] : start;
+    if (word !== undefined && word.type === "word" && BLOCK_WORDS.includes(word.value)) {
+      i += word === start ? 1 : 2;
+      errors.push({ message: "'" + word.value + "' is a block word, so it cannot be a name. Use another name, such as 'last'", line: word.line, column: word.column });
+      return null;
+    }
     const target = parseAccess();
     if (target === null) {
       return null;
@@ -1580,6 +1613,10 @@ export function parse(source, options = {}) {
       const name = current();
       if (name === undefined || name.type !== "word") {
         error("Expected an argument name");
+        return false;
+      }
+      if (named.some((arg) => arg.name === name.value)) {
+        error("The argument '" + name.value + "' is given twice");
         return false;
       }
       i++;
@@ -2537,11 +2574,12 @@ export function parse(source, options = {}) {
 
     return { script: { type: "script", commands }, errors };
   } catch (err) {
-    if (!err.tooDeep) {
+    if (!err.tooDeep && !err.tooLong) {
       throw err;
     }
-    const at = err.token || { line: 1, column: 1 };
-    errors.push({ message: "The script nests more than " + MAX_NESTING + " levels deep. Use variables for parts of it", line: at.line, column: at.column });
+    const at = err.token || tokens[tokens.length - 1] || { line: 1, column: 1 };
+    const message = err.tooDeep ? "The script nests more than " + MAX_NESTING + " levels deep" : "An expression has more than " + MAX_CHAIN + " parts in a row";
+    errors.push({ message: message + ". Use variables for parts of it", line: at.line, column: at.column });
     return { script: options.definitions ? { type: "definitions", definitions: [] } : { type: "script", commands: [] }, errors };
   }
 }

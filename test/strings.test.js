@@ -43,6 +43,10 @@ test("blank lines inside are kept, but made empty", async () => {
   assert.deepEqual(await output("print '\n  a\n   \n  b'"), ["a\n\nb"]);
 });
 
+test("a quoted string in a script with CRLF line breaks has LF line breaks", async () => {
+  assert.deepEqual(await output("print '\r\n  a\r\n  b\r\n  '"), ["a\nb\n"]);
+});
+
 test("one-line strings keep their spaces", async () => {
   assert.deepEqual(await output("print '  a  '"), ["  a  "]);
 });

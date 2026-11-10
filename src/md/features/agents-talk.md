@@ -24,6 +24,7 @@ Approved:
 - `AGENTS.talk` holds only definitions at the top level: `tool`, `before`, `after`, `import` and the `allow` lines. Any other command there is an error.
 - Parameters are separated by commas: `tool deploy with env, version`.
 - Calls by position, with commas (`deploy 'prod', '1.2'`), or by name (`deploy with env: 'prod', version: '1.2'`). A missing argument is `null`. An unknown name, or too many arguments, is an error.
+- Approved (built): a name given twice (`deploy with env: 'dev', env: 'prod'`) is a parse error. The same holds for `fetch ... with`.
 - A tool body has its own local variables. Parameters are local variables. `$` globals are shared. A tool can call other tools, on the same step budget.
 - A call gives back the tool's `the result` at the end of the tool: whatever the last command put there. There is no `return`.
 - Host tools (`options.tools`) still work. A name in both places is an error.

@@ -40,6 +40,7 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 - **Clearer errors:** `print exists @/x` says "Expected a command" (write `@/x exists`); `print git branch` suggests `the git` (run `git branch`, then `print it`).
 - **A missing property is null with no warning** (`t.replaceAll`). A warning for a property that a string or a list does not have.
 - **The error model and data types:** open questions in `features/language.md`.
+- **A quoted path is never a glob.** `./"*.txt"` is a glob today, so a script cannot name a file with `*`, `?`, `[` or `{` in its name. Found in the testing pass (2026-11-10).
 - **A write with no final line break.** A warning when `write` makes a file that has no line break at the end (a `|` block has none). Declined for now (2026-11-10).
 
 ## Runtime and hosts

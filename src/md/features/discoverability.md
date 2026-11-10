@@ -17,7 +17,7 @@ Approved:
 - An unknown word is an error that tells the agent to use `help`.
 - The help text lives in `src/js/help.js`, as a table with one entry for each command and each kind of expression. A test parses every example, so the examples stay correct.
 - The MCP tool description lists each tool with the first line of its comment, and tells the agent about `help`.
-- `help` lists all commands, expressions and tools. `help <word>` shows one, with its syntax, a description and examples. `help commands`, `help expressions` and `help tools` show one group.
+- `help` lists all commands, expressions and tools. `help <word>` shows one, with its syntax, a description and examples. Approved (built): if more words have no entry, such as `help git commit`, help shows the entry for the first word. `help commands`, `help expressions` and `help tools` show one group.
 - The `#` comment lines just above a `tool` in AGENTS.talk are its description.
 
 ## Open questions

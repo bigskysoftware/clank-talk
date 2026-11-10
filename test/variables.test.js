@@ -38,7 +38,7 @@ test("set on null is an error", async () => {
 });
 
 test("set a field that cannot change is an error", async () => {
-  assert.deepEqual(await errors("set x to [1]\nset x.length to 0"), ["Cannot set 'length'"]);
+  assert.deepEqual(await errors("set x to [1]\nset x.length to 0"), ["A list index must be a whole number from 0 to 1 (the length of the list), not 'length'"]);
 });
 
 test("set needs a variable or property", async () => {

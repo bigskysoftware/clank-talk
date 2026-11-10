@@ -85,7 +85,8 @@ export async function handleMessage(message, session) {
     }
     // agent: a subagent's name; each name has its own undo list, $ globals and reads
     const agent = params.arguments.agent;
-    if (agent !== undefined && (typeof agent !== "string" || !AGENT_NAME.test(agent))) {
+    // null counts as no agent, as a missing field does
+    if (agent !== undefined && agent !== null && (typeof agent !== "string" || !AGENT_NAME.test(agent))) {
       return replyError(id, -32602, "The argument 'agent' must be a name of 1 to 40 letters, digits, -, _ or .");
     }
     const scope = agentScope(session, agent);
@@ -115,8 +116,9 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, privateHosts: session.privateHosts, harness: "MCP", processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
+      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, privateHosts: session.privateHosts, harness: "MCP", processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, previousOutputLabels: scope.output.labels, session: session.name || (session.name = sessionName(null)) });
       scope.output.text = keptOutput(result);
+      scope.output.labels = result.outputLabels || null;
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -302,6 +304,11 @@ async function handleLine(line, session) {
     message = JSON.parse(line);
   } catch (err) {
     process.stdout.write(JSON.stringify(replyError(null, -32700, "Parse error")) + "\n");
+    return;
+  }
+  // JSON-RPC needs an object; null, a number or a list is an invalid request
+  if (message === null || typeof message !== "object" || Array.isArray(message)) {
+    process.stdout.write(JSON.stringify(replyError(null, -32600, "Invalid Request")) + "\n");
     return;
   }
   try {

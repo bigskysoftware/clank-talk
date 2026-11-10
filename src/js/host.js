@@ -220,9 +220,9 @@ export const AGENT_NAME = /^[A-Za-z0-9_.-]{1,40}$/;
 // and the full output of its last script (output.text, for "the previous output")
 // with no name, the session's own; background processes, fetch approvals and the audit stay shared
 export function agentScope(session, agent) {
-  if (agent === undefined) {
+  if (agent === undefined || agent === null) {
     if (!session.output) {
-      session.output = { text: null };
+      session.output = { text: null, labels: null };
     }
     return { globals: session.globals, seen: session.seen, undo: session.undo, output: session.output };
   }
@@ -230,7 +230,7 @@ export function agentScope(session, agent) {
     session.agents = new Map();
   }
   if (!session.agents.has(agent)) {
-    session.agents.set(agent, { globals: Object.create(null), seen: new Map(), undo: [], output: { text: null } });
+    session.agents.set(agent, { globals: Object.create(null), seen: new Map(), undo: [], output: { text: null, labels: null } });
   }
   return session.agents.get(agent);
 }

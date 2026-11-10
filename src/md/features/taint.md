@@ -18,6 +18,7 @@ Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
 
 - Approved (built): `private`: `read`, file properties (`text`, `lines`), `find` in files, `git` output, `run` output, process output, `the previous output`, `the audit`.
 - Approved (built): `untrusted`: fetch responses (text, JSON values, headers), with the URL as its origin.
+- Approved (built): `the previous output` also has the labels of all that the last script printed. The run result gives them as `outputLabels`, and the host keeps them for each agent, next to the text. Thus web text that a script printed is still untrusted in the next script. The labels cover the whole output, not each line.
 - Approved (built): `untrusted tool <name> ... end` in AGENTS.talk: the tool's result is `untrusted`, with the origin `tool <name>`. Without it, `run` and `start` output is only `private`, also with the network: the tool author decides. Mark any tool that brings in text from the network (`curl`, `gh`, `npm view`).
 - Approved (built): no label: `ask` answers (from the human), text that the script types, file paths themselves.
 

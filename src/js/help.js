@@ -358,6 +358,10 @@ function findEntry(word) {
       return entry;
     }
   }
+  // help git commit: no entry has that name, so the entry for git
+  if (word.includes(" ")) {
+    return findEntry(word.split(" ")[0]);
+  }
   return null;
 }
 

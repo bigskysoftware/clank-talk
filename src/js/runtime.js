@@ -13,6 +13,7 @@ import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest 
 import * as taint from "./taint.js";
 import { runSubagent, anthropicModel, SubagentError, API_URL } from "./subagent.js";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import nodePath from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -204,6 +205,8 @@ export function start(source, options = {}) {
     errors: [],
     // problems that do not stop the script: { message, line, column, file }
     warnings: [],
+    // the taint labels of all that print showed; the host keeps them for "the previous output"
+    outputLabels: taint.none(),
     signal: controller.signal,
     cancel() {
       controller.abort();
@@ -258,6 +261,7 @@ async function execute(source, options, execution) {
   const secrets = await loadSecrets(root, agents.allowedSecrets);
   secrets.errors.push(...checkSecretUses(agents));
   secrets.errors.push(...checkSubagents(agents));
+  secrets.errors.push(...checkHookCalls([...policy.hooks, ...agents.hooks], agents.definitions));
   if (secrets.errors.length > 0) {
     return finish(execution, "failed", secrets.errors);
   }
@@ -303,6 +307,8 @@ async function execute(source, options, execution) {
     processes: options.processes || new Map(),
     // the full print output of the last script, from the host; null before the first script
     previousOutput: options.previousOutput === undefined ? null : options.previousOutput,
+    // the labels of what the last script printed: untrusted text stays untrusted in the next script
+    previousOutputLabels: options.previousOutputLabels || taint.none(),
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -513,6 +519,36 @@ function checkSubagents(agents) {
   return errors;
 }
 
+// run is not allowed in a hook, and commands in a hook run no hooks, so a hook cannot call a tool that runs
+// a program either: no "before run" hook would see it; see src/md/features/hooks.md
+function checkHookCalls(hooks, definitions) {
+  const errors = [];
+  for (const hook of hooks) {
+    for (const node of findNodes(hook, [])) {
+      const called = node.type === "toolCall" ? definitions[node.name] : undefined;
+      if (called !== undefined && runsProgram(called, definitions, new Set())) {
+        errors.push({ message: "A hook cannot call '" + node.name + "', because it runs a program, and run is not allowed in a hook", line: node.line, column: node.column, file: hook.file });
+      }
+    }
+  }
+  return errors;
+}
+
+// true if the tool, or a tool that it calls, runs or starts a program
+function runsProgram(tool, definitions, seen) {
+  seen.add(tool.name);
+  for (const node of findNodes(tool, [])) {
+    if (node.type === "run" || node.type === "start") {
+      return true;
+    }
+    const called = node.type === "toolCall" ? definitions[node.name] : undefined;
+    if (called !== undefined && !seen.has(node.name) && runsProgram(called, definitions, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // the first step that a subagent must not reach, in the tool or in any tool it calls, or null
 // a host tool cannot be looked into, so it counts as unsafe; seen stops a loop of calls
 function unsafeForSubagent(tool, definitions, seen) {
@@ -543,6 +579,14 @@ function unsafeForSubagent(tool, definitions, seen) {
     }
   }
   return null;
+}
+
+// a tool argument from a model: text as it is, a list or object as JSON text (as print shows it), and null for none
+function inputText(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 // the model for a subagent: the host lends one (pi), or the API with the key from "use model"
@@ -588,7 +632,7 @@ async function runSubagentCommand(command, state) {
     }
     takeStep(command, state, state.maxSteps);
     const definition = state.definitions[name];
-    const args = definition.params.map((param) => (input[param] === undefined || input[param] === null ? null : String(input[param])));
+    const args = definition.params.map((param) => inputText(input[param]));
     const savedFrom = state.auditFrom;
     state.auditFrom = owner;
     // a root frame: the subagent's arguments have no labels, so its tool calls ask no taint questions
@@ -630,6 +674,10 @@ async function runSubagentCommand(command, state) {
     if (err instanceof SubagentError) {
       throw new ScriptError(redact(err.message, state), command);
     }
+    // a bad answer from the API or a model that fails: a script error, not a crash
+    if (!(err instanceof ScriptError)) {
+      throw new ScriptError("The subagent failed: " + redact(String(err && err.message), state), command);
+    }
     throw err;
   }
   // a model wrote the answer after it read tool output, so it is always untrusted
@@ -657,11 +705,11 @@ async function startSubagent(command, state) {
     }
     const globals = Object.create(null);
     const names = state.definitions[tool].params.map((param, index) => {
-      globals["$arg" + index] = input[param] === undefined || input[param] === null ? null : String(input[param]);
+      globals["$arg" + index] = inputText(input[param]);
       return "$arg" + index;
     });
     const source = "print " + tool + (names.length > 0 ? " " + names.join(", ") : "");
-    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null });
+    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null, previousOutputLabels: null });
     if (result.errors.length > 0) {
       return { content: result.errors.map((error) => error.message).join("\n"), isError: true };
     }
@@ -877,6 +925,73 @@ function revealSecrets(value, used) {
     copy[key] = revealSecrets(value[key], used);
   }
   return copy;
+}
+
+// the words for file errors from the system; the code goes in the message too
+const SYSTEM_ERRORS = {
+  EACCES: "permission denied",
+  EPERM: "permission denied",
+  ELOOP: "too many links",
+  ENOTDIR: "a part of the path is not a folder",
+  EISDIR: "it is a folder",
+  ENAMETOOLONG: "the name is too long",
+  ENOSPC: "the disk is full",
+  EROFS: "the file system is read-only",
+  EBUSY: "the file is busy",
+  EMFILE: "too many open files",
+  EEXIST: "it exists",
+  ENOENT: "not found",
+};
+
+// a raw JavaScript or system error becomes a script error at the command, so "on error" can handle it,
+// and the agent does not see a path on the host; other errors stay as they are
+function scriptErrorFor(err, node, state) {
+  if (err instanceof ScriptError || !(err instanceof Error)) {
+    return err;
+  }
+  const message = systemMessage(err, state);
+  return message === null ? err : new ScriptError(message, node);
+}
+
+function systemMessage(err, state) {
+  if (err instanceof RangeError && err.message.includes("call stack")) {
+    return "The script nests too deep to run. Use variables for parts of it";
+  }
+  if (err instanceof RangeError && /Invalid (string|array) length/.test(err.message)) {
+    return "A value is too large. Make it smaller";
+  }
+  if (err instanceof TypeError && err.message.includes("circular")) {
+    return "A value holds itself, so it cannot become text";
+  }
+  if (err.code === "ERR_INVALID_ARG_VALUE" && err.message.includes("null bytes")) {
+    return "A value holds a NUL character, and a program cannot take it. Remove the character";
+  }
+  if (typeof err.code === "string" && typeof err.syscall === "string") {
+    return "Cannot " + err.syscall + " " + systemPath(err.path, state) + ": " + (SYSTEM_ERRORS[err.code] || "system error") + " (" + err.code + ")";
+  }
+  return null;
+}
+
+// a path from a system error, relative to the project; a path outside it is not shown
+function systemPath(absolute, state) {
+  if (typeof absolute !== "string") {
+    return "a file";
+  }
+  // the system gives the real path, after links, and the root can be a link (on macOS, /var is /private/var)
+  for (const root of [state.root, realRootSync(state.root)]) {
+    if (isInside(absolute, root)) {
+      return nodePath.relative(root, absolute).split(nodePath.sep).join("/") || ".";
+    }
+  }
+  return "a file outside the project";
+}
+
+function realRootSync(root) {
+  try {
+    return fsSync.realpathSync(root);
+  } catch {
+    return root;
+  }
 }
 
 // an error object for the host; "file" is there only for errors in AGENTS.talk
@@ -1344,6 +1459,10 @@ function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
   const result = { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
+  // only when print showed labeled text; the host keeps them for "the previous output"
+  if (execution.outputLabels.size > 0) {
+    result.outputLabels = execution.outputLabels;
+  }
   // only when AGENTS.talk or the policy sets one; the host uses it to cut long output
   if (execution.outputLimit) {
     result.outputLimit = execution.outputLimit;
@@ -1407,6 +1526,7 @@ async function runCommands(commands, state, tools, maxSteps) {
         err = new ScriptError(secretUseMessage(err.secret, err.where || word, state), command);
         err.labels = caught.labels;
       }
+      err = scriptErrorFor(err, command, state);
       if (!canHandle(err, state)) {
         throw err;
       }
@@ -1490,6 +1610,7 @@ async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
     // a secret shows as <secret NAME>, and a secret's value in other text too
     const value = showSecrets(await evaluate(command.value, state));
+    state.execution.outputLabels = taint.union(state.execution.outputLabels, taint.current(state));
     // print shows a list of lines with their numbers, as an editor does
     if (isListOfLines(value)) {
       state.execution.output.push(redact(value.map((line) => lineLabel(line) + line.text).join("\n"), state));
@@ -1539,6 +1660,9 @@ async function runCommand(command, state, tools, maxSteps) {
     let count = null;
     if (command.kind === "times") {
       count = toNumber(await evaluate(command.value, state), command);
+      if (!Number.isInteger(count)) {
+        throw new ScriptError("repeat needs a whole number of times, found " + describe(count), command.value);
+      }
     }
     let index = 0;
     while (true) {
@@ -1605,7 +1729,7 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "write" || command.type === "append") {
-    const value = await evaluate(command.value, state);
+    const value = notNull(await evaluate(command.value, state), "The text to " + command.type + " is null. To make an empty file, write ''", command.value);
     const file = await evaluate(command.file, state);
     const text = toText(await asText(value, state, command));
     const step = changeStep(command.type, file, { text });
@@ -1622,7 +1746,7 @@ async function runCommand(command, state, tools, maxSteps) {
     const to = toNumber(await evaluate(range.to, state), command);
     let newText = null;
     if (command.type === "replaceLines") {
-      newText = toText(await asText(await evaluate(command.text, state), state, command));
+      newText = toText(await asText(notNull(await evaluate(command.text, state), "The new text is null. To take lines away, use remove lines", command.text), state, command));
     }
     const step = changeStep(command.type === "replaceLines" ? "replace" : "remove", file, { from, to, text: newText });
     await changeHooks("before", step, state, command);
@@ -1634,7 +1758,7 @@ async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "put") {
     const file = await evaluate(command.file, state);
     const number = toNumber(await evaluate(command.number, state), command);
-    const newText = toText(await asText(await evaluate(command.text, state), state, command));
+    const newText = toText(await asText(notNull(await evaluate(command.text, state), "The text to put is null. Give it a value", command.text), state, command));
     // an empty range: before line n puts the text just before it, after line n just after it
     const at = command.where === "before" ? number : number + 1;
     const step = changeStep("put", file, { line: number, where: command.where, text: newText });
@@ -1645,11 +1769,11 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "replace") {
-    let old = await evaluate(command.old, state);
+    let old = notNull(await evaluate(command.old, state), "The old text is null. Give it a value", command.old);
     if (!(old instanceof Pattern)) {
       old = toText(await asText(old, state, command));
     }
-    const replacement = toText(await asText(await evaluate(command.replacement, state), state, command));
+    const replacement = toText(await asText(notNull(await evaluate(command.replacement, state), "The new text is null. To take the match away, replace it with ''", command.replacement), state, command));
     if (old === "") {
       throw new ScriptError("Cannot replace empty text", command);
     }
@@ -1861,8 +1985,14 @@ async function evaluateNode(node, state) {
     const all = await linesOf(target, state, node);
     const from = toNumber(await evaluate(node.from, state), node);
     const to = toNumber(await evaluate(node.to, state), node);
-    // line numbers start at 1, both ends are included, and a range past the end stops at the last line
-    return all.slice(Math.max(from, 1) - 1, Math.max(to, 0));
+    if (!Number.isInteger(from) || from < 1) {
+      throw new ScriptError("Line numbers start at 1, found " + describe(from), node.from);
+    }
+    if (!Number.isInteger(to)) {
+      throw new ScriptError("A line number must be a whole number, found " + describe(to), node.to);
+    }
+    // both ends are included, and a range past the end stops at the last line
+    return all.slice(from - 1, Math.max(to, 0));
   }
   if (type === "read") {
     return await readText(await evaluate(node.file, state), state, node);
@@ -2009,6 +2139,7 @@ async function evaluateNode(node, state) {
   }
   if (type === "previousOutput") {
     taint.addLabel(state, taint.PRIVATE);
+    taint.add(state, state.previousOutputLabels);
     return state.previousOutput;
   }
   if (type === "processes") {
@@ -2246,7 +2377,7 @@ async function runProgram(command, state) {
     try {
       result = await spawnProgram(wrapped.program, wrapped.args, state.cwd, wrapped.env, limit, state, command);
     } finally {
-      await fs.rm(wrapped.tmp, { recursive: true, force: true });
+      await removeSandboxTmp(wrapped.tmp, state);
     }
   }
 
@@ -2260,22 +2391,37 @@ async function runProgram(command, state) {
   await runHooks("after", ["run"], step, state, command);
   return result;
 }
+// the sandbox's temp folder goes after the program; a program can leave a file there that cannot be removed,
+// and that is a warning, not a failed run
+async function removeSandboxTmp(tmp, state) {
+  try {
+    await fs.rm(tmp, { recursive: true, force: true });
+  } catch (err) {
+    state.execution.warnings.push({ message: "Could not remove the sandbox's temp folder (" + (err.code || "error") + "). Remove it later: " + tmp, line: 1, column: 1 });
+  }
+}
+
 // the program and arguments of run or start
 //   run 'mvn test': one text, split on spaces
 //   run 'mvn' with 'test', name: each argument as it is
 async function programAndArgs(command, state) {
-  const value = await evaluate(command.program, state);
   let program;
   let args = [];
   // for each argument: is it written out as text in the .talk file?
   let written = [];
-  if (command.args === null) {
+  if (command.args === null && command.program.type === "template") {
+    const words = await templateWords(command.program, state);
+    program = words.length > 0 ? words[0].text : "";
+    args = words.slice(1).map((word) => word.text);
+    written = words.slice(1).map((word) => word.written);
+  } else if (command.args === null) {
+    const value = await evaluate(command.program, state);
     const parts = toText(value).split(/\s+/).filter((part) => part !== "");
     program = parts[0];
     args = parts.slice(1);
     written = args.map(() => command.program.type === "string");
   } else {
-    program = toText(value);
+    program = toText(await evaluate(command.program, state));
     for (const arg of command.args) {
       const value = await evaluate(arg, state);
       // a list gives one argument for each item, such as each file of ./src/*.js
@@ -2293,8 +2439,49 @@ async function programAndArgs(command, state) {
   if (!program) {
     throw new ScriptError("Nothing to run", command);
   }
+  if (!programWritten(command)) {
+    const word = command.type === "start" ? "start" : "run";
+    throw new ScriptError("The program for " + word + " must be written out in " + (state.file || AGENTS_TALK) + ", not given by the agent. Write it in the tool, such as: " + word + " 'npm' with name", command.program);
+  }
   checkOptionArgs(args, written, command, state);
   return { program, args };
+}
+
+// run 'npm test ${name}': only the written-out text splits on spaces, so each ${} is one whole argument,
+// or a part of one, as in --name=${p}; a word is written out if it starts with written-out text
+async function templateWords(node, state) {
+  const words = [];
+  let word = null;
+  const add = (text, written) => {
+    if (word === null) {
+      word = { text: "", written };
+    }
+    word.text += text;
+  };
+  for (const part of node.parts) {
+    if (typeof part !== "string") {
+      const value = await evaluate(part, state);
+      if (value === null || value === undefined) {
+        throw new ScriptError("A value in the run text is null. Give the tool a value for it", part);
+      }
+      add(argText(value, state), false);
+      continue;
+    }
+    for (const piece of part.split(/(\s+)/)) {
+      if (/^\s+$/.test(piece)) {
+        if (word !== null) {
+          words.push(word);
+        }
+        word = null;
+      } else if (piece !== "") {
+        add(piece, true);
+      }
+    }
+  }
+  if (word !== null) {
+    words.push(word);
+  }
+  return words;
 }
 
 // a file is its path from the folder where the program runs, such as ./src/a.js or ../b.txt
@@ -2308,6 +2495,16 @@ function argText(value, state) {
     return relative.startsWith("../") || relative === ".." ? relative : "./" + relative;
   }
   return toText(value);
+}
+
+// the program is written out in the .talk file, so the agent cannot pick it: run 'npm' with x, or run 'npm test ${x}',
+// where the program is a whole word before the first ${}
+function programWritten(command) {
+  const node = command.program;
+  if (node.type === "string") {
+    return true;
+  }
+  return command.args === null && node.type === "template" && typeof node.parts[0] === "string" && /^\s*\S+\s/.test(node.parts[0]);
 }
 
 // the start of the argument is written out in the .talk file: 'x', 'x' + name, or 'x${name}'
@@ -2412,6 +2609,9 @@ async function runGit(command, state) {
   if (command.operation === "rebase") {
     await checkRebase(step.branch, state, env, command);
   }
+  if (command.operation === "push") {
+    await checkPushRemote(state, env, command);
+  }
 
   // commit adds the named files first, so new files can be committed too;
   // the commit then has only those files, even if other files are staged
@@ -2428,6 +2628,14 @@ async function runGit(command, state) {
       if (add.code !== 0) {
         throw new ScriptError("git add failed: " + add.output.trim(), command);
       }
+    }
+  }
+
+  // with the root in a subfolder of a repo, git output covers only the root's files, as reads do
+  if (["status", "log", "show"].includes(command.operation) || (command.operation === "diff" && command.value === null)) {
+    const prefix = await gitCheck(["rev-parse", "--show-prefix"], state, env, command);
+    if (prefix !== "") {
+      args.push(...(args.includes("--") ? ["."] : ["--", "."]));
     }
   }
 
@@ -2456,12 +2664,18 @@ async function runGit(command, state) {
 }
 
 // in a diff, replace the part for each .env or .env.* file with one line
+// a header can be "diff --git a/x b/x", "diff --cc x" for a merge, and git quotes a path with odd characters;
+// each word of the header is checked, so a path with spaces or quotes is still found
 function hideSecretDiffs(text) {
-  const parts = text.split(/(?=^diff --git )/m);
+  const parts = text.split(/(?=^diff --(?:git|cc|combined) )/m);
   return parts.map((part) => {
-    const header = /^diff --git a\/(.*) b\/(.*)$/m.exec(part);
-    if (header !== null && part.startsWith("diff --git ") && (isSecretFile(header[1]) || isSecretFile(header[2]))) {
-      return "diff --git a/" + header[1] + " b/" + header[2] + "\n(a .env file: not shown, since it holds secrets)\n";
+    if (!/^diff --(?:git|cc|combined) /.test(part)) {
+      return part;
+    }
+    const header = part.split("\n", 1)[0];
+    const words = header.replaceAll('"', "").split(" ").slice(2);
+    if (words.some((word) => isSecretFile(word.replace(/^[ab]\//, "")))) {
+      return header + "\n(a .env file: not shown, since it holds secrets)\n";
     }
     return part;
   }).join("");
@@ -2473,7 +2687,7 @@ async function branchName(command, state) {
   if (node.type === "variable" && !node.name.startsWith("$") && !Object.hasOwn(scopeFor(node.name, state), node.name)) {
     throw new ScriptError("A branch name is text, in quotes: " + gitExample(command, "'" + node.name + "'"), node);
   }
-  return toText(await evaluate(node, state));
+  return toText(notNull(await evaluate(node, state), "The branch name is null. Give it a value", node));
 }
 
 // the git command written out, for an error
@@ -2494,6 +2708,45 @@ function gitExample(command, name) {
 async function gitCheck(args, state, env, command) {
   const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
   return result.output.trimEnd();
+}
+
+// a remote that is a folder runs its own hooks on a push, and the hardened settings do not reach it;
+// a folder inside the project can hold hooks that the agent wrote, so a push to it is refused
+// a folder outside the project is the human's; see src/md/features/git.md
+async function checkPushRemote(state, env, command) {
+  const result = await spawnProgram("git", [...guardArgs(), "remote", "get-url", "--push", "--all", "origin"], state.root, env, state.timeLimit, state, command);
+  if (result.code !== 0) {
+    return;
+  }
+  const realRoot = await fs.realpath(state.root);
+  for (const url of result.output.split("\n").map((line) => line.trim()).filter((line) => line !== "")) {
+    const folder = localRemotePath(url);
+    if (folder === null) {
+      continue;
+    }
+    const absolute = nodePath.resolve(state.root, folder);
+    const real = await fs.realpath(absolute).catch(() => absolute);
+    if (isInside(absolute, state.root) || isInside(real, realRoot)) {
+      throw new ScriptError("git push cannot go to a remote inside the project, because it runs that repo's hooks, and a script can write them: " + url, command);
+    }
+  }
+}
+
+// the folder of a remote URL, or null for a network URL: file:///x, /x, ./x and ../x are folders;
+// https://h/x, ssh://h/x and the scp form host:x are not (a ":" before the first "/")
+function localRemotePath(url) {
+  if (url.startsWith("file://")) {
+    return decodeURIComponent(new URL(url).pathname);
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    return null;
+  }
+  const colon = url.indexOf(":");
+  const slash = url.indexOf("/");
+  if (colon !== -1 && (slash === -1 || colon < slash)) {
+    return null;
+  }
+  return url;
 }
 
 // a rebase rewrites the branch's commits, so it runs only on a clean branch that is not on a remote
@@ -2607,6 +2860,10 @@ async function gitArgs(command, state, step) {
       if (!(file instanceof FileRef)) {
         throw new ScriptError("git commit needs a file or a list of files, found " + describe(file), command.value);
       }
+      // the agent cannot change its own tools or audit, so it cannot commit them either; see src/md/features/git.md
+      if (await isProtected(file, state, command.value)) {
+        throw new ScriptError("A script cannot commit .talk files or the @/talk folder: " + file.path + ". A human commits them", command.value);
+      }
       // a hidden file, such as .env, often holds secrets
       const hidden = await isHidden(file, state, command.value);
       if (hidden !== null) {
@@ -2651,7 +2908,8 @@ async function gitArgs(command, state, step) {
     if (!isSafeCommitName(name)) {
       throw new ScriptError("Not a safe commit name: " + describe(name) + ". Use a commit id, a branch name, or HEAD~1", command.value);
     }
-    return ["show", "--no-ext-diff", "--no-textconv", "--no-show-signature", name, "--"];
+    // ^{commit}: only a commit, never a blob, so a blob id cannot show a .env file
+    return ["show", "--no-ext-diff", "--no-textconv", "--no-show-signature", name + "^{commit}", "--"];
   }
   if (op === "diff") {
     const args = ["diff", "--no-ext-diff", "--no-textconv", "--"];
@@ -2868,6 +3126,8 @@ const WAIT_UNTIL_LIMIT = 30_000;
 const WAIT_UNTIL_EVERY = 200;
 
 // wait for a time; cancel ends the wait at once
+const MAX_TIMER = 2 ** 31 - 1;
+
 function sleep(ms, state, node) {
   const signal = state.execution.signal;
   return new Promise((resolve, reject) => {
@@ -2875,14 +3135,23 @@ function sleep(ms, state, node) {
       reject(new Cancelled("Cancelled", node));
       return;
     }
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
+    // a timer can wait at most about 24.8 days, so a longer wait is a chain of timers; a negative wait is no wait
+    const end = Date.now() + Math.max(0, ms);
+    let timer;
+    const next = () => {
+      const left = end - Date.now();
+      if (left <= 0) {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+        return;
+      }
+      timer = setTimeout(next, Math.min(left, MAX_TIMER));
+    };
     const onAbort = () => {
       clearTimeout(timer);
       reject(new Cancelled("Cancelled", node));
     };
+    next();
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -3148,7 +3417,14 @@ async function runFetch(command, state) {
         if (value[name] === null || value[name] === undefined) {
           throw new ScriptError("The header " + describe(name) + " is null. Give it a value, or leave it out", arg.value);
         }
+        // the characters that HTTP allows in a header name; a line break could start a new header
+        if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) {
+          throw new ScriptError("Not a valid header name: " + describe(name) + ". Use letters, digits and '-'", arg.value);
+        }
         headers[name] = toText(revealSecrets(value[name], secrets));
+        if (/[\r\n\0]/.test(headers[name])) {
+          throw new ScriptError("The header " + describe(name) + " has a line break or a NUL character. Remove it", arg.value);
+        }
       }
     } else if (arg.name === "body") {
       // an object or a list goes as JSON
@@ -3274,6 +3550,10 @@ function parseUrl(text, node) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new ScriptError("fetch only takes http and https URLs, found " + describe(text), node);
   }
+  // fetch refuses a URL with a user name or password, and its error shows the password
+  if (url.username !== "" || url.password !== "") {
+    throw new ScriptError("A fetch URL cannot hold a user name or password. Send them in a header, such as Authorization", node);
+  }
   return url;
 }
 
@@ -3390,8 +3670,16 @@ function isPrivateHost(host) {
     if (groups.slice(0, 5).every((g) => g === 0) && (groups[5] === 0 || groups[5] === 0xffff)) {
       return true;
     }
+    // ::ffff:0:0:0/96 (IPv4-translated) holds an IPv4 address too
+    if (groups.slice(0, 4).every((g) => g === 0) && groups[4] === 0xffff && groups[5] === 0) {
+      return true;
+    }
     // NAT64 64:ff9b::/96 and 6to4 2002::/16 hold an IPv4 address
     if ((g0 === 0x64 && g1 === 0xff9b) || g0 === 0x2002) {
+      return true;
+    }
+    // 100::/64 discards packets, and 2001:db8::/32 is for documentation: no public service is there
+    if ((g0 === 0x100 && groups.slice(1, 4).every((g) => g === 0)) || (g0 === 0x2001 && g1 === 0xdb8)) {
       return true;
     }
     // fc00::/7 unique local; fe80::/10 link-local and fec0::/10 site-local; ff00::/8 multicast
@@ -3422,10 +3710,14 @@ function ipv6Groups(ip) {
 // with no host, no answer in time, or an answer that is not a choice, the result is null
 async function askHuman(command, state) {
   // a file is its path, as in + and ${}; write file's text to ask about its text
-  const question = toText(joinPart(await evaluate(command.question, state)));
+  const question = toText(joinPart(notNull(await evaluate(command.question, state), "The question is null. Give it a value", command.question)));
   const choices = [];
   for (const choice of command.choices) {
-    choices.push(toText(joinPart(await evaluate(choice, state))));
+    const text = toText(joinPart(notNull(await evaluate(choice, state), "A choice is null. Give it a value", choice)));
+    // the same choice twice is shown once
+    if (!choices.includes(text)) {
+      choices.push(text);
+    }
   }
   let limit = state.timeLimit;
   if (command.within !== null) {
@@ -3773,10 +4065,26 @@ async function runUndo(command, state) {
     throw new ScriptError("Cannot undo: these files changed after the script: " + changed.join(", ") + ". Nothing was changed", command);
   }
 
+  // if one file cannot be put back, the files before it go back to how they were, so undo changes all or nothing
   const restored = [];
-  for (const [path, text] of final) {
-    await restoreFile(path, text, state, command, finalLabels.get(path));
-    restored.push(path);
+  const was = [];
+  const changesBefore = state.execution.changes.length;
+  try {
+    for (const [path, text] of final) {
+      was.push({ path, text: await currentText(path, state) });
+      await restoreFile(path, text, state, command, finalLabels.get(path));
+      restored.push(path);
+    }
+  } catch (err) {
+    for (const { path, text } of was.reverse()) {
+      await putBack(path, text, state);
+    }
+    state.execution.changes.length = changesBefore;
+    const failed = scriptErrorFor(err, command, state);
+    if (failed instanceof ScriptError && !(failed instanceof Cancelled) && !(failed instanceof Rejected)) {
+      failed.message = "Cannot undo " + was[0].path + ": " + failed.message + ". Nothing was changed";
+    }
+    throw failed;
   }
 
   // the items are done: take them off the list
@@ -3793,6 +4101,20 @@ async function runUndo(command, state) {
     }
   }
   return restored;
+}
+
+// a raw write for a failed undo: no checks and no hooks, because it puts back what the checks saw
+async function putBack(path, text, state) {
+  const absolute = nodePath.resolve(state.root, path);
+  try {
+    if (text === null) {
+      await fs.rm(absolute, { force: true });
+    } else {
+      await fs.writeFile(absolute, text, "utf8");
+    }
+  } catch {
+    // the file cannot be written now either; the error for the undo names the first file
+  }
 }
 
 // the text of a project file now, or null if it does not exist
@@ -3905,8 +4227,9 @@ async function runHook(hook, step, state, node) {
   const savedResultLabels = state.resultLabels;
   const savedHandler = state.handler;
   const savedHandling = state.handling;
+  // the hook gets a copy of the step, so it cannot change what runs; see src/md/features/hooks.md
   const locals = Object.create(null);
-  setOwn(locals, hook.name, step);
+  setOwn(locals, hook.name, copyValue(step));
   state.variables = locals;
   state.handler = findHandler(hook.body);
   state.handling = false;
@@ -3936,6 +4259,24 @@ async function runHook(hook, step, state, node) {
     state.file = savedFile;
     state.auditFrom = savedFrom;
   }
+}
+
+// a deep copy of lists and plain objects; files, lines and secrets cannot change, so they stay as they are
+// the copy keeps the taint labels of the value
+function copyValue(value) {
+  let copy = value;
+  if (Array.isArray(value)) {
+    copy = value.map(copyValue);
+  } else if (isPlainObject(value)) {
+    copy = Object.create(Object.getPrototypeOf(value));
+    for (const [name, item] of Object.entries(value)) {
+      setOwn(copy, name, copyValue(item));
+    }
+  } else {
+    return value;
+  }
+  taint.attach(copy, taint.labelsOf(value));
+  return copy;
 }
 
 // what a "for" loop goes over: a list; null gives no passes
@@ -4044,6 +4385,14 @@ async function assign(target, value, state) {
   if (typeof name !== "string" && typeof name !== "number") {
     throw new ScriptError("A property name must be text or a number", target);
   }
+  // a list has items from 0 to its length; set at the length adds an item
+  if (Array.isArray(object) && !(Number.isInteger(name) && name >= 0 && name <= object.length)) {
+    throw new ScriptError("A list index must be a whole number from 0 to " + object.length + " (the length of the list), not " + describe(name), target);
+  }
+  // a value that holds itself has no end, so it cannot print or become json
+  if (holds(value, object, new Set())) {
+    throw new ScriptError("Cannot set '" + name + "': the value holds the list or object that it goes into", target);
+  }
   // some fields cannot change, for example the length of a list
   try {
     setOwn(object, name, value);
@@ -4052,6 +4401,18 @@ async function assign(target, value, state) {
   }
   // a list or object keeps one set of labels for all its items
   taint.attach(object, taint.current(state));
+}
+
+// true if value is target, or holds it at any depth
+function holds(value, target, seen) {
+  if (value === target) {
+    return true;
+  }
+  if (value === null || typeof value !== "object" || seen.has(value) || !(Array.isArray(value) || isPlainObject(value))) {
+    return false;
+  }
+  seen.add(value);
+  return Object.values(value).some((item) => holds(item, target, seen));
 }
 
 // defineProperty always makes a plain own field, even for names like __proto__
@@ -4133,20 +4494,20 @@ function evaluateBinary(node, left, right) {
     if (typeof left === "string" || typeof right === "string") {
       return toText(left) + toText(right);
     }
-    return toNumber(left, node) + toNumber(right, node);
+    return finite(toNumber(left, node) + toNumber(right, node), node);
   }
   if (op === "-") {
-    return toNumber(left, node) - toNumber(right, node);
+    return finite(toNumber(left, node) - toNumber(right, node), node);
   }
   if (op === "*") {
-    return toNumber(left, node) * toNumber(right, node);
+    return finite(toNumber(left, node) * toNumber(right, node), node);
   }
   if (op === "/") {
     const divisor = toNumber(right, node);
     if (divisor === 0) {
       throw new ScriptError("Division by zero", node);
     }
-    return toNumber(left, node) / divisor;
+    return finite(toNumber(left, node) / divisor, node);
   }
   if (op === "mod") {
     const divisor = toNumber(right, node);
@@ -4163,16 +4524,16 @@ function evaluateBinary(node, left, right) {
     return !sameValue(left, right);
   }
   if (op === "is less than") {
-    return toNumber(left, node) < toNumber(right, node);
+    return compared(left, node) < compared(right, node);
   }
   if (op === "is greater than") {
-    return toNumber(left, node) > toNumber(right, node);
+    return compared(left, node) > compared(right, node);
   }
   if (op === "is less than or equal to") {
-    return toNumber(left, node) <= toNumber(right, node);
+    return compared(left, node) <= compared(right, node);
   }
   if (op === "is greater than or equal to") {
-    return toNumber(left, node) >= toNumber(right, node);
+    return compared(left, node) >= compared(right, node);
   }
 
   if (op === "contains") {
@@ -4187,11 +4548,12 @@ function evaluateBinary(node, left, right) {
   if (op === "is not in") {
     return !contains(right, left, node);
   }
+  // null is no value, so no text starts or ends with it, and it starts with nothing
   if (op === "starts with") {
-    return toText(left).startsWith(toText(right));
+    return left !== null && right !== null && toText(left).startsWith(toText(right));
   }
   if (op === "ends with") {
-    return toText(left).endsWith(toText(right));
+    return left !== null && right !== null && toText(left).endsWith(toText(right));
   }
 
   throw new ScriptError("Unknown operator '" + op + "'", node);
@@ -4250,6 +4612,14 @@ function sameValue(left, right) {
   }
   if (right instanceof Line) {
     right = right.text;
+  }
+  // lists and objects are the same if their content is the same, at any depth
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((item, index) => sameValue(item, right[index]));
+  }
+  if (isPlainObject(left) && isPlainObject(right)) {
+    const names = Object.keys(left);
+    return names.length === Object.keys(right).length && names.every((name) => Object.hasOwn(right, name) && sameValue(left[name], right[name]));
   }
   return left === right;
 }
@@ -4336,6 +4706,13 @@ async function globFiles(base, pattern, state, node) {
   const namesGit = pattern.split("/").includes(".git");
   const ignored = await gitIgnored(state, node);
   const fixed = nodePath.resolve(base, fixedPart(pattern));
+  // a glob that leaves the root fails before it looks, so the error does not tell what is outside
+  const parts = pattern.split("/");
+  const wild = parts.findIndex((part) => /[*?[{]/.test(part));
+  checkInsideRoot(fixed, state, node, pattern);
+  if (wild !== -1 && parts.slice(wild).includes("..")) {
+    throw new ScriptError("A glob cannot have '..' after a wildcard: " + pattern, node);
+  }
   // fs.glob calls exclude for each file and folder, so a skipped folder is not walked
   const exclude = (path) => {
     const absolute = nodePath.resolve(base, path);
@@ -4347,7 +4724,7 @@ async function globFiles(base, pattern, state, node) {
   const files = [];
   for await (const match of fs.glob(pattern, { cwd: base, exclude })) {
     const absolute = nodePath.resolve(base, match);
-    checkInsideRoot(absolute, state, node, match);
+    checkInsideRoot(absolute, state, node, pattern);
     // a link that points to nothing, or to a file outside the root, is not in the list
     const stats = await fs.stat(absolute).catch(() => null);
     if (stats === null) {
@@ -4386,7 +4763,7 @@ async function realPath(file, state, node) {
     if (err.code === "ENOENT") {
       return null;
     }
-    throw new ScriptError("Cannot open " + file.path + ": " + err.message, node);
+    throw new ScriptError("Cannot open " + file.path + ": " + (SYSTEM_ERRORS[err.code] || "system error") + " (" + err.code + ")", node);
   }
   const realRoot = await fs.realpath(state.root);
   if (!isInside(real, realRoot)) {
@@ -4402,6 +4779,10 @@ async function fileExists(file, state, node) {
     return (await realPath(file, state, node)) !== null;
   } catch (err) {
     if (err instanceof ScriptError && err.message.startsWith("Path is outside the project root")) {
+      return false;
+    }
+    // a link to itself, or a path through a file, cannot be there
+    if (err instanceof ScriptError && /\((ELOOP|ENOTDIR|ENAMETOOLONG)\)$/.test(err.message)) {
       return false;
     }
     throw err;
@@ -4427,9 +4808,10 @@ async function readText(file, state, node) {
   const step = Object.create(null);
   step.path = file.path;
   await runHooks("before", ["read"], step, state, node);
-  const text = await fs.readFile(real, "utf8");
-  // remember what the script saw, for the stale-write check
-  state.seen.set(real, text);
+  const raw = await fs.readFile(real, "utf8");
+  // remember what is on disk, for the stale-write check; the script sees the text without a BOM
+  state.seen.set(real, raw);
+  const text = withoutBom(raw);
   step.text = text;
   // file text is private: it must not leave the machine without a question
   taint.addLabel(state, taint.PRIVATE);
@@ -4445,10 +4827,21 @@ async function readText(file, state, node) {
   return text;
 }
 
-// .env and .env.* in any folder hold secrets, so scripts cannot read them; see src/md/features/secrets.md
+// the UTF-8 byte order mark that some editors put at the start of a file
+const BOM = String.fromCharCode(0xfeff);
+
+function withoutBom(text) {
+  return text.startsWith(BOM) ? text.slice(1) : text;
+}
+
+function lineCount(count) {
+  return count + (count === 1 ? " line" : " lines");
+}
+
+// .env, .env.* and .envrc (direnv) in any folder hold secrets, so scripts cannot read them; see src/md/features/secrets.md
 function isSecretFile(path) {
   const name = nodePath.basename(path);
-  return name === ".env" || name.startsWith(".env.");
+  return name === ".env" || name.startsWith(".env.") || name === ".envrc";
 }
 
 // write or append text to a file, and record the change
@@ -4473,20 +4866,28 @@ async function editLines(file, from, to, newText, state, node, putLine) {
     throw new ScriptError("File changed since it was read: " + file.path + ". Read it again", node);
   }
 
-  const parts = text.split("\n");
+  // a BOM is not a part of line 1; writeText puts it back
+  const parts = withoutBom(text).split("\n");
   const finalBreak = parts.length > 0 && parts[parts.length - 1] === "";
   if (finalBreak) {
     parts.pop();
   }
   const count = parts.length;
+  // an empty file: put before line 1, or after line 0, adds the first line
+  const firstLine = count === 0 && from === 1 && (putLine === 0 || putLine === 1);
   if (putLine !== undefined) {
-    if (!Number.isInteger(putLine) || putLine < 1 || putLine > count) {
-      throw new ScriptError("Line " + putLine + " is not in " + file.path + ", which has " + count + " lines", node);
+    if (!firstLine && (!Number.isInteger(putLine) || putLine < 1 || putLine > count)) {
+      throw new ScriptError("Line " + putLine + " is not in " + file.path + ", which has " + lineCount(count), node);
     }
-  } else if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > count || from > to) {
-    throw new ScriptError("Lines " + from + " to " + to + " are not in " + file.path + ", which has " + count + " lines", node);
+  } else if (Number.isInteger(from) && Number.isInteger(to) && from > to) {
+    throw new ScriptError("Lines " + from + " to " + to + " are in the wrong order. Write the smaller number first", node);
+  } else if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > count) {
+    throw new ScriptError("Lines " + from + " to " + to + " are not in " + file.path + ", which has " + lineCount(count), node);
   }
 
+  // a file with CRLF line breaks keeps them: each part keeps its "\r", and new lines get one
+  const firstBreak = text.indexOf("\n");
+  const crlf = firstBreak > 0 && text[firstBreak - 1] === "\r";
   let newParts = [];
   if (newText !== null) {
     newParts = newText.split("\n");
@@ -4495,8 +4896,13 @@ async function editLines(file, from, to, newText, state, node, putLine) {
     if (newParts.length > 1 && newParts[newParts.length - 1] === "") {
       newParts.pop();
     }
+    newParts = newParts.map((part) => part.replace(/\r$/, "") + (crlf ? "\r" : ""));
   }
   const old = parts.splice(from - 1, to - from + 1, ...newParts);
+  // the last line of a file with no final line break has no "\r" either
+  if (!finalBreak && parts.length > 0) {
+    parts[parts.length - 1] = parts[parts.length - 1].replace(/\r$/, "");
+  }
   let result = parts.join("\n");
   if (finalBreak && parts.length > 0) {
     result += "\n";
@@ -4505,7 +4911,7 @@ async function editLines(file, from, to, newText, state, node, putLine) {
 
   const oldLines = [];
   for (let index = 0; index < old.length; index++) {
-    oldLines.push(new Line(from + index, old[index]));
+    oldLines.push(new Line(from + index, old[index].replace(/\r$/, "")));
   }
   return oldLines;
 }
@@ -4519,7 +4925,12 @@ async function writeText(file, text, append, state, node) {
     if (!stats.isFile()) {
       throw new ScriptError("Not a file: " + file.path, node);
     }
-    before = await fs.readFile(real, "utf8");
+    // a file that is not UTF-8 would lose bytes, and undo could not put them back
+    const bytes = await fs.readFile(real);
+    before = bytes.toString("utf8");
+    if (!Buffer.from(before, "utf8").equals(bytes)) {
+      throw new ScriptError("A script cannot change " + file.path + ", because it is not UTF-8 text", node);
+    }
     // stale-write check: the file changed after this script read it
     // append is not checked, because it keeps what is in the file
     if (!append && state.seen.has(real) && state.seen.get(real) !== before) {
@@ -4533,6 +4944,9 @@ async function writeText(file, text, append, state, node) {
   let after = text;
   if (append && before !== null) {
     after = before + text;
+  } else if (before !== null && before.startsWith(BOM) && !after.startsWith(BOM)) {
+    // a file that had a BOM keeps it; reads do not show it
+    after = BOM + after;
   }
   await fs.writeFile(real, after, "utf8");
   state.seen.set(await fs.realpath(real), after);
@@ -4773,7 +5187,8 @@ async function replaceInFile(file, old, replacement, state, command) {
   await changeHooks("before", step, state, command);
   const before = await readText(file, state, command);
   const { text, replacements } = await replaceIn(before, old, replacement, state, command);
-  if (replacements.length > 0) {
+  // a replace that gives the same text writes nothing, so undo does not get a step that changes nothing
+  if (replacements.length > 0 && text !== before) {
     await writeText(file, text, false, state, command);
   }
   await changeHooks("after", step, state, command);
@@ -4858,7 +5273,7 @@ async function fileProperty(file, name, state, node) {
 
 function contains(container, item, node) {
   if (typeof container === "string") {
-    return container.includes(toText(item));
+    return item !== null && container.includes(toText(item));
   }
   if (Array.isArray(container)) {
     return container.some((each) => sameValue(each, item));
@@ -4882,19 +5297,47 @@ function isEmpty(value) {
   return false;
 }
 
-// false, null, 0, "" and empty lists are false, everything else is true
+// false, null, 0, "", empty lists and empty objects are false, everything else is true
 function isTrue(value) {
   if (Array.isArray(value)) {
     return value.length > 0;
   }
+  if (isPlainObject(value)) {
+    return Object.keys(value).length > 0;
+  }
   return Boolean(value);
+}
+
+// < > <= >= compare numbers only; text that holds a number counts as a number, as in math
+function compared(value, node) {
+  try {
+    return toNumber(value, node);
+  } catch {
+    throw new ScriptError("A comparison such as < needs numbers, and " + describe(value) + " is not a number", node);
+  }
+}
+
+// null would leave as the text "null", which is almost always a wrong variable
+function notNull(value, message, node) {
+  if (value === null || value === undefined) {
+    throw new ScriptError(message, node);
+  }
+  return value;
+}
+
+// math with very large numbers gives Infinity or NaN, which are not numbers for a script
+function finite(number, node) {
+  if (!Number.isFinite(number)) {
+    throw new ScriptError("The result is too large to be a number", node);
+  }
+  return number;
 }
 
 function toNumber(value, node) {
   if (typeof value === "number") {
     return value;
   }
-  if (typeof value === "string" && value.trim() !== "" && !isNaN(Number(value))) {
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
     return Number(value);
   }
   throw new ScriptError("Expected a number, found " + describe(value), node);

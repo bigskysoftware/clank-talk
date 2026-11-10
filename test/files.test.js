@@ -111,7 +111,8 @@ test("../ inside the root is fine", async () => {
 
 test("paths outside the root are refused", async () => {
   assert.deepEqual(await errors("print ../outside.txt"), ["Path is outside the project root: ../outside.txt"]);
-  assert.deepEqual(await errors("print ../*.txt"), ["Path is outside the project root: ../outside.txt"]);
+  // the error names the glob, not a file that it found outside
+  assert.deepEqual(await errors("print ../*.txt"), ["Path is outside the project root: ../*.txt"]);
 });
 
 test("symlinks that point outside the root are refused", async () => {

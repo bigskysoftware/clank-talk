@@ -77,8 +77,9 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 Approved:
 
 - `the` is optional before any expression. It changes nothing. Agents are encouraged to use it where it makes code clearer.
-- Approved: after `the`, a word is always a value, even a command word. Thus `the write's path` works in a hook, and `set the write to ...` sets a variable named `write`. Without `the`, a command word at the start of a value is an error. To refer to a command by name, write `the <command>`.
+- Approved: after `the`, a word is always a value, even a command word. Thus `the write's path` works in a hook, and `set the write to ...` sets a variable named `write`. Without `the`, a command word at the start of a value is an error. To refer to a command by name, write `the <command>`. Approved (built): a tool name after `the` is a value too, so a hook for a tool reads `the deploy's args`.
 - Approved (built): the error for a command word as a name names the fix. `set stop to 5` gives: `'stop' is a command word, so it cannot be a name. Use another name, such as 'my_stop', or write 'the stop'`. A command word in a value gives: `Expected a value, found the command word 'stop'. If it is a name, write 'the stop'`. The grammar does not change.
+- Approved (built): `end`, `then` and `else` are block words, and cannot be names, also after `the`. `set end to 1` gives one error: `'end' is a block word, so it cannot be a name. Use another name, such as 'last'`.
 - `it` and `result` are special words. A command sets them. `the result` and `result` are the same.
 - Lists `[1, 2]` and objects `{name: 'x'}`, as in JavaScript.
 - No function calls in expressions for now.
@@ -126,6 +127,7 @@ Each rule is **proposed** until a human approves it. See AGENTS.md.
 - Approved: `'` after a word character, `)`, `]` or `}` is a possessive only before a non-word character. Thus `file's`, `[1, 2]'s last` and `(x as json)'s a` are possessives, and `say 'sun'` is a string. This replaces the earlier rule that `'s` does not work after `)`, `]` or `}`.
 - Approved: both `'` and `"` make strings.
 - Approved: a string can span lines. A missing quote takes the rest of the source.
+- Approved (built): in a script with CRLF line breaks, a quoted string that spans lines has LF line breaks, as `|` blocks and raw strings do.
 - Approved: `${...}` works in both kinds of string. Any expression can go inside, with quotes too.
 - Approved: in a string with line breaks, the indent that all non-blank lines share is removed, so the string can be indented with the script.
 - Approved: `\${` gives a plain `${`. This follows the escape rule.
@@ -159,6 +161,7 @@ in ./src/app.js
 - Limit: a `,` ends a path, so a brace glob such as `./src/*.{js,ts}` does not work.
 - Approved: `./"..."` (and `../"..."`, `@/"..."`) puts the path in double quotes, so it can hold spaces, `)` and `,`.
 - Approved: the path ends at the closing quote. Escapes do not work in a quoted path.
+- Approved (built): a `/` right after the closing quote goes on with the path: `./"my dir"/a.txt` is `my dir/a.txt`. Before, the `/` was a division.
 
 ### Not yet
 

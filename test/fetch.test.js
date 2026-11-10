@@ -131,6 +131,16 @@ test("a null header is an error", async () => {
   assert.deepEqual(await errors(`fetch '${base}/text' with headers: { 'X-Key': null }`), ["The header 'X-Key' is null. Give it a value, or leave it out"]);
 });
 
+test("a line break in a header name or value is an error, before the request", async () => {
+  assert.deepEqual(await errors(`fetch '${base}/text' with headers: { 'X\\nY': 1 }`), ["Not a valid header name: 'X\nY'. Use letters, digits and '-'"]);
+  assert.deepEqual(await errors(`fetch '${base}/text' with headers: { 'X-Key': 'a\\r\\nX-Other: b' }`), ["The header 'X-Key' has a line break or a NUL character. Remove it"]);
+});
+
+test("a URL with a user name or password is an error that does not show the password", async () => {
+  const [message] = await errors(`fetch 'http://user:hunter22@127.0.0.1:1/'`);
+  assert.equal(message, "A fetch URL cannot hold a user name or password. Send them in a header, such as Authorization");
+});
+
 test("limits", async () => {
   assert.deepEqual(await errors(`fetch '${base}/big'`), [`fetch got more than 5242880 bytes from ${base}/big`]);
   assert.deepEqual(await errors("fetch 'file:///etc/passwd'"), ["fetch only takes http and https URLs, found 'file:///etc/passwd'"]);
@@ -153,6 +163,9 @@ test("private hosts in every form are refused, and a *. pattern does not allow t
     "http://198.18.0.1/": "198.18.0.1",
     "http://224.0.0.1/": "224.0.0.1",
     "http://0x7f.1/": "127.0.0.1",
+    "http://[::ffff:0:7f00:1]/": "[::ffff:0:7f00:1]",
+    "http://[100::1]/": "[100::1]",
+    "http://[2001:db8::1]/": "[2001:db8::1]",
   };
   for (const [url, host] of Object.entries(hosts)) {
     assert.match((await errors(`fetch '${url}'`))[0], new RegExp("^fetch refused: " + host.replace(/[.[\]]/g, "\\$&") + " is a local or private address"), url);

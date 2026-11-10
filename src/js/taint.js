@@ -109,6 +109,11 @@ export function withValue(state, value, canLabel) {
   }
 }
 
+// the labels of a list or object, for a copy of it
+export function labelsOf(value) {
+  return objectLabels.get(value) || none();
+}
+
 // a list or object takes these labels too, for example a hook step
 export function attach(value, labels) {
   if (value === null || typeof value !== "object" || labels.size === 0) {
