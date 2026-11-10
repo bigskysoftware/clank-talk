@@ -234,12 +234,14 @@ export function macosProfile(plan) {
   }
   lines.push("(allow file-write* " + writes.join(" ") + ")");
 
-  // the same rules as scripts: no .git, no .talk files, no @/talk, no hidden files in the project
+  // the same rules as scripts: no hidden files in the project, except what "allow changes to" allows;
+  // then, after the allows, because the last rule that matches wins: never .git, .talk files or @/talk
   const root = regexText(plan.root);
-  lines.push("(deny file-write* (subpath \"" + plan.root + "/.git\") (subpath \"" + plan.root + "/talk\") (regex #\"^" + root + "/(.*/)?[^/]*\\.talk$\") (regex #\"^" + root + "/(.*/)?\\.[^/]*\"))");
+  lines.push("(deny file-write* (regex #\"^" + root + "/(.*/)?\\.[^/]*\"))");
   for (const path of plan.allowedChanges) {
     lines.push("(allow file-write* (subpath \"" + plan.root + "/" + path + "\"))");
   }
+  lines.push("(deny file-write* (subpath \"" + plan.root + "/.git\") (subpath \"" + plan.root + "/talk\") (regex #\"^" + root + "/(.*/)?[^/]*\\.talk$\"))");
 
   // secrets, and .env files in the project, are never read
   const secrets = [];

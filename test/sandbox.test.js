@@ -70,11 +70,11 @@ test("on macOS: a sandboxed program can write the project, but not .git, a hidde
     const script = [
       "const fs = require('fs');",
       "const tryIt = (p) => { try { fs.mkdirSync(require('path').dirname(p), { recursive: true }); fs.writeFileSync(p, 'x'); return 'yes'; } catch (e) { return 'no'; } };",
-      "console.log(['a.txt', 'src/b.txt', '.git/x', '.env', 'src/.hidden', 'x.talk', 'talk/y', '.github/ci.yml', '../outside.txt'].map(tryIt).join(' '));",
+      "console.log(['a.txt', 'src/b.txt', '.git/x', '.env', 'src/.hidden', 'x.talk', 'talk/y', '.github/ci.yml', '.github/x.talk', '../outside.txt'].map(tryIt).join(' '));",
     ].join("\n");
     const wrapped = await wrapCommand("macos", plan, "node", ["-e", script], plan.root);
     const out = execFileSync(wrapped.program, wrapped.args, { cwd: plan.root, env: { PATH: process.env.PATH, TMPDIR: tmp }, encoding: "utf8" });
-    assert.equal(out.trim(), "yes yes no no no no no yes no");
+    assert.equal(out.trim(), "yes yes no no no no no yes no no");
   } finally {
     await fs.rm(root, { recursive: true, force: true });
     await fs.rm(tmp, { recursive: true, force: true });

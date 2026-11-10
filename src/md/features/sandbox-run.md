@@ -23,6 +23,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 ## What the sandbox allows
 
 - Approved (built): writes only inside the project, and never to `.git/`, `.talk` files, `@/talk/`, or hidden files and folders (the same rules as scripts, plus what `allow changes to` allows). Also the program's own temp folder.
+- Approved (built): `allow changes to` opens only hidden paths. `.git/`, `.talk` files and `@/talk/` stay closed inside an allowed folder too, such as `.github/x.talk` under `allow changes to @/.github/`. On macOS, the profile denies them after the allows, because the last rule that matches wins.
 - Approved: no home folder by default. A program can read:
   - system folders: `/usr`, `/bin`, `/sbin`, `/System`, `/Library`, `/etc`, `/opt`, `/dev`, and its own temp folder
   - the project
