@@ -8,6 +8,7 @@
 import { parse } from "./parser.js";
 import { helpIndex, helpFor } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
+import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
@@ -141,6 +142,8 @@ export function start(source, options = {}) {
       controller.abort();
     },
     done: null,
+    // runs find, replace and matches with a pattern, in a worker thread with a time limit
+    patterns: new PatternWorker(),
   };
 
   if (options.signal) {
@@ -268,6 +271,7 @@ async function execute(source, options, execution) {
   try {
     await runCommands(script.commands, state, tools, maxSteps);
   } catch (err) {
+    execution.patterns.stop();
     if (err instanceof Cancelled) {
       status = "cancelled";
       failure = [errorFor(err)];
@@ -281,6 +285,7 @@ async function execute(source, options, execution) {
     }
   }
 
+  execution.patterns.stop();
   recordUndo(state);
   await writeAudit(state, source, status, failure);
   return finish(execution, status, failure);
@@ -944,17 +949,21 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "replace") {
-    const old = toText(await asText(await evaluate(command.old, state), state, command));
+    let old = await evaluate(command.old, state);
+    if (!(old instanceof Pattern)) {
+      old = toText(await asText(old, state, command));
+    }
     const replacement = toText(await asText(await evaluate(command.replacement, state), state, command));
     if (old === "") {
       throw new ScriptError("Cannot replace empty text", command);
     }
     const target = await evaluate(command.target, state);
     if (target instanceof FileRef) {
-      const step = changeStep("replace", target, { old, new: replacement });
+      // hooks see the pattern's text as old
+      const step = changeStep("replace", target, { old: old instanceof Pattern ? old.source : old, new: replacement });
       await changeHooks("before", step, state, command);
       const before = await readText(target, state, command);
-      const { text, replacements } = replaceAll(before, old, replacement);
+      const { text, replacements } = await replaceIn(before, old, replacement, state, command);
       if (replacements.length > 0) {
         await writeText(target, text, false, state, command);
       }
@@ -965,7 +974,7 @@ async function runCommand(command, state, tools, maxSteps) {
     }
     const isAssignable = command.target.type === "variable" || command.target.type === "property" || command.target.type === "index";
     if (typeof target === "string" && isAssignable) {
-      const { text, replacements } = replaceAll(target, old, replacement);
+      const { text, replacements } = await replaceIn(target, old, replacement, state, command);
       await assign(command.target, text, state);
       state.result = replacements;
       warnIfNoMatch(replacements, old, "the variable", state, command);
@@ -1102,12 +1111,24 @@ async function evaluate(node, state) {
   }
   // find as a value: set hits to find 'TODO' in @/src/**/*.js
   if (type === "find") {
-    const text = toText(await asText(await evaluate(node.text, state), state, node));
+    let text = await evaluate(node.text, state);
+    if (!(text instanceof Pattern)) {
+      text = toText(await asText(text, state, node));
+    }
     if (text === "") {
       throw new ScriptError("Cannot find empty text", node);
     }
     const target = await evaluate(node.target, state);
     return await findLines(text, target, state, node);
+  }
+  // pattern '<regexp>': a JavaScript regexp, with the u flag
+  if (type === "pattern") {
+    const source = toText(await evaluate(node.source, state));
+    try {
+      return new Pattern(source);
+    } catch (err) {
+      throw new ScriptError("Not a valid pattern: " + err.message, node);
+    }
   }
   if (type === "null") {
     return null;
@@ -1241,6 +1262,14 @@ async function evaluate(node, state) {
     }
     let left = await evaluate(node.left, state);
     let right = await evaluate(node.right, state);
+    // <text> matches pattern '<regexp>'
+    if (node.operator === "matches") {
+      if (!(right instanceof Pattern)) {
+        throw new ScriptError("matches needs a pattern, such as: matches pattern '^v[0-9]+', found " + describe(right), node.right);
+      }
+      const answer = await patternJob({ kind: "test", source: right.source, text: toText(await asText(left, state, node)) }, state, node);
+      return answer.matches;
+    }
     // text operators use the text of a file or a line
     if (TEXT_OPERATORS.includes(node.operator)) {
       left = await asText(left, state, node);
@@ -3250,11 +3279,28 @@ function warnIfNoMatch(replacements, old, where, state, node) {
   if (replacements.length > 0) {
     return;
   }
-  const warning = { message: "No match in " + where + " for " + describe(old), line: node.line, column: node.column };
+  const shown = old instanceof Pattern ? "pattern " + describe(old.source) : describe(old);
+  const warning = { message: "No match in " + where + " for " + shown, line: node.line, column: node.column };
   if (state.file) {
     warning.file = state.file;
   }
   state.execution.warnings.push(warning);
+}
+
+// replace text or a pattern; a pattern's new text can use $1, $<name>, $& and $$
+async function replaceIn(text, old, replacement, state, node) {
+  if (!(old instanceof Pattern)) {
+    return replaceAll(text, old, replacement);
+  }
+  const answer = await patternJob({ kind: "replace", source: old.source, text, replacement }, state, node);
+  const replacements = [];
+  for (const found of answer.replacements) {
+    const before = text.slice(0, found.index);
+    const line = before.split("\n").length;
+    const column = found.index - before.lastIndexOf("\n");
+    replacements.push({ line, column, old: found.old, new: found.new });
+  }
+  return { text: answer.text, replacements };
 }
 
 // replace every match, and list where each one was in the old text
@@ -3420,15 +3466,30 @@ function toText(value) {
 
 // the lines that contain the text, in a file, a list of files, or text
 // lines from a file know their file, so print can show path:number
+// a job for the pattern worker; a job that runs too long is a script error
+async function patternJob(job, state, node) {
+  try {
+    return await state.execution.patterns.run(job);
+  } catch (err) {
+    if (err.timedOut) {
+      throw new ScriptError("The pattern ran for more than " + PATTERN_TIME_LIMIT / 1000 + " seconds, so it was stopped. A pattern such as (a+)+ can run for a very long time. Make it simpler", node);
+    }
+    throw new ScriptError("The pattern failed: " + err.message, node);
+  }
+}
+
+// the lines that contain the text, or that match the pattern
+async function matchingLines(text, lines, state, node) {
+  if (!(text instanceof Pattern)) {
+    return lines.filter((line) => line.text.includes(text));
+  }
+  const answer = await patternJob({ kind: "lines", source: text.source, lines: lines.map((line) => line.text) }, state, node);
+  return answer.indexes.map((index) => lines[index]);
+}
+
 async function findLines(text, target, state, node) {
   if (typeof target === "string") {
-    const found = [];
-    for (const line of splitLines(target)) {
-      if (line.text.includes(text)) {
-        found.push(line);
-      }
-    }
-    return found;
+    return await matchingLines(text, splitLines(target), state, node);
   }
   let files = null;
   if (target instanceof FileRef) {
@@ -3440,11 +3501,9 @@ async function findLines(text, target, state, node) {
   }
   const found = [];
   for (const file of files) {
-    for (const line of splitLines(await readText(file, state, node))) {
-      if (line.text.includes(text)) {
-        line.file = file;
-        found.push(line);
-      }
+    for (const line of await matchingLines(text, splitLines(await readText(file, state, node)), state, node)) {
+      line.file = file;
+      found.push(line);
     }
   }
   return found;

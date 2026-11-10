@@ -286,6 +286,9 @@ export function parse(source, options = {}) {
     } else if (isWord("contains")) {
       i++;
       operator = "contains";
+    } else if (isWord("matches")) {
+      i++;
+      operator = "matches";
     } else if (isWord("exists")) {
       i++;
       operator = "exists";
@@ -535,6 +538,20 @@ export function parse(source, options = {}) {
       const findToken = current();
       i++;
       return parseFind(findToken, parseAccess);
+    }
+
+    // pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
+    if (isWord("pattern")) {
+      const after = tokens[i + 1];
+      if (after !== undefined && after.line === current().line && (after.type === "string" || after.type === "template")) {
+        const patternToken = current();
+        i++;
+        const source = parseAccess();
+        if (source === null) {
+          return null;
+        }
+        return node("pattern", patternToken, { source });
+      }
     }
 
     // read as an expression: set readme to read @/README.md

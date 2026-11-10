@@ -92,7 +92,7 @@ export const HELP = [
   {
     name: "replace", kind: "command",
     syntax: "replace <old> with <new> in <file or variable> | replace lines <a> to <b> of <file> with <text>",
-    description: "Replace every match of the old text. The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
+    description: "Replace every match of the old text, or of a pattern (help pattern). The result lists each replacement, so 'if the result is empty' means no match. No match also gives a warning. Or replace lines by number: that needs a read of the file first, and the result is the old lines.",
     examples: ["replace 'var ' with 'let ' in ./src/app.js", "read ./a.js\nreplace lines 2 to 3 of ./a.js with 'let x = 1'"],
   },
   {
@@ -103,7 +103,7 @@ export const HELP = [
   },
   {
     name: "find", kind: "command",
-    syntax: "find <text> in <file, list of files, or text>   (also a value: set hits to find 'x' in f)",
+    syntax: "find <text or pattern> in <file, list of files, or text>   (also a value: set hits to find 'x' in f)",
     description: "Put the lines that contain the text in the result. Each line has number and text, and file when it comes from a file. print shows path:number: text. The match is plain text, and letter case counts.",
     examples: ["find 'TODO' in ./src/**/*.js\nprint the result", "find 'FAIL' in the result's output\nif the result is empty print 'all good' end", "set hits to find 'TODO' in ./src/**/*.js\nprint hits's length"],
   },
@@ -285,9 +285,15 @@ export const HELP = [
   },
   {
     name: "contains", kind: "expression",
-    syntax: "contains  does not contain  starts with  ends with  is in  is not in  exists  does not exist  is empty  is not empty",
-    description: "Checks for text, lists and files. On a file or line they use its text.",
-    examples: ["if the file contains 'TODO' print the file's path end"],
+    syntax: "contains  does not contain  starts with  ends with  matches  is in  is not in  exists  does not exist  is empty  is not empty",
+    description: "Checks for text, lists and files. On a file or line they use its text. matches takes a pattern.",
+    examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern '^v[0-9]+' print 'a version' end"],
+  },
+  {
+    name: "pattern", kind: "expression",
+    syntax: "pattern '<regexp>'",
+    description: "A regexp, in JavaScript syntax with the u flag, for find, replace and matches. Use a raw string for backslashes: pattern \"\"\"\\d+\"\"\". In replace, the new text can use $1, $<name>, $& and $$. A pattern that runs for more than 2 seconds is stopped.",
+    examples: ["set failures to find pattern 'not ok|FAIL' in the result's output", "replace pattern \"\"\"(\\w+)@old\\.com\"\"\" with '$1@new.com' in ./users.txt", "if tag matches pattern \"\"\"^v\\d+\\.\\d+$\"\"\" print 'a release' end"],
   },
   {
     name: "as", kind: "expression",

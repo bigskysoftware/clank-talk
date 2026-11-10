@@ -284,6 +284,18 @@ set todos to find 'TODO' in @/src/**/*.js
 print todos's length
 ```
 
+Need more than plain text? Use a `pattern`. It is a JavaScript regexp:
+
+```talk
+set failures to find pattern 'not ok|FAIL' in the result's output
+replace pattern """(\w+)@old\.com""" with '$1@new.com' in ./users.txt
+if tag matches pattern """^v\d+\.\d+$"""
+  print 'a release'
+end
+```
+
+In `replace`, `$1`, `$<name>` and `$&` put the matched parts back. A pattern that runs wild is stopped after 2 seconds, so one bad regexp can't hang your agent.
+
 ### Changing Files
 
 ```talk
