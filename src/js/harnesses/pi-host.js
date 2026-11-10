@@ -1,8 +1,8 @@
 // pi host: runs ClankTalk inside pi, as the only tool; see src/md/infrastructure/pi.md
-// clank-talk-pi.js is the entry file. It gives this module pi's TypeBox, so the tests can run without pi.
+// pi.js is the entry file. It gives this module pi's TypeBox, so the tests can run without pi.
 
-import { run, stopAllProcesses } from "./clank-talk.js";
-import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "./host.js";
+import { run, stopAllProcesses } from "../clank-talk.js";
+import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 

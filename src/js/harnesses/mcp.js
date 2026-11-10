@@ -8,8 +8,8 @@
 // Logs go to stderr. stdout is only for protocol messages.
 
 import { watch } from "node:fs";
-import { run, stopAllProcesses, VERSION } from "./clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "./host.js";
+import { run, stopAllProcesses, VERSION } from "../clank-talk.js";
+import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 

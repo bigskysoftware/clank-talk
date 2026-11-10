@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { clankTalkExtension } from "../src/js/pi-host.js";
+import { clankTalkExtension } from "../src/js/harnesses/pi-host.js";
 
 // a fake pi: it keeps what the extension registers
 function fakePi() {

@@ -3,12 +3,12 @@
 Two hosts run the runtime: the MCP host and a pi extension.
 
 - Shared host code: `src/js/host.js` (tool description, result format, output cut, policy load). There is no formal host API.
-- pi extension: `src/js/clank-talk-pi.js` and `src/js/pi-host.js`. It runs in pi's process, with `ask` through pi's UI.
+- pi extension: `src/js/harnesses/pi.js` and `src/js/harnesses/pi-host.js`. It runs in pi's process, with `ask` through pi's UI.
 - Other hosts: open.
 
 ## MCP host
 
-Code: `src/js/mcp.js`, started by `bin/clank-talk-mcp.js [--root <dir>]`.
+Code: `src/js/harnesses/mcp.js`, started by `bin/clank-talk-mcp.js [--root <dir>]`.
 
 Approved:
 

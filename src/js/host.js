@@ -1,5 +1,5 @@
 // what the hosts share: the tool description, the result text for the agent, and agent scopes
-// the hosts are the MCP server (mcp.js) and the pi extension (pi-host.js)
+// the hosts are in harnesses/: the MCP server (mcp.js) and the pi extension (pi.js, pi-host.js)
 
 import { readFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";

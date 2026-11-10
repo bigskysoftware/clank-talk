@@ -19,7 +19,7 @@
     "clank-talk-mcp": "bin/clank-talk-mcp.js"
   },
   "pi": {
-    "extensions": ["./src/js/clank-talk-pi.js"]
+    "extensions": ["./src/js/harnesses/pi.js"]
   },
   "peerDependencies": {
     "typebox": "*"

@@ -1,6 +1,6 @@
 # pi host
 
-Status: first version built. Code: `src/js/clank-talk-pi.js` (the entry), `src/js/pi-host.js`, and `src/js/host.js` (shared with the MCP server). Plan and research: `tmp/pi-plugin.md`.
+Status: first version built. Code: `src/js/harnesses/pi.js` (the entry), `src/js/harnesses/pi-host.js`, and `src/js/host.js` (shared with the MCP server). Plan and research: `tmp/pi-plugin.md`.
 
 ## Why
 
@@ -16,8 +16,8 @@ Status: first version built. Code: `src/js/clank-talk-pi.js` (the entry), `src/j
 - Approved (built): `executionMode: "sequential"`, because calls share the session. Esc cancels the script through pi's `signal`. Progress goes to `onUpdate`, at most every 500 ms.
 - Approved (built): pi registers the tool before it knows the project, so the first description says `help tools` lists the AGENTS.talk tools. On `session_start`, the extension registers the tool again with the tools from the project's AGENTS.talk, the same text as the MCP server's. A second `registerTool` replaces the first (pi docs, Tool Exposure).
 - Approved (built): `--clank-policy <file>` and `--clank-policy-hash <sha256>`, pi flags from `registerFlag`, set a harness policy, as `--policy` and `--policy-hash` do for the MCP server. Pi gives flag values only after loading, so the extension reads them on `session_start`. A wrong hash or a missing file makes every call an error: `ClankTalk does not run: ...`. The policy reading is shared: `loadPolicy` in `host.js`.
-- Approved (built): `package.json` has `"pi": { "extensions": ["./src/js/clank-talk-pi.js"] }`, the `pi-package` keyword (for the pi package gallery), and `typebox` as an optional peer dependency with the range `*`: pi supplies it, and its docs say not to bundle it. It is not on npm. Install from git: `pi install -l git:github.com/bigskysoftware/clank-talk`, or try it with `pi -e`. The docs recommend the project install (`-l`): a user install makes every pi session ClankTalk-only.
-- `clank-talk-pi.js` imports `Type` from `typebox`, which pi maps to its own copy. The tests call `clankTalkExtension(pi, Type)` with a fake pi and a fake Type.
+- Approved (built): `package.json` has `"pi": { "extensions": ["./src/js/harnesses/pi.js"] }`, the `pi-package` keyword (for the pi package gallery), and `typebox` as an optional peer dependency with the range `*`: pi supplies it, and its docs say not to bundle it. It is not on npm. Install from git: `pi install -l git:github.com/bigskysoftware/clank-talk`, or try it with `pi -e`. The docs recommend the project install (`-l`): a user install makes every pi session ClankTalk-only.
+- `harnesses/pi.js` imports `Type` from `typebox`, which pi maps to its own copy. The tests call `clankTalkExtension(pi, Type)` with a fake pi and a fake Type.
 
 ## Not yet
 
@@ -26,5 +26,5 @@ Status: first version built. Code: `src/js/clank-talk-pi.js` (the entry), `src/j
 
 ## Limits
 
-- The extension runs in pi's process, with full user rights. Another extension can register tools or get around the guard. Load no other extensions when it matters: `pi --no-extensions -e ./src/js/clank-talk-pi.js`.
+- The extension runs in pi's process, with full user rights. Another extension can register tools or get around the guard. Load no other extensions when it matters: `pi --no-extensions -e ./src/js/harnesses/pi.js`.
 - A slow, synchronous step blocks pi's screen. The MCP server runs in its own process.

@@ -6,7 +6,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { run } from "../src/js/clank-talk.js";
 import { parse } from "../src/js/parser.js";
-import { readPolicy } from "../src/js/mcp.js";
+import { readPolicy } from "../src/js/harnesses/mcp.js";
 
 let root;
 
