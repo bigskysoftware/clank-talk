@@ -29,7 +29,7 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `ask` asks the human, waits for the answer, and can time out. The answer goes in `the result`.
 - `replace a with b in <file>` changes the file itself. `replace a with b in <variable>` changes the variable.
 - `write <value> to <file>` and `append <value> to <file>`.
-- `as json` parses text to an object, and formats an object to text.
+- `as json` parses text to an object, and formats an object to text. On a file or a line, it parses the text.
 - Approved: `lines <from> to <to> of <file or text>` gives a range of lines, by line number (from 1), with both ends included. `lines` alone is still a plain word.
 - Approved (built): `line <n> of <file or text>` gives one line, with `number` and `text`. A number past the end is an error: `Line 9 is past the end of a.txt (3 lines)`. `line` alone stays a plain word, such as a loop variable.
 - Approved: put a line in a variable first, then use its fields on the next line: `set first to line 1 of ./a.txt` then `set name to first's text`. Not `(line 1 of ./a.txt)'s text`. The help and the docs show the two-line form.

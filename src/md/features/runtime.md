@@ -97,5 +97,6 @@ These are semantics, not syntax. A human approved them.
 - False values: `false`, `null`, `0`, `''` and `[]`. All other values are true. `[]` is false, unlike in JavaScript.
 - `no x` and `x is empty` are true for `null`, `''`, `[]` and `{}`.
 - `contains` works on text and lists. On `null` it is false. On other values it is an error. Later: `contains` and the other text operators also work on files, through the file's text (see [language.md](language.md)).
-- `as json` on text parses it. On any other value it formats it with 2-space indents.
+- `as json` on text parses it. On any other value it formats it as compact JSON. `as pretty json` uses 2-space indents.
+- Approved (built): `as json` on a file or a line parses its text, so `./data.json as json` gives the data. Before, it gave the path as a JSON string.
 - `print` shows text as it is, `null` as `null`, and lists and objects as compact JSON.

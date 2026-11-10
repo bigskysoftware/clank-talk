@@ -224,3 +224,14 @@ test("a null argument is an error, not the text null", async () => {
   assert.deepEqual((await result("echo null")).errors.map((e) => e.message), ["An argument to '" + NODE + "' is null. Give the tool a value for it"]);
   assert.deepEqual((await result("echo")).errors.map((e) => e.message), ["An argument to '" + NODE + "' is null. Give the tool a value for it"]);
 });
+
+test("a list gives one argument for each item", async () => {
+  await fs.mkdir(path.join(root, "src"));
+  await fs.writeFile(path.join(root, "src", "a.js"), "");
+  await fs.writeFile(path.join(root, "src", "b.js"), "");
+  await agentsTalk(`tool echo with files\n  run '${NODE}' with '-e', 'console.log(process.argv.slice(1).join(" "))', files\nend`);
+  assert.deepEqual(await output("echo ./src/*.js\nprint it.output"), ["./src/a.js ./src/b.js\n"]);
+  assert.deepEqual(await output("echo ['x', 'y']\nprint it.output"), ["x y\n"]);
+  assert.match((await result("echo ['x', '-y']")).errors[0].message, /^The argument '-y' starts with '-'/);
+  assert.match((await result("echo ['x', null]")).errors[0].message, /is null/);
+});

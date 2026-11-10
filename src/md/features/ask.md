@@ -15,6 +15,7 @@ Approved.
 From hyperscript: `ask <question>` gives the text that the user types, and `answer <message> with <a> or <b>` gives the choice.
 
 - Approved: `ask <question>`. The result is the text that the human types, or `null`.
+- Approved (built): a file in the question or the choices is its path, as in `+` and `${}`. To show its text, write `ask file's text`. Before, `ask ./plan.md` showed the text of the file.
 - Approved: `ask <question> with <a> or <b>`. The human picks one. The result is the choice, or `null`. Here `or` is claimed (the follows set), so it is not the logic `or`.
 - Approved: `ask` works in scripts, tools and hooks.
 - Approved: a time limit, as for tools: `ask 'Push?' with 'yes' or 'no' within 5 minutes`. With no answer in time, the result is `null`.

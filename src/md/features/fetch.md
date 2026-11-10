@@ -11,6 +11,7 @@ From hyperscript: `fetch <url> [as <type>] [with <args>]`.
 - Approved: `fetch <url>`. The result is the body, as text.
 - Approved: `fetch <url> as json` parses the body. `fetch <url> as response` gives `{ status, headers, text }`, and does not fail on a 4xx or 5xx status.
 - Approved: `with` takes named values, as a tool call does: `fetch 'https://api.x.com/items' as json with method: 'POST', body: item, headers: { 'X-Key': 1 }`. An object or list as `body` is sent as JSON.
+- Approved (built): a file as `body` is an error that says to write `./a.txt's text`. A line as `body` is sent as its text. Before, a file went as its path, in JSON.
 - Approved: `within 10 seconds` sets a time limit. The default is 30 seconds.
 - Approved: without `as response`, a status of 400 or more is an error with the status and the start of the body.
 

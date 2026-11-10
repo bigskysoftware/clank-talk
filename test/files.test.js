@@ -309,3 +309,22 @@ test("is, contains and is in compare a file by its path, and a line by its text"
   assert.deepEqual(await output("print (lines 1 to 2 of ./notes.txt) contains 'first'"), ["true"]);
   assert.deepEqual(await output("print ./notes.txt contains 'TODO'"), ["true"]);
 });
+
+test("as json on a file parses its text", async () => {
+  await fs.writeFile(path.join(root, "data.json"), '{"a": 1}');
+  try {
+    assert.deepEqual(await output("print (./data.json as json)'s a"), ["1"]);
+  } finally {
+    await fs.rm(path.join(root, "data.json"));
+  }
+});
+
+test("ask shows a file as its path", async () => {
+  let asked = null;
+  const ask = async (request) => {
+    asked = request.question;
+    return "yes";
+  };
+  await output("ask ./README.md", { ask });
+  assert.equal(asked, "README.md");
+});

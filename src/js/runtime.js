@@ -2087,9 +2087,13 @@ async function evaluateNode(node, state) {
     return evaluateCheck(node, value);
   }
   if (type === "conversion") {
-    const value = await evaluate(node.value, state);
+    let value = await evaluate(node.value, state);
     if (value instanceof Secret) {
       throw new SecretUse(value, "'as " + node.to + "'");
+    }
+    // ./data.json as json parses the text of the file; a line parses its text
+    if (node.to === "json" && (value instanceof FileRef || value instanceof Line)) {
+      value = await asText(value, state, node);
     }
     return convert(node, value);
   }
@@ -2274,11 +2278,16 @@ async function programAndArgs(command, state) {
     program = toText(value);
     for (const arg of command.args) {
       const value = await evaluate(arg, state);
-      if (value === null || value === undefined) {
-        throw new ScriptError("An argument to " + describe(program) + " is null. Give the tool a value for it", arg);
+      // a list gives one argument for each item, such as each file of ./src/*.js
+      const items = Array.isArray(value) ? value : [value];
+      for (const item of items) {
+        if (item === null || item === undefined) {
+          throw new ScriptError("An argument to " + describe(program) + " is null. Give the tool a value for it", arg);
+        }
+        args.push(argText(item, state));
+        // an item of a list is not written out, even if the list is
+        written.push(items === value ? false : startsWritten(arg));
       }
-      args.push(argText(value, state));
-      written.push(startsWritten(arg));
     }
   }
   if (!program) {
@@ -3143,8 +3152,13 @@ async function runFetch(command, state) {
       }
     } else if (arg.name === "body") {
       // an object or a list goes as JSON
+      if (value instanceof FileRef) {
+        throw new ScriptError("A fetch body cannot be a file. To send its text, write: body: ./" + value.path + "'s text", arg.value);
+      }
       if (value instanceof Secret) {
         body = revealSecrets(value, secrets);
+      } else if (value instanceof Line) {
+        body = value.text;
       } else if (value !== null && typeof value === "object") {
         body = JSON.stringify(revealSecrets(value, secrets));
         if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
@@ -3407,10 +3421,11 @@ function ipv6Groups(ip) {
 // ask the human; only the host can reach them, through options.ask
 // with no host, no answer in time, or an answer that is not a choice, the result is null
 async function askHuman(command, state) {
-  const question = toText(await asText(await evaluate(command.question, state), state, command.question));
+  // a file is its path, as in + and ${}; write file's text to ask about its text
+  const question = toText(joinPart(await evaluate(command.question, state)));
   const choices = [];
   for (const choice of command.choices) {
-    choices.push(toText(await asText(await evaluate(choice, state), state, choice)));
+    choices.push(toText(joinPart(await evaluate(choice, state))));
   }
   let limit = state.timeLimit;
   if (command.within !== null) {

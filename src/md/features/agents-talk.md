@@ -44,6 +44,7 @@ Approved:
 - No time limit by default. `run ... within 10 minutes` sets one in a tool. `run_tests within 5 minutes` sets one on a call, for any tool. When both are set, the shorter one wins.
 - Durations as in hyperscript: `100ms`, `2s`, `5 seconds`, `10 minutes`, `1 hour`.
 - `run` gives back `{ code, output }`. `output` is stdout and stderr together, in the order they came. A non-zero code is not an error: check `the result's code`.
+- Approved (built): a list given to `run` or `start` gives one argument for each item, so `lint ./src/*.js` passes each file. Each item gets the checks of one argument: a file is its path, and `null` or a value that starts with `-` is an error.
 - Approved (built): a file value given to `run` or `start` is its path from the current folder, such as `./src/a.js` or `../b.txt`. Before, it was the text of the file, by mistake. Thus `lint ./src/app.js` passes a path that cannot be an option.
 - Approved (built): an argument from a variable or a parameter must not start with `-`, unless a written-out `'--'` comes before it. An argument that starts with written-out text, such as `'-Dtest=' + name` or `'-D${name}'`, is fine. A program found through `PATH` inside the project is an error. See [../infrastructure/security.md](../infrastructure/security.md).
 - `run` uses the current directory (`cwd`). A missing program is an error. A program that goes over its time limit is stopped, and that is an error. Cancel stops the program too.
