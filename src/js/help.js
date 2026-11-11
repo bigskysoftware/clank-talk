@@ -552,8 +552,14 @@ function descriptionText(entry, bullet) {
   return Array.isArray(entry.description) ? entry.description.map((rule) => bullet + rule).join("\n") : entry.description;
 }
 
+// words that are part of another entry: help keeping shows run
+const PART_OF = { keeping: "run" };
+
 // the entry for a word: a full name, or the first word of a name
 function findEntry(word) {
+  if (Object.hasOwn(PART_OF, word)) {
+    return findEntry(PART_OF[word]);
+  }
   for (const entry of HELP) {
     if (entry.name === word || entry.name.split(" ")[0] === word) {
       return entry;
