@@ -2311,7 +2311,13 @@ async function runProgram(command, state) {
   let result;
   const started = Date.now();
   if (sandbox === null) {
-    result = await spawnProgram(found, args, state.cwd, env, limit, state, command);
+    // a program with no sandbox can change .talk/: keep hashes and the end of the audit, and check after the run
+    const before = await untrusted.snapshot(state.root);
+    try {
+      result = await spawnProgram(found, args, state.cwd, env, limit, state, command);
+    } finally {
+      await checkTalkFolder(state, before, program, command);
+    }
   } else {
     const wrapped = await sandboxCommand(found, args, sandbox, env, false, state, command);
     try {
@@ -3837,6 +3843,24 @@ function cutText(text, most) {
   return text.length > most ? text.slice(0, most - 3) + "..." : text;
 }
 
+// after a run with no sandbox: if it changed the taint files, put them back, audit it, make the session untrusted, and fail
+async function checkTalkFolder(state, before, program, node) {
+  const { changed, restored } = await untrusted.check(state.root, before);
+  if (changed.length === 0) {
+    return;
+  }
+  const back = restored.length === 0 ? "" : "; put back " + restored.join(", ");
+  auditStep(state, "restore", ".talk/", program + " changed " + changed.join(", ") + back);
+  // the audit as it was before the run, so the human can compare it with the file now
+  if (before.audit !== null) {
+    state.execution.output.push(redact("--- the last " + before.audit.lines.length + " lines of " + before.audit.file + " before the run ---\n" + before.audit.lines.join("\n"), state));
+  }
+  if (state.taintMode !== "off") {
+    await noteUntrusted(state, "run " + program + " changed .talk/", "The program changed these files, and ClankTalk put them back:\n" + changed.join("\n"), node);
+  }
+  throw new ScriptError("The program " + program + " changed files in .talk/, which scripts and programs must not change: " + changed.join(", ") + "." + (restored.length === 0 ? "" : " ClankTalk put back " + restored.join(", ") + ".") + (before.audit === null ? "" : " The output shows the audit from before the run.") + " Run the program in a sandbox", node);
+}
+
 // 1536 bytes is "2 KB", 5242880 is "5 MB"
 function sizeText(bytes) {
   return bytes >= 1024 * 1024 ? Math.ceil(bytes / (1024 * 1024)) + " MB" : Math.ceil(bytes / 1024) + " KB";
@@ -4009,6 +4033,7 @@ async function rotateAudit(state, folder, now) {
     const match = /^(\d{4}-\d{2}-\d{2})\.(log|jsonl)$/.exec(name);
     if (match !== null && match[1] < oldest) {
       await fs.rm(nodePath.join(folder, name), { force: true });
+      untrusted.deletedOwn(nodePath.join(folder, name));
       deleted++;
     }
   }
@@ -4059,6 +4084,8 @@ async function writeAudit(state, source, status, errors) {
       text += "\n";
     }
     await fs.appendFile(nodePath.join(folder, name), text);
+    // a write of ClankTalk's own: the check around a run with no sandbox does not count it
+    await untrusted.wroteOwn(nodePath.join(folder, name));
     // "audit also to" in the policy: a copy outside the project, where project tools cannot reach it
     for (const rule of state.policy === null ? [] : state.policy.rules) {
       if (rule.type === "auditAlso") {

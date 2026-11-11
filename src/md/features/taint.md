@@ -76,7 +76,8 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - The error of an untrusted tool is an untrusted input too, as the agent sees it.
 - A session name that starts with dots stays inside the store.
 - Before a sandboxed run, `.talk/` is made, because on Linux the sandbox protects a hidden folder only if it exists when the program starts.
-- Limits, to document: a run with no sandbox can change anything, `.talk/` too; it asks only in an untrusted session. Response headers from `fetch ... as response` do not go to the store. The cleanup runs only with the audit file.
+- Approved (built), best effort: around a `run` with no sandbox, ClankTalk keeps a hash of each file in `.talk/`, a copy of the taint control files (`taint-state.json`, each `index.json`), and the last 1000 lines of the newest audit file. After the run, if a file changed: the error names each changed file, the control files go back (so taint cannot be turned off or approved this way), the output shows the saved audit lines, the audit notes a `restore` step, an untrusted input names the files, and the step fails. Other files are not put back. Writes of ClankTalk's own during the run (for example a background subagent that writes the audit) are noted, and are not changes; a second server process on the same project can still look like a change.
+- Limits, to document: a `start` with no sandbox keeps running, so it is not checked. A run with no sandbox can still change files outside `.talk/`. A policy with `require sandbox for run, start` closes this. Response headers from `fetch ... as response` do not go to the store. The cleanup runs only with the audit file.
 
 ### Hooks
 

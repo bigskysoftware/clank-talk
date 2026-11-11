@@ -8,6 +8,7 @@
 
 import fs from "node:fs/promises";
 import nodePath from "node:path";
+import { createHash } from "node:crypto";
 
 export const STORE = ".talk/untrusted";
 // the command line keeps "taint on" or "taint off" here; see taintMode
@@ -93,6 +94,7 @@ export async function sessions(root) {
 async function save(root, session, entries) {
   await fs.mkdir(folder(root, session), { recursive: true });
   await fs.writeFile(nodePath.join(folder(root, session), "index.json"), JSON.stringify(entries, null, 2) + "\n");
+  await wroteOwn(nodePath.join(folder(root, session), "index.json"));
 }
 
 // save one input; gives its entry
@@ -112,6 +114,7 @@ async function recordNow(root, session, { source, text, time, keepBytes }) {
   const file = n + ".txt";
   await fs.mkdir(folder(root, session), { recursive: true });
   await fs.writeFile(nodePath.join(folder(root, session), file), "source: " + source + "\ntime: " + time + (cut ? "\ncut: kept the first " + keepBytes + " of " + bytes.length + " bytes" : "") + "\n\n" + kept);
+  await wroteOwn(nodePath.join(folder(root, session), file));
   const entry = { n, time, source, size: bytes.length, cut, file, approved: false };
   entries.push(entry);
   await save(root, session, entries);
@@ -161,10 +164,135 @@ export async function prune(root, oldestDay) {
     const newest = entries.reduce((latest, entry) => (entry.time > latest ? entry.time : latest), "");
     if (newest.slice(0, 10) < oldestDay) {
       await locked(root, session, () => fs.rm(folder(root, session), { recursive: true, force: true }));
+      deletedOwn(folder(root, session));
       deleted.push(session);
     }
   }
   return deleted;
+}
+
+// ----- a check around a run with no sandbox -----
+// Such a program runs as the user, so it can change .talk/. Before the run, ClankTalk keeps a hash of each file
+// in .talk/, a copy of the taint control files, and the last 1000 lines of the audit. After the run, it reports
+// each changed file, puts back the control files, and shows the audit lines from before the run. Best effort.
+// ClankTalk itself can write .talk/ during a run, for example a background subagent that writes the audit,
+// so each write of its own is noted, and is not a change. Another process (a second server) can still look like one.
+
+// absolute path -> the SHA-256 of what ClankTalk last wrote there, or "deleted" (a file or a folder)
+const own = new Map();
+
+// the copy of the audit: its last lines, from the newest audit file
+const KEEP_LINES = 1000;
+
+function hashOf(buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+// note a write of ClankTalk's own, after it
+export async function wroteOwn(absolute) {
+  try {
+    own.set(absolute, hashOf(await fs.readFile(absolute)));
+  } catch (err) {
+    own.set(absolute, "deleted");
+  }
+}
+
+// note a removal of ClankTalk's own: a file, or a folder and all in it
+export function deletedOwn(absolute) {
+  own.set(absolute, "deleted");
+}
+
+// the file is as ClankTalk itself last left it; hash is null for a file that is not there
+function isOwn(absolute, hash) {
+  const want = hash === null ? "deleted" : hash;
+  if (own.get(absolute) === want) {
+    return true;
+  }
+  if (hash === null) {
+    for (const [path, value] of own) {
+      if (value === "deleted" && absolute.startsWith(path + nodePath.sep)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// the control files of session taint: small, and they decide if the session is untrusted, so they also go back
+function isControl(relative) {
+  return relative === STATE_FILE || (relative.startsWith(STORE + "/") && relative.endsWith("/index.json"));
+}
+
+// the last KEEP_LINES lines of a text
+function lastLines(text) {
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines.slice(-KEEP_LINES);
+}
+
+// all of .talk/: { files: path (relative to the root) -> { hash, content }, audit: { file, lines } }
+// content is kept only for the control files; audit holds the last lines of the newest audit file
+export async function snapshot(root) {
+  const files = new Map();
+  const add = async (relative) => {
+    const absolute = nodePath.join(root, relative);
+    let stat;
+    try {
+      stat = await fs.lstat(absolute);
+    } catch (err) {
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const name of await fs.readdir(absolute)) {
+        await add(relative + "/" + name);
+      }
+      return;
+    }
+    // a link or another kind of file has a fixed text, so a change to it shows
+    const buffer = stat.isFile() ? await fs.readFile(absolute) : Buffer.from("not a plain file");
+    files.set(relative, { hash: hashOf(buffer), content: isControl(relative) ? buffer : null });
+  };
+  await add(".talk");
+  const logs = [...files.keys()].filter((relative) => /^\.talk\/audit\/\d{4}-\d{2}-\d{2}\.(log|jsonl)$/.test(relative)).sort();
+  let audit = null;
+  if (logs.length > 0) {
+    const file = logs[logs.length - 1];
+    audit = { file, lines: lastLines(await fs.readFile(nodePath.join(root, file), "utf8")) };
+  }
+  return { files, audit };
+}
+
+// compare with a snapshot; gives { changed, restored }: the changed paths, and the control files that went back
+// a control file goes back to its copy (or goes away, if it was not there); other files only show as changed
+export async function check(root, before) {
+  const after = await snapshot(root);
+  const changed = [];
+  const restored = [];
+  const paths = new Set([...before.files.keys(), ...after.files.keys()]);
+  for (const relative of paths) {
+    const was = before.files.get(relative);
+    const now = after.files.get(relative);
+    const absolute = nodePath.join(root, relative);
+    if ((was && now && was.hash === now.hash) || isOwn(absolute, now ? now.hash : null)) {
+      continue;
+    }
+    changed.push(relative);
+    if (!isControl(relative)) {
+      continue;
+    }
+    await fs.rm(absolute, { recursive: true, force: true });
+    if (was) {
+      await fs.mkdir(nodePath.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, was.content);
+      await wroteOwn(absolute);
+    } else {
+      deletedOwn(absolute);
+    }
+    restored.push(relative);
+  }
+  return { changed: changed.sort(), restored: restored.sort() };
 }
 
 // text from an input for a terminal or a question: control characters can hide text or move the cursor
@@ -203,6 +331,7 @@ export async function inputText(root, session, entry) {
 export async function setCommandLineMode(root, mode) {
   await fs.mkdir(nodePath.join(root, ".talk"), { recursive: true });
   await fs.writeFile(nodePath.join(root, STATE_FILE), JSON.stringify({ taint: mode }) + "\n");
+  await wroteOwn(nodePath.join(root, STATE_FILE));
 }
 
 // "on" or "off" from the command line, or null
