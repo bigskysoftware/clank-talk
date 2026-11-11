@@ -44,6 +44,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - Approved: Linux: `bubblewrap` (`bwrap`), if it is installed. If not, the error says to install it. CI tests it on Ubuntu (GitHub Actions, `.github/workflows/ci.yml`).
 - Approved (built, tested in CI on Ubuntu): bwrap hides a secret folder with an empty folder (`--tmpfs`) and a secret file, such as `.env` or `.netrc`, with `/dev/null` (`--ro-bind /dev/null`), because `--tmpfs` needs a folder. A secret that is not there is left out.
 - Approved: Windows and other OSs: an error.
+- Approved: the docs send Windows users to WSL2, where `bubblewrap` works (Claude Code uses the same: https://code.claude.com/docs/en/sandboxing.md). WSL1 does not. Known problems, from issue reports only: bind mounts under `/mnt/c`, and Windows programs (`cmd.exe`) that reach the host. Not tested by us.
 
 ## Proof before trust
 

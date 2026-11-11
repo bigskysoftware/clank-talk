@@ -192,11 +192,13 @@ Taint tracking allows you to follow when outside, untrusted and "tainted" text h
 after that happens.
 
 ```talk triage.talk
-set issue to fetch https://example.com/issues/42
-git commit [./src/cart.js] with issue
-# asks you: Commit with untrusted text from
-#   https://example.com/issues/42: ...?
+fetch https://example.com/issues/42
+git commit [./src/cart.js] with 'Fix the cart total'
+# asks you: Commit 'Fix the cart total'? 1 untrusted input
+#   is not approved: https://example.com/issues/42
 ```
+
+TODO (Carson): the session is tainted, not the value; you review the inputs with `npx clank-talk taint`.
 
 ## A Security Policy
 

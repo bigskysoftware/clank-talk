@@ -61,6 +61,8 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 ## Taint
 
+- **Check .talk/ around a `start` with no sandbox:** check at each later step while it runs, and once when it stops. Best effort. Now only a `run` is checked.
+- **A native Windows sandbox.** The cheapest: low integrity, as Gemini CLI does (`icacls` sets a low label on the project, the child runs at low integrity). It does not block the network; it can break tools that write to %TEMP% or the profile; the labels stay after the session; a low process can maybe rename `.talk/` through its low parent (test this). Node cannot start a low-integrity child alone: it needs `psexec -l` or a small helper (DuplicateTokenEx, SetTokenInformation, CreateProcessAsUser). Codex CLI uses a restricted token plus ACLs, or a sandbox user plus firewall rules. AppContainer by hand is not cheap: it edits ACLs on the user's real files (a crash leaves them), the user profile (npm cache, .gitconfig) needs grants, a localhost exemption can need admin, and it needs a native helper (about 200-400 lines, an estimate). The best lead: Microsoft MXC (https://github.com/microsoft/mxc, MIT), with a Node SDK `@microsoft/mxc-sdk`; it applies path rules (deny paths too) without host ACL edits, and has network and loopback settings. Codex uses it as its recommended Windows mode. Limits: the SDK needs Node 24 or later and a recent Windows 11, so use it behind a feature check. Not tested by us. Windows 11 also has an experimental `CreateProcessInSandbox` API with read and write path lists.
 - **A human-only MCP tool:** `taint_approve` with `requiresUserInteraction`, for Claude Code, after a test.
 
 ## Safety

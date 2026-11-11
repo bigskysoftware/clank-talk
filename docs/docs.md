@@ -730,6 +730,7 @@ TODO (Carson): the honest limits.
 
 - A `run` without `in a sandbox` is where the sandbox ends.
 - The sandbox limits files and the network, not CPU or memory.
+- On Windows, there is no sandbox yet: `in a sandbox` is an error. To use the sandbox, run your agent and ClankTalk inside WSL2, where the Linux sandbox (`bubblewrap`) works. WSL1 does not work.
 - On Linux, the sandbox protects hidden files and `.talk` files only at the top of the project, and only those that exist when the program starts.
 - Web pages and tool output can try to steer your agent. ClankTalk keeps the damage small, but cannot stop the agent from believing what it reads.
 - Secrets are safe only in `.env` files. A copy of a secret in another file is ordinary text that a script can read and change.

@@ -35,6 +35,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): a sandboxed `run` or `start` with no network does not ask. File edits do not ask.
 - Approved (built): the question names the inputs that are not approved, at most 5: "Push origin? 2 untrusted inputs are not approved: tool issue (42), https://... Review them with: npx clank-talk taint".
 - Approved (built): the answers: `approve them and go on` (approves only the inputs that the question named), `yes, this time only` (the session stays untrusted), `no`. No answer is no.
+- Approved: a host in `allow fetch from` stays trusted in an untrusted session: a GET, a POST or a body to it asks nothing. Why: the human chose these hosts. Rejected: a question for a body or a method other than GET.
 - Approved (built): a fetch to a new host in an untrusted session asks one question, the session question. A yes (either form) also allows the host for the session, as the host question does.
 - Approved (built): a `run` or `start` with no sandbox asks too.
 

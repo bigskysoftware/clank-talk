@@ -342,6 +342,18 @@ export const HELP = [
     examples: ["print lines 1001 to 1500 of the previous output", "set failures to find 'not ok' in the previous output"],
   },
   {
+    name: "taint", kind: "command", where: "AGENTS.talk",
+    syntax: "taint on | taint off | taint required | keep untrusted inputs up to <n> MB | let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '<text>'",
+    description: [
+      "Session taint. After text from fetch, an untrusted tool or a subagent, the session is untrusted until the human approves each input. Only at the top of AGENTS.talk.",
+      "'taint on' is the default. 'taint off' turns it off. 'taint required' keeps it on, also against 'npx clank-talk taint off'.",
+      "'keep untrusted inputs up to 5 MB' sets how much of each input .talk/untrusted/ keeps. The default is 1 MB.",
+      "The judge is a model that reads an input and says clean, suspect or unsure. 'judge untrusted inputs automatically' runs it on each new input; else the human runs 'npx clank-talk taint judge'.",
+      "'let the judge approve clean inputs' lets a clean verdict approve the input. 'judge with prompt' replaces the judge's prompt. 'use model ... for judging' sets its model.",
+    ],
+    examples: ["taint required\nkeep untrusted inputs up to 5 MB", "use model 'claude-haiku-5-5' for judging with secret ANTHROPIC_API_KEY\nallow secret ANTHROPIC_API_KEY for subagents\njudge untrusted inputs automatically"],
+  },
+  {
     name: "audit", kind: "expression",
     syntax: "the audit | audit as json (in AGENTS.talk) | keep audit for <n> days (in AGENTS.talk)",
     description: [
@@ -716,7 +728,7 @@ export const AREAS = [
   { title: "Web and the Human", intro: "Fetch from the web, and ask the human.", names: ["fetch", "ask"] },
   { title: "Safety", intro: "Secrets, session taint and the audit.", names: ["secret", "untrusted", "audit"] },
   { title: "Tools", intro: "Only in AGENTS.talk: tools, programs, background processes and imports.", names: ["tool", "run", "start", "process", "import"] },
-  { title: "Hooks and Rules", intro: "Only in AGENTS.talk: hooks, and the allow and limit lines.", names: ["before", "after", "reject", "allow", "limit"] },
+  { title: "Hooks and Rules", intro: "Only in AGENTS.talk: hooks, and the allow and limit lines.", names: ["before", "after", "reject", "allow", "limit", "taint"] },
 ];
 
 // an id for a link: "Values and Text" gives "values-and-text"
@@ -776,7 +788,7 @@ export const HOOK_STEPS = [
 
 // the parts of the AGENTS.talk reference, in order
 const AGENTS_TALK_AREAS = [
-  { title: "Top Lines", intro: "At the top of AGENTS.talk: what scripts and programs can reach, and how the session is recorded.", names: ["allow", "limit", "audit"] },
+  { title: "Top Lines", intro: "At the top of AGENTS.talk: what scripts and programs can reach, and how the session is recorded.", names: ["allow", "limit", "audit", "taint"] },
   { title: "Tools", intro: "What your agent can run.", names: ["tool", "run", "start", "process", "import"] },
   { title: "Hooks", intro: "Your rules, before and after each step.", names: ["before", "after", "reject", "ask"] },
 ];
