@@ -19,7 +19,8 @@ From hyperscript: `fetch <url> [as <type>] [with <args>]`.
 
 The risk: a fetch can send project data to any host, in the URL or the body. A web page can also hold text that tries to steer the agent (prompt injection).
 
-- Approved: a fetch to a new host asks the human first: `Fetch from api.github.com?` yes or no. A yes holds for the session.
+- Approved: a fetch to a new host asks the human first: `Fetch from api.github.com?` yes or no.
+- Approved (built): the choices are `yes, once`, `yes, for this session` and `no`. "Once" allows only this fetch. Before, a plain yes held for the session, but the question did not say so.
 - Approved: `allow fetch from 'api.github.com', 'registry.npmjs.org'` in AGENTS.talk lets those hosts go without asking. `'*.github.com'` allows sub-hosts.
 - Approved: only `http` and `https`.
 - Approved: `localhost`, and hosts that are IP addresses in private ranges (`127.*`, `10.*`, `192.168.*`, `169.254.*`, ...), are refused unless AGENTS.talk names them. Thus a script cannot reach the cloud metadata service or local admin pages by mistake.

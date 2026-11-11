@@ -3941,9 +3941,13 @@ async function checkFetchHost(url, state, node) {
     return;
   }
   // in an untrusted session, one question covers the session and the new host; a yes allows the host for the session
+  // otherwise: yes once, yes for the session, or no
   if (!(await askUntrusted(state, "new hosts", "Fetch from " + host, node))) {
-    const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
-    if (answer !== "yes") {
+    const answer = await askState(state, "Fetch from " + host + "?", ["yes, once", "yes, for this session", "no"], null);
+    if (answer === "yes, once") {
+      return;
+    }
+    if (answer !== "yes, for this session") {
       throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
     }
   }
