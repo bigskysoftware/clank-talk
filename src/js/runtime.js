@@ -298,6 +298,7 @@ async function execute(source, options, execution) {
     allowedChanges: agents.allowedChanges,
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
+    trustedFetch: agents.trustedFetch,
     fetchHosts: options.fetchHosts || new Set(),
     lookup: options.lookup || lookupHost,
     // secrets from "allow secret" in AGENTS.talk, by name: { name, hosts, value }; value is null when not set
@@ -1086,6 +1087,10 @@ function checkPolicy(policy, agents) {
       sandboxRule = rule;
     }
   }
+  // deny trust: no "trust fetch from" line
+  if (denied.trust && agents.trustedFetch.length > 0) {
+    errors.push({ message: "This trusts fetched text, and " + ruleAt(denied.trust) + " denies trust", ...agents.trustWhere });
+  }
   const outside = (shown, rule) => {
     return "'" + shown + "' is outside the policy: " + ruleAt(rule) + " limits " + rule.what + " to " + rule.values.join(", ");
   };
@@ -1233,7 +1238,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], trustedFetch: [], trustWhere: null, allowedSecrets: [], useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1355,6 +1360,15 @@ async function loadAgentsTalk(root, hostTools) {
           result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, subagents: definition.subagents, where });
         } else {
           result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "trustFetch") {
+        if (file.name === AGENTS_TALK) {
+          result.trustedFetch.push(...definition.hosts);
+          result.trustWhere = result.trustWhere || where;
+        } else {
+          result.errors.push({ message: "'trust fetch from' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -3808,8 +3822,14 @@ async function runFetch(command, state) {
   // a server can send a secret's value back, so the response text shows <secret NAME>
   const text = redact(await readLimited(response, current, command), state);
   step.status = response.status;
-  // text from the web is untrusted: it must not drive an action without a question
-  await noteUntrusted(state, current.href, text);
+  // text from the web is untrusted: it must not drive an action without a question,
+  // unless AGENTS.talk trusts the URL that the text came from, after all redirects
+  const currentHost = current.hostname.toLowerCase().replace(/\.+$/, "");
+  if (state.trustedFetch.some((rule) => fetchRuleAllows(rule, current, currentHost))) {
+    auditStep(state, "trusted", current.href, "trust fetch from");
+  } else {
+    await noteUntrusted(state, current.href, text);
+  }
 
   let result;
   if (command.as === "response") {

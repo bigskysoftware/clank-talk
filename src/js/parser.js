@@ -2590,10 +2590,10 @@ export function parse(source, options = {}) {
           return null;
         }
         what = "git push";
-      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets") || isWord("subagents")) {
+      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets") || isWord("subagents") || isWord("trust")) {
         what = current().value;
       } else {
-        error("Expected git push, start, fetch, run, writes, secrets or subagents");
+        error("Expected git push, start, fetch, run, writes, secrets, subagents or trust");
         return null;
       }
       i++;
@@ -2901,6 +2901,21 @@ export function parse(source, options = {}) {
         const definition = parseUseModel(token);
         if (definition !== null) {
           definitions.push(definition);
+        }
+        continue;
+      }
+      // trust fetch from <hosts or URLs>: text from them is not an untrusted input; see src/md/features/taint.md
+      if (isWord("trust") && !options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("fetch") || tokens[i + 1] === undefined || tokens[i + 1].value !== "from") {
+          error("Expected 'fetch from', as in: trust fetch from https://registry.npmjs.org/clank-talk");
+          continue;
+        }
+        i += 2;
+        const hosts = parseHosts();
+        if (hosts !== null) {
+          definitions.push({ type: "trustFetch", hosts, line: token.line, column: token.column });
         }
         continue;
       }

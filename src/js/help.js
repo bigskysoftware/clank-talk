@@ -360,13 +360,14 @@ export const HELP = [
   },
   {
     name: "taint", kind: "command", where: "AGENTS.talk",
-    syntax: "taint on | taint off | taint required | taint asks before <push, secrets, commit, network runs, new hosts | nothing> | keep untrusted inputs up to <n> MB | let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '<text>'",
+    syntax: "taint on | taint off | taint required | taint asks before <push, secrets, commit, network runs, new hosts | nothing> | keep untrusted inputs up to <n> MB | let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '<text>' | trust fetch from <host or URL>, ...",
     description: [
       "Session taint. After text from fetch, an untrusted tool or a subagent, the session is untrusted until the human approves each input. Only at the top of AGENTS.talk.",
       "In a script, 'taint review' asks the human to approve inputs: see help untrusted.",
       "'taint on' is the default. 'taint off' turns it off. 'taint required' keeps it on, also against 'npx clank-talk taint off'.",
       "'taint asks before' lists what asks the human while inputs are not approved. The default is push and secrets (a fetch with a secret). 'network runs' is a run or start with network or with no sandbox. 'new hosts' is a fetch to a host not in 'allow fetch from'. 'nothing' asks nothing, and still keeps the inputs.",
       "'keep untrusted inputs up to 5 MB' sets how much of each input .talk/untrusted/ keeps. The default is 1 MB.",
+      "'trust fetch from https://registry.npmjs.org/clank-talk' trusts the text from those URLs (after redirects), so a fetch of them does not taint. The same patterns as 'allow fetch from'; a URL still needs 'allow fetch from' to be reached with no question.",
       "The judge is a model that reads an input and says clean, suspect or unsure. 'judge untrusted inputs automatically' runs it on each new input; else the human runs 'npx clank-talk taint judge'.",
       "'let the judge approve clean inputs' lets a clean verdict approve the input. 'judge with prompt' replaces the judge's prompt. 'use model ... for judging' sets its model.",
     ],

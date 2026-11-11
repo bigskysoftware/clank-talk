@@ -69,6 +69,7 @@ end
 | `deny fetch` | No network access from scripts. |
 | `deny writes` | A read-only session: no file changes, and no git changes. Add `deny run` and `deny start` for a session where nothing can write. |
 | `deny subagents` | No subagents. |
+| `deny trust` | Projects cannot have `trust fetch from`, so all fetched text is untrusted. |
 | `keep audit for at least <n> days` | The audit is kept for at least this many days. A project cannot keep it for fewer. |
 | `audit also to '<folder>'` | A copy of the audit goes to a folder outside the project. This copy is never deleted by ClankTalk. |
 | `before ...` and `after ...` hooks | Hooks that run before the hooks of the project. A project cannot remove them. |
