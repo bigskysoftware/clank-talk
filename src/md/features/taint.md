@@ -2,10 +2,75 @@
 
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
-Built: the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, the audit notes, the questions at the sinks, and file labels in `.talk/taint.json`.
+Built: session taint, part (a): the flag, the store, the questions, `taint on|off|required`, `keep untrusted inputs up to`, `require taint` in a policy, and the session checks for hooks. The value labels below are removed.
+Not built: part (b), the command line; part (c), the judge.
 Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
 
-Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
+Code: `src/js/untrusted.js`, with small calls in `src/js/runtime.js`.
+
+## Session taint
+
+Replaces the labels on values below. Why: labels follow values inside one script, but an injection goes through the model's context, and the agent can type the text back with no label. The labels cost about 280 lines, 81 calls in the runtime, and a check in each new feature. A flag on the session matches the real threat, and it is much smaller.
+
+### The flag
+
+- Approved (built): after the agent sees untrusted text, the session is untrusted. Sources: fetch, an `untrusted tool`, a subagent (its answer, also from `process` and `stop`).
+- Approved (built): the session stays untrusted while at least one of its untrusted inputs is not approved.
+- Approved (built): the flag comes from the store on disk, so it holds across scripts and host restarts. A run with no session name uses the folder `default`.
+- Approved (built): if the store cannot be written, the step fails. Why: an input that is not saved cannot make the session untrusted.
+
+### On and off
+
+- Approved (built): AGENTS.talk sets the default: `taint on` (the default with no line), `taint off`, or `taint required`.
+- Approved (built in the runtime; the command is part (b)): the command line can change it: `npx clank-talk taint on`, `npx clank-talk taint off`. This choice wins over `taint on` and `taint off` in AGENTS.talk. It is kept in `.talk/taint-state.json`, which scripts cannot change.
+- Approved: `taint required` keeps it on. `taint off` on the command line then fails: "AGENTS.talk has 'taint required'. To turn taint off, remove that line." (Built in the runtime: the state file is ignored.)
+- Approved (built): a policy can hold `require taint`, with the same effect as `taint required`.
+- Approved: `npx clank-talk taint` shows the state and where it comes from: "on (from AGENTS.talk)", "off (from the command line)".
+
+### Which actions ask
+
+- Approved (built): while the session is untrusted, these ask the human: push, `run` or `start` with network, a fetch to a new host, a fetch with a secret, a commit.
+- Approved (built): a `run` or `start` with no sandbox asks too, because it has the network. `with local network` does not ask.
+- Approved (built): a sandboxed `run` or `start` with no network does not ask. File edits do not ask.
+- Approved (built): the question names the inputs that are not approved, at most 5: "Push origin? 2 untrusted inputs are not approved: tool issue (42), https://... Review them with: npx clank-talk taint".
+- Approved (built): the answers: `approve them and go on` (approves only the inputs that the question named), `yes, this time only` (the session stays untrusted), `no`. No answer is no.
+- Approved (built): a fetch to a new host asks the session question first, then the host question.
+
+### The store
+
+- Approved (built): each untrusted input is saved in `@/.talk/untrusted/<session>/`: `index.json` (number, time, source, size, cut, approved), and `<n>.txt` with the source, the time, and the text. Secrets show as `<secret NAME>`. Scripts cannot change `.talk/`.
+- Approved (built): the source: the final URL after redirects for a fetch; the name and arguments for a tool; the tool and prompt for a subagent.
+- Approved (built): at most 1 MB for each input by default. A larger input keeps its first 1 MB, and gives a warning in the script output: "warning: untrusted input 3 is 5 MB; the store kept the first 1 MB". The list (part b) shows it too.
+- Approved (built): `keep untrusted inputs up to 5 MB` (or `KB`) in AGENTS.talk sets the size.
+- Approved (not built): the `keep audit` rules apply to the store. When an audit goes, its inputs go too.
+- Approved (built): the audit records each input (`untrusted`, with the file), and each approval (`approve`, with the input numbers).
+
+### The command line
+
+- Approved: a new `clank-talk` command, next to `clank-talk-mcp`. Only the human runs it: the agent has no shell in ClankTalk.
+- Approved: `npx clank-talk taint` lists all inputs: number, session, time, source URL, size, status, judge verdict.
+- Approved: `taint show <n>`, `taint approve <n> ...`, `taint approve --all` (clears all taints), `taint approve --clean`, `taint judge [<n> | --all]`, `taint on`, `taint off`.
+- Limits, to document: the boundary holds only if the agent has no other shell (turn off the harness tools), each `run` is sandboxed (a program with no sandbox can change `.talk/`), and no tool in AGENTS.talk runs `clank-talk taint`.
+
+### The judge
+
+- Approved: a model call with no tools reads one input, and gives `clean` or `suspect` with a short reason. The verdict is saved next to the input.
+- Approved: by default the verdict is advice only. A human approves.
+- Approved: `let the judge approve clean inputs` in AGENTS.talk: a `clean` verdict approves the input. `require taint` in a policy does not block this line.
+- Approved: `use model '<id>' for judging [with secret <NAME>]`. With no line, the judge uses the subagent model.
+- Approved: by default the judge runs only on `npx clank-talk taint judge`. `judge untrusted inputs automatically` in AGENTS.talk runs it on each new input.
+
+### Hooks
+
+- Approved (built): `the session is untrusted` and `the session's untrusted inputs` (source and time) replace the label checks. `is untrusted` and `is private` on values go away. The old form gives a load error that names the new one.
+
+### Open
+
+- Built, to confirm: the `private` label and its question (`Send private data to api.github.com?`) went away with the labels. While the session is trusted, a fetch to a new host still asks (fetch.md).
+- Built: `.talk/taint.json` (file labels) went away. An old file stays on disk and is not read.
+- Later: a `taint_approve` MCP tool with `_meta["anthropic/requiresUserInteraction"]: true`, for Claude Code, after a test. The Claude Code docs do not say if the model can run MCP prompts, so prompts are not a human-only path.
+
+## Value labels (removed: replaced by session taint)
 
 ## Goal
 

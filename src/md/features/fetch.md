@@ -49,4 +49,4 @@ The risk: a fetch can send project data to any host, in the URL or the body. A w
 - Approved (built): a 303, or a 301 or 302 after a POST, goes on as a GET with no body, as browsers do. At most 5 redirects.
 - Approved: the child environment and cookies are never sent. Headers are only what the script gives. A secret goes only as `secret NAME`: see [secrets.md](secrets.md).
 - Approved: `before fetch` and `after fetch` hooks, with `url`, `method`, `secrets` (the names of the secrets in the headers and the body), and in `after`, `status`.
-- Later: taint. Fetched text is untrusted, and taint will track it.
+- Approved (built): fetched text is an untrusted input of the session. See [taint.md](taint.md).

@@ -61,10 +61,9 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 ## Taint
 
-- **Trust a host with private data:** an AGENTS.talk line that skips the `Send private data` question for one host, if the questions get noisy.
-- **Origins in scripts:** a form such as `where page came from`, to give the URLs of a value's labels.
-- **Labels for each item** of a list, in place of one set for the whole list.
-- **Share taint labels in git.** An AGENTS.talk line that keeps `.talk/taint.json` in git, with entries only for files that git tracks.
+- **Session taint, part (b):** the `npx clank-talk taint` command line. See [taint.md](features/taint.md).
+- **Session taint, part (c):** the judge.
+- **A human-only MCP tool:** `taint_approve` with `requiresUserInteraction`, for Claude Code, after a test.
 
 ## Safety
 
@@ -79,4 +78,3 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 - **Your prose:** the `TODO (Carson)` sections in `docs/docs.md`, and a note on `|` text blocks there.
 - **The README hero image** must be taken again when the first bubble example changes.
-

@@ -75,7 +75,7 @@ async function go(script, options = {}) {
 test("a subagent calls its tools, and its answer is untrusted", async () => {
   replies = [toolUse("toolu_1", "gh_issues", { query: "bug" }), answer("Top issue: #1")];
   const audit = { scripts: 0, records: [] };
-  const result = await go("summarize\nprint it\nprint it is untrusted", { audit });
+  const result = await go("summarize\nprint it\nprint the session is untrusted", { audit });
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.output, ["Top issue: #1", "true"]);
   // the request: headers, model, tools with their # comment, and the tool result on the second turn
@@ -232,7 +232,7 @@ test("start in a subagent runs in the background, as a process", async () => {
     assert.deepEqual(started.errors, []);
     assert.deepEqual(started.output, ["looker: running"]);
     release();
-    const done = await run("wait until (process 'looker')'s status is 'exited' within 5 seconds\nprint (process 'looker')'s output\nprint (process 'looker')'s output is untrusted", { root: dir, lendModel, processes });
+    const done = await run("wait until (process 'looker')'s status is 'exited' within 5 seconds\nprint (process 'looker')'s output\nprint the session is untrusted", { root: dir, lendModel, processes });
     assert.deepEqual(done.errors, []);
     // the argument went in a $ global, so it ran as text, not as script
     assert.deepEqual(done.output, ["found: got a; rm -rf /", "true"]);
@@ -266,4 +266,3 @@ test("a subagent tool cannot reach an unsafe tool through another tool", async (
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
-

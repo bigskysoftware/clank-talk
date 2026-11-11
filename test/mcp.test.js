@@ -153,17 +153,13 @@ test('an error shows the script line, with an arrow at the column', async () => 
   assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:10 Expected a number, found 'x'\n  2 | \tprint 2 * 'x'\n    | \t        ^");
 });
 
-test("the previous output keeps the taint labels of what the last script printed", async () => {
+test("an untrusted tool makes the session untrusted, across scripts", async () => {
   await fs.writeFile(path.join(root, "AGENTS.talk"), "untrusted tool issue\n  set the result to 'from the web'\nend");
-  await fs.writeFile(path.join(root, "notes.txt"), "mine\n");
+  assert.equal((await call("print the session is untrusted")).result.content[0].text, "false");
   await call("print issue");
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "true");
-  // that output came from the untrusted text too; typed text and file text are not untrusted
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "true");
-  await call("print 'typed'");
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "false");
-  await call("print read ./notes.txt");
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "false");
+  assert.equal((await call("print the session is untrusted")).result.content[0].text, "true");
+  assert.equal((await call("print the session is untrusted")).result.content[0].text, "true");
+  assert.equal((await call("print (the session's untrusted inputs)[0]'s source")).result.content[0].text, "tool issue");
 });
 
 test('long output is cut, and the next script can read all of it as the previous output', async () => {

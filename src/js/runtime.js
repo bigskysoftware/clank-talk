@@ -10,7 +10,7 @@ import { helpIndex, helpFor } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
-import * as taint from "./taint.js";
+import * as untrusted from "./untrusted.js";
 import { runSubagent, anthropicModel, SubagentError, API_URL } from "./subagent.js";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -186,7 +186,6 @@ function lineLabel(line) {
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
  * @param {Function} [options.lookup]               for tests: (host) => addresses, in place of a DNS lookup
- * @param {Set} [options.privateHosts]              hosts the human allowed private data to go to; pass the same Set for a session
  * @param {Object} [options.policy]                 the harness's policy: { name, source }, ClankTalk text; see src/md/features/policy.md
  * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
  * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to .talk/audit/
@@ -205,8 +204,6 @@ export function start(source, options = {}) {
     errors: [],
     // problems that do not stop the script: { message, line, column, file }
     warnings: [],
-    // the taint labels of all that print showed; the host keeps them for "the previous output"
-    outputLabels: taint.none(),
     signal: controller.signal,
     cancel() {
       controller.abort();
@@ -299,16 +296,12 @@ async function execute(source, options, execution) {
     allowedFetch: agents.allowedFetch,
     fetchHosts: options.fetchHosts || new Set(),
     lookup: options.lookup || lookupHost,
-    // hosts the human said yes to for private data; a host keeps the Set for a session
-    privateHosts: options.privateHosts || new Set(),
     // secrets from "allow secret" in AGENTS.talk, by name: { name, hosts, value }; value is null when not set
     secrets: secrets.secrets,
     // background processes by name; a host keeps the Map for a session, and stops them at the end
     processes: options.processes || new Map(),
     // the full print output of the last script, from the host; null before the first script
     previousOutput: options.previousOutput === undefined ? null : options.previousOutput,
-    // the labels of what the last script printed: untrusted text stays untrusted in the next script
-    previousOutputLabels: options.previousOutputLabels || taint.none(),
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -321,12 +314,9 @@ async function execute(source, options, execution) {
     variables: Object.create(null),
     globals: options.globals || Object.create(null),
     result: null,
-    // taint: the open frames, and the labels of the result; see src/js/taint.js
-    taintFrames: [],
-    resultLabels: taint.none(),
-    // file labels from @/.talk/taint.json, by path; saved at the end if they changed
-    fileLabels: await taint.loadFiles(root),
-    fileLabelsChanged: false,
+    // session taint: "on" or "off", and the size that the store keeps of one input; see src/js/untrusted.js
+    taintMode: untrusted.taintMode(agents.taint, policy.policy !== null && policy.policy.rules.some((rule) => rule.type === "requireTaint"), await untrusted.commandLineMode(root)),
+    keepUntrustedBytes: agents.keepUntrustedBytes || untrusted.DEFAULT_KEEP_BYTES,
     // the .talk file of the tool or hook now running; null for the script
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
@@ -392,16 +382,8 @@ async function execute(source, options, execution) {
 
   execution.patterns.stop();
   recordUndo(state);
-  if (state.fileLabelsChanged) {
-    try {
-      await taint.saveFiles(root, state.fileLabels);
-    } catch (err) {
-      execution.warnings.push({ message: "Could not write " + taint.FILE_LABELS + ": " + err.message, line: 1, column: 1 });
-    }
-  }
   // the host shows the changed files to the agent; undo has its own copy of the text, so only the copy for the host is redacted
-  // labelsBefore is for undo only, so the host does not get it
-  execution.changes = execution.changes.map(({ labelsBefore, ...change }) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
+  execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
   failure = failure.map((error) => ({ ...error, message: redact(error.message, state) }));
   for (const warning of execution.warnings) {
@@ -612,8 +594,7 @@ function subagentModel(state, node) {
 // run '<prompt>' in a subagent with only <tools>: the answer is untrusted text
 async function runSubagentCommand(command, state) {
   checkDenied("subagents", state, command);
-  const { value: promptValue, labels: promptLabels } = await evaluateLabeled(command.program, state);
-  const prompt = redact(toText(promptValue), state);
+  const prompt = redact(toText(await evaluate(command.program, state)), state);
   const ask = subagentModel(state, command);
   const owner = "subagent " + state.auditFrom;
   const tools = command.subagent.tools.map((name) => ({ name, description: state.definitions[name].description || "A ClankTalk tool.", params: state.definitions[name].params }));
@@ -624,8 +605,6 @@ async function runSubagentCommand(command, state) {
   const timeout = AbortSignal.timeout(limit);
   const signal = AbortSignal.any([state.execution.signal, timeout]);
 
-  // every label the subagent saw goes on its answer
-  let seen = promptLabels;
   const callOne = async (name, input) => {
     if (!command.subagent.tools.includes(name)) {
       return { content: "There is no tool named " + name + ". Use: " + command.subagent.tools.join(", "), isError: true };
@@ -635,20 +614,14 @@ async function runSubagentCommand(command, state) {
     const args = definition.params.map((param) => inputText(input[param]));
     const savedFrom = state.auditFrom;
     state.auditFrom = owner;
-    // a root frame: the subagent's arguments have no labels, so its tool calls ask no taint questions
-    taint.begin(state, true);
     try {
-      if (definition.untrusted) {
-        taint.addLabel(state, taint.UNTRUSTED, "tool " + name);
-      }
       const step = Object.create(null);
       step.args = args;
       step.named = Object.create(null);
       await runHooks("before", [name], step, state, command);
       auditStep(state, "tool", name, args.map((arg) => toText(arg)).join(", "));
-      const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps, [], Object.create(null));
+      const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps);
       await runHooks("after", [name], step, state, command);
-      seen = taint.union(seen, taint.current(state));
       return { content: redact(toText(showSecrets(result)), state), isError: false };
     } catch (err) {
       if (!(err instanceof ScriptError) || err instanceof Cancelled || err instanceof StepBudget) {
@@ -656,7 +629,6 @@ async function runSubagentCommand(command, state) {
       }
       return { content: redact(err.message, state), isError: true };
     } finally {
-      taint.end(state);
       state.auditFrom = savedFrom;
     }
   };
@@ -680,11 +652,11 @@ async function runSubagentCommand(command, state) {
     }
     throw err;
   }
-  // a model wrote the answer after it read tool output, so it is always untrusted
-  taint.add(state, seen);
-  taint.addLabel(state, taint.UNTRUSTED, owner);
   auditStep(state, "subagent", owner, answer.calls + (answer.calls === 1 ? " tool call" : " tool calls"));
-  return redact(answer.text, state);
+  // a model wrote the answer after it read tool output, so it is always untrusted
+  const text = redact(answer.text, state);
+  await noteUntrusted(state, owner + ": " + describe(prompt), text);
+  return text;
 }
 
 // start '<prompt>' in a subagent with only <tools> as '<name>': the same subagent, in the background
@@ -709,7 +681,7 @@ async function startSubagent(command, state) {
       return "$arg" + index;
     });
     const source = "print " + tool + (names.length > 0 ? " " + names.join(", ") : "");
-    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null, previousOutputLabels: null });
+    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null });
     if (result.errors.length > 0) {
       return { content: result.errors.map((error) => error.message).join("\n"), isError: true };
     }
@@ -1241,7 +1213,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, keepAudit: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, keepAudit: null, taint: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1317,6 +1289,19 @@ async function loadAgentsTalk(root, hostTools) {
           result.errors.push({ message: "Only one 'keep audit' line is allowed", ...where });
         } else {
           result.keepAudit = { days: definition.days, where };
+        }
+        continue;
+      }
+      // taint on | off | required, and keep untrusted inputs up to <n> MB; see src/md/features/taint.md
+      if (definition.type === "taint" || definition.type === "keepUntrusted") {
+        const shown = definition.type === "taint" ? "taint" : "keep untrusted inputs";
+        const field = definition.type === "taint" ? "taint" : "keepUntrustedBytes";
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'" + shown + "' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (result[field] !== null) {
+          result.errors.push({ message: "Only one '" + shown + "' line is allowed", ...where });
+        } else {
+          result[field] = definition.type === "taint" ? definition.mode : definition.bytes;
         }
         continue;
       }
@@ -1459,10 +1444,6 @@ function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
   const result = { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
-  // only when print showed labeled text; the host keeps them for "the previous output"
-  if (execution.outputLabels.size > 0) {
-    result.outputLabels = execution.outputLabels;
-  }
   // only when AGENTS.talk or the policy sets one; the host uses it to cut long output
   if (execution.outputLimit) {
     result.outputLimit = execution.outputLimit;
@@ -1498,26 +1479,8 @@ async function runCommands(commands, state, tools, maxSteps) {
     }
     takeStep(command, state, maxSteps);
     let signal;
-    // each command has a root taint frame; a new result takes its labels
     try {
-      taint.begin(state, true);
-      const resultBefore = state.result;
-      try {
-        signal = await runCommand(command, state, tools, maxSteps);
-        if (state.result !== resultBefore) {
-          state.resultLabels = taint.current(state);
-        } else {
-          state.resultLabels = taint.union(state.resultLabels, taint.current(state));
-        }
-      } catch (failed) {
-        // the message of an error can hold the values of its command, so the error keeps their labels
-        if (failed instanceof ScriptError) {
-          failed.labels = taint.union(failed.labels || taint.none(), taint.current(state));
-        }
-        throw failed;
-      } finally {
-        taint.end(state);
-      }
+      signal = await runCommand(command, state, tools, maxSteps);
     } catch (caught) {
       let err = caught;
       // a secret in the wrong place: the error points at this command, and names it
@@ -1578,9 +1541,6 @@ async function runHandler(err, state, tools, maxSteps) {
     error.file = err.file;
   }
   setOwn(state.variables, "error", error);
-  const labels = err.labels || taint.none();
-  taint.setSlot(state.variables, "error", labels);
-  taint.attach(error, labels);
   state.handling = true;
   try {
     const signal = await runCommands(state.handler.body, state, tools, maxSteps);
@@ -1610,7 +1570,6 @@ async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
     // a secret shows as <secret NAME>, and a secret's value in other text too
     const value = showSecrets(await evaluate(command.value, state));
-    state.execution.outputLabels = taint.union(state.execution.outputLabels, taint.current(state));
     // print shows a list of lines with their numbers, as an editor does
     if (isListOfLines(value)) {
       state.execution.output.push(redact(value.map((line) => lineLabel(line) + line.text).join("\n"), state));
@@ -1640,12 +1599,10 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "for") {
-    const { value: list, labels } = await evaluateLabeled(command.list, state);
+    const list = await evaluate(command.list, state);
     const items = loopItems(list, command);
     for (let index = 0; index < items.length; index++) {
-      // each item has the labels of the list
       setOwn(scopeFor(command.name, state), command.name, items[index]);
-      taint.setSlot(scopeFor(command.name, state), command.name, labels);
       if (command.index !== null) {
         setOwn(scopeFor(command.index, state), command.index, index);
       }
@@ -1868,29 +1825,18 @@ async function runCommand(command, state, tools, maxSteps) {
 
   if (command.type === "toolCall") {
     const args = [];
-    // each argument keeps its labels inside the tool
-    const argLabels = [];
     for (const arg of command.args) {
-      const { value, labels } = await evaluateLabeled(arg, state);
-      args.push(value);
-      argLabels.push(labels);
+      args.push(await evaluate(arg, state));
     }
     const named = Object.create(null);
-    const namedLabels = Object.create(null);
     for (const arg of command.named) {
-      const { value, labels } = await evaluateLabeled(arg.value, state);
-      named[arg.name] = value;
-      namedLabels[arg.name] = labels;
+      named[arg.name] = await evaluate(arg.value, state);
     }
 
     const step = Object.create(null);
     step.args = args;
     step.named = named;
     const definition = state.definitions[command.name];
-    // an untrusted tool's result is untrusted; the label goes on before the hooks and the audit, so both show it
-    if (definition !== undefined && definition.untrusted) {
-      taint.addLabel(state, taint.UNTRUSTED, "tool " + command.name);
-    }
     await runHooks("before", [command.name], step, state, command);
     auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).join(", "));
 
@@ -1901,7 +1847,7 @@ async function runCommand(command, state, tools, maxSteps) {
         state.timeLimit = shorter(state.timeLimit, await durationMs(command.within, state));
       }
       try {
-        state.result = await callTool(definition, args, named, command, state, tools, maxSteps, argLabels, namedLabels);
+        state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
       } finally {
         state.timeLimit = savedLimit;
       }
@@ -1927,35 +1873,8 @@ async function runCommand(command, state, tools, maxSteps) {
 
 // ----- expressions -----
 
-// every expression has a taint frame: it collects the labels of what the expression reads
-// see src/js/taint.js
 async function evaluate(node, state) {
-  taint.begin(state, false);
-  try {
-    const value = await evaluateNode(node, state);
-    taint.withValue(state, value, canLabel(value));
-    return value;
-  } finally {
-    taint.end(state);
-  }
-}
-
-// a value and its labels
-async function evaluateLabeled(node, state) {
-  taint.begin(state, false);
-  try {
-    const value = await evaluate(node, state);
-    return { value, labels: taint.current(state) };
-  } finally {
-    taint.end(state);
-  }
-}
-
-const TAINT_CHECKS = ["is private", "is not private", "is untrusted", "is not untrusted"];
-
-// a list or object is data that can take labels; a file reference, a pattern or a secret is not
-function canLabel(value) {
-  return !(value instanceof FileRef || value instanceof Pattern || value instanceof Secret);
+  return await evaluateNode(node, state);
 }
 
 async function evaluateNode(node, state) {
@@ -2083,13 +2002,11 @@ async function evaluateNode(node, state) {
     return secretValue(node, state);
   }
   if (type === "result") {
-    taint.add(state, state.resultLabels);
     return state.result;
   }
   if (type === "variable") {
     const scope = scopeFor(node.name, state);
     if (Object.hasOwn(scope, node.name)) {
-      taint.add(state, taint.slot(scope, node.name));
       return scope[node.name];
     }
     // a $ global that is not set yet is null, so "if $last is null" works on the first run
@@ -2135,19 +2052,24 @@ async function evaluateNode(node, state) {
     if (record === undefined) {
       return null;
     }
-    return new ProcessInfo(record, state);
+    return await processInfo(record, state);
   }
   if (type === "previousOutput") {
-    taint.addLabel(state, taint.PRIVATE);
-    taint.add(state, state.previousOutputLabels);
     return state.previousOutput;
   }
   if (type === "processes") {
-    return processList(state);
+    return await processList(state);
+  }
+  // the session: is untrusted while an untrusted input is not approved; see src/md/features/taint.md
+  if (type === "session") {
+    const entries = state.taintMode === "off" ? [] : untrusted.pending(await untrusted.inputs(state.root, state.session));
+    const session = Object.create(null);
+    session.untrusted = entries.length > 0;
+    session["untrusted inputs"] = entries.map((entry) => ({ source: entry.source, time: entry.time }));
+    return session;
   }
   // the audit: this session's records, oldest first, as plain values
   if (type === "audit") {
-    taint.addLabel(state, taint.PRIVATE);
     const list = [];
     for (const record of state.audit.records) {
       list.push({ ...record });
@@ -2190,11 +2112,10 @@ async function evaluateNode(node, state) {
     return evaluateUnary(node, value);
   }
   if (type === "check") {
-    // is private, is untrusted: a check of the value's labels, not of the value
-    if (TAINT_CHECKS.includes(node.operator)) {
-      const { labels } = await evaluateLabeled(node.value, state);
-      const label = node.operator.endsWith("private") ? taint.PRIVATE : taint.UNTRUSTED;
-      return node.operator.startsWith("is not") ? !taint.has(labels, label) : taint.has(labels, label);
+    // the session is untrusted: the parser allows it only on the session
+    if (node.operator === "is untrusted" || node.operator === "is not untrusted") {
+      const session = await evaluate(node.value, state);
+      return node.operator === "is untrusted" ? session.untrusted : !session.untrusted;
     }
     // "x exists" asks if a variable is set, so an unset variable is not an error here
     const isWhether = node.operator === "exists" || node.operator === "does not exist";
@@ -2267,7 +2188,7 @@ async function evaluateNode(node, state) {
 
 // run a tool from AGENTS.talk, with its own local variables
 // gives back the tool's result at the end of the tool
-async function callTool(definition, args, named, command, state, tools, maxSteps, argLabels, namedLabels) {
+async function callTool(definition, args, named, command, state, tools, maxSteps) {
   if (args.length > definition.params.length) {
     throw new ScriptError("Tool '" + definition.name + "' takes " + definition.params.length + " arguments, found " + args.length, command);
   }
@@ -2275,24 +2196,16 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   for (let index = 0; index < definition.params.length; index++) {
     const param = definition.params[index];
     setOwn(locals, param, index < args.length ? args[index] : null);
-    if (argLabels && index < argLabels.length) {
-      taint.setSlot(locals, param, argLabels[index]);
-    }
   }
   for (const name of Object.keys(named)) {
     if (!definition.params.includes(name)) {
       throw new ScriptError("Tool '" + definition.name + "' has no argument named '" + name + "'", command);
     }
     setOwn(locals, name, named[name]);
-    if (namedLabels) {
-      taint.setSlot(locals, name, namedLabels[name]);
-    }
   }
 
   const savedVariables = state.variables;
   const savedResult = state.result;
-  const savedResultLabels = state.resultLabels;
-  state.resultLabels = taint.none();
   const savedHandler = state.handler;
   const savedHandling = state.handling;
   state.variables = locals;
@@ -2306,8 +2219,11 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   state.auditFrom = definition.name;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
-    // the call takes the labels of the tool's result
-    taint.add(state, state.resultLabels);
+    // an untrusted tool's result goes to the store, and makes the session untrusted
+    if (definition.untrusted) {
+      const shownArgs = args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name]))));
+      await noteUntrusted(state, "tool " + definition.name + (shownArgs.length > 0 ? " (" + shownArgs.join(", ") + ")" : ""), toText(showSecrets(state.result)));
+    }
     return state.result;
   } catch (err) {
     // an error inside the tool points into AGENTS.talk
@@ -2318,7 +2234,6 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
-    state.resultLabels = savedResultLabels;
     state.handler = savedHandler;
     state.file = savedFile;
     state.handling = savedHandling;
@@ -2359,7 +2274,9 @@ async function runProgram(command, state) {
   checkDenied("run", state, command);
   checkSandboxRequired("run", sandbox, state, command);
   await runHooks("before", ["run"], step, state, command);
-  await askUntrusted(state, "Run " + program, args.join(" "), command);
+  if (sandbox === null || sandbox.network) {
+    await askUntrusted(state, "Run " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
+  }
 
   const env = programEnv(command, state);
   const found = await resolveProgram(program, env, state, command);
@@ -2384,7 +2301,6 @@ async function runProgram(command, state) {
   auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + secretNote(command.secrets));
   // the output can hold a secret's value, for example from "env"
   result.output = redact(result.output, state);
-  taint.addLabel(state, taint.PRIVATE);
 
   // after hooks see the result
   state.result = result;
@@ -2587,11 +2503,11 @@ async function runGit(command, state) {
     checkDenied("writes", state, command);
   }
   await runHooks("before", ["git"], step, state, command);
-  // untrusted text in a commit message or a branch name
-  if (step.message !== undefined) {
-    await askUntrusted(state, "Commit", step.message, command);
-  } else if (step.branch !== undefined) {
-    await askUntrusted(state, "Use a branch name", step.branch, command);
+  // in an untrusted session, a commit and a push ask the human
+  if (command.operation === "commit") {
+    await askUntrusted(state, "Commit '" + (step.message === undefined ? "" : step.message) + "'", command);
+  } else if (command.operation === "push") {
+    await askUntrusted(state, "Push " + args.join(" "), command);
   }
 
   const env = gitEnv(process.env);
@@ -2648,16 +2564,10 @@ async function runGit(command, state) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
   auditStep(state, "git", args.join(" "), "");
-  // git move: the labels move with the file
-  if (command.operation === "move" && taint.moveFile(state.fileLabels, step.from, step.to)) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", step.to, "moved from " + step.from);
-  }
   // a .env file in git must not show in a diff either, since scripts cannot read it
   if (command.operation === "diff" || command.operation === "show") {
     result.output = hideSecretDiffs(result.output);
   }
-  taint.addLabel(state, taint.PRIVATE);
   state.result = result.output;
   await runHooks("after", ["git"], step, state, command);
   return result.output;
@@ -3202,11 +3112,6 @@ class ProcessInfo {
     this.code = record.code;
     // the output can hold a secret's value
     this.output = redact(record.output, state);
-    taint.addLabel(state, taint.PRIVATE);
-    // a subagent's answer is always untrusted
-    if (record.subagent) {
-      taint.addLabel(state, taint.UNTRUSTED, record.subagent);
-    }
   }
 }
 
@@ -3232,7 +3137,9 @@ async function startProcess(command, state) {
   checkDenied("start", state, command);
   checkSandboxRequired("start", sandbox, state, command);
   await runHooks("before", ["start"], step, state, command);
-  await askUntrusted(state, "Start " + program, args.join(" "), command);
+  if (sandbox === null || sandbox.network) {
+    await askUntrusted(state, "Start " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
+  }
 
   let env = programEnv(command, state);
   let spawnProgramName = await resolveProgram(program, env, state, command);
@@ -3296,7 +3203,7 @@ async function stopProcess(command, state) {
     await endProcess(record);
     auditStep(state, "stop", name, "");
   }
-  return new ProcessInfo(record, state);
+  return await processInfo(record, state);
 }
 
 // end the process group, and wait up to 2 seconds before a hard kill
@@ -3375,12 +3282,22 @@ export function stopAllProcesses(processes) {
   }
 }
 
-function processList(state) {
+async function processList(state) {
   const list = [];
   for (const record of state.processes.values()) {
-    list.unshift(new ProcessInfo(record, state));
+    list.unshift(await processInfo(record, state));
   }
   return list;
+}
+
+// a process value for the script; the agent sees a subagent's answer, so new output of it goes to the store
+async function processInfo(record, state) {
+  const info = new ProcessInfo(record, state);
+  if (record.subagent && info.output.length > (record.storedLength || 0)) {
+    record.storedLength = info.output.length;
+    await noteUntrusted(state, record.subagent, info.output);
+  }
+  return info;
 }
 
 // ----- fetch -----
@@ -3455,7 +3372,10 @@ async function runFetch(command, state) {
   step.method = method;
   step.secrets = secrets;
   await runHooks("before", ["fetch"], step, state, command);
-  await askPrivate(state, url, command);
+  // in an untrusted session, a fetch with a secret asks the human
+  if (secrets.length > 0) {
+    await askUntrusted(state, "Send secret " + secrets.join(", ") + " to " + url.host, command);
+  }
 
   let limit = shorter(state.timeLimit, FETCH_TIME_LIMIT);
   if (command.within !== null) {
@@ -3518,7 +3438,7 @@ async function runFetch(command, state) {
   const text = redact(await readLimited(response, current, command), state);
   step.status = response.status;
   // text from the web is untrusted: it must not drive an action without a question
-  taint.addLabel(state, taint.UNTRUSTED, current.href);
+  await noteUntrusted(state, current.href, text);
 
   let result;
   if (command.as === "response") {
@@ -3629,6 +3549,8 @@ async function checkFetchHost(url, state, node) {
   if (state.allowedFetch.some((rule) => fetchRuleAllows(rule, url, host)) || state.fetchHosts.has(host)) {
     return;
   }
+  // in an untrusted session, a new host asks about the session first
+  await askUntrusted(state, "Fetch from " + host, node);
   const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
   if (answer !== "yes") {
     throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
@@ -3813,34 +3735,55 @@ async function askHuman(command, state) {
 // a client that cannot show the dialog (for example on a phone) must not hang the script
 const ASK_TIME_LIMIT = 2 * 60 * 1000;
 
-// ----- taint questions; see src/md/features/taint.md -----
+// ----- session taint; see src/md/features/taint.md and src/js/untrusted.js -----
 
-// untrusted text in an action: ask the human each time; no answer, or no, is an error
-// labels are the command's labels so far, which hold the labels of its arguments
-async function askUntrusted(state, action, text, node) {
-  const labels = taint.current(state);
-  if (!taint.has(labels, taint.UNTRUSTED)) {
+// the agent saw untrusted text: save it in the store, so the session is untrusted until the human approves it
+// node is the command, for an error; a process read has none
+async function noteUntrusted(state, source, text, node = { line: 1, column: 1 }) {
+  if (state.taintMode === "off") {
     return;
   }
-  const question = redact(taint.untrustedQuestion(action, labels, text), state);
-  const answer = await askState(state, question, ["yes", "no"], null);
-  if (answer !== "yes") {
-    throw new ScriptError("The human did not approve untrusted text from " + taint.originsText(labels, taint.UNTRUSTED) + " here" + askReason(state) + ".", node);
+  const where = untrusted.storePath(state.session);
+  let entry;
+  try {
+    entry = await untrusted.record(state.root, state.session, { source: redact(source, state), text: redact(text, state), time: clock(new Date()), keepBytes: state.keepUntrustedBytes });
+  } catch (err) {
+    throw new ScriptError("Could not save untrusted input in " + where + ": " + err.message, node);
+  }
+  auditStep(state, "untrusted", source, "saved as " + where + entry.file);
+  if (entry.cut) {
+    state.execution.warnings.push({ message: "warning: untrusted input " + entry.n + " is " + sizeText(entry.size) + "; the store kept the first " + sizeText(state.keepUntrustedBytes), line: 1, column: 1 });
   }
 }
 
-// private data in a fetch: ask the human once for each host in a session
-async function askPrivate(state, url, node) {
-  const labels = taint.current(state);
-  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
-  if (!taint.has(labels, taint.PRIVATE) || state.privateHosts.has(host)) {
+// 1536 bytes is "2 KB", 5242880 is "5 MB"
+function sizeText(bytes) {
+  return bytes >= 1024 * 1024 ? Math.ceil(bytes / (1024 * 1024)) + " MB" : Math.ceil(bytes / 1024) + " KB";
+}
+
+// in an untrusted session, a risky action asks the human; no answer, or no, is an error
+async function askUntrusted(state, action, node) {
+  if (state.taintMode === "off") {
     return;
   }
-  const answer = await askState(state, "Send private data to " + host + "?", ["yes", "no"], null);
-  if (answer !== "yes") {
-    throw new ScriptError("The human did not approve sending private data to " + host + askReason(state) + ".", node);
+  const entries = untrusted.pending(await untrusted.inputs(state.root, state.session));
+  if (entries.length === 0) {
+    return;
   }
-  state.privateHosts.add(host);
+  const shown = action.length > 120 ? action.slice(0, 117) + "..." : action;
+  const sources = entries.slice(0, 5).map((entry) => entry.source).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
+  const count = entries.length === 1 ? "1 untrusted input is" : entries.length + " untrusted inputs are";
+  const question = redact(shown + "? " + count + " not approved: " + sources + ". Review them with: npx clank-talk taint", state);
+  const answer = await askState(state, question, ["approve them and go on", "yes, this time only", "no"], null);
+  if (answer === "approve them and go on") {
+    const numbers = await untrusted.approve(state.root, state.session, entries.map((entry) => entry.n));
+    auditStep(state, "approve", untrusted.storePath(state.session), "untrusted inputs " + numbers.join(", "));
+    return;
+  }
+  if (answer === "yes, this time only") {
+    return;
+  }
+  throw new ScriptError("The human did not approve this in an untrusted session: " + shown + askReason(state) + ".", node);
 }
 
 // why an approval did not come: no way to ask, or no answer in time; empty for a plain "no"
@@ -3914,21 +3857,8 @@ function localDate(date) {
 }
 
 // one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
-// a step notes the labels of what its command read, such as (private)
-// all file text is private, so a read or a file change notes only untrusted
-const FILE_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete"];
 function auditStep(state, kind, target, details) {
-  let labels = taint.current(state);
-  // a taint step says its labels in its details
-  if (kind === "taint") {
-    labels = taint.none();
-  } else if (FILE_STEPS.includes(kind)) {
-    labels = taint.without(labels, taint.PRIVATE);
-  }
-  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact((details || "") + taint.note(labels), state), from: state.auditFrom };
-  if (labels.size > 0) {
-    record.labels = taint.forHook(labels);
-  }
+  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact(details || "", state), from: state.auditFrom };
   state.auditSteps.push(record);
   state.audit.records.push(record);
   if (state.audit.records.length > AUDIT_RECORDS) {
@@ -4069,8 +3999,7 @@ function recordUndo(state) {
     }
     const item = byPath.get(change.path);
     if (item === undefined) {
-      // labelsBefore: the file's taint entry before the script, so undo can put it back
-      byPath.set(change.path, { path: change.path, before: change.before, after: change.after, labelsBefore: change.labelsBefore || null });
+      byPath.set(change.path, { path: change.path, before: change.before, after: change.after });
     } else {
       item.after = change.after;
     }
@@ -4129,7 +4058,6 @@ async function runUndo(command, state) {
   // check everything first: each file must be as the script left it,
   // or as a newer item puts it back; if one is not, nothing changes
   const final = new Map();
-  const finalLabels = new Map();
   const changed = [];
   for (const item of items) {
     let now;
@@ -4142,7 +4070,6 @@ async function runUndo(command, state) {
       changed.push(item.path);
     }
     final.set(item.path, item.before);
-    finalLabels.set(item.path, item.labelsBefore || null);
   }
   if (changed.length > 0) {
     throw new ScriptError("Cannot undo: these files changed after the script: " + changed.join(", ") + ". Nothing was changed", command);
@@ -4155,7 +4082,7 @@ async function runUndo(command, state) {
   try {
     for (const [path, text] of final) {
       was.push({ path, text: await currentText(path, state) });
-      await restoreFile(path, text, state, command, finalLabels.get(path));
+      await restoreFile(path, text, state, command);
       restored.push(path);
     }
   } catch (err) {
@@ -4211,7 +4138,7 @@ async function currentText(path, state) {
 
 // put a file back to its old text; null removes a file that the script made
 // the same checks as a write, and the "undo" and "change" hooks
-async function restoreFile(path, text, state, node, labelsBefore) {
+async function restoreFile(path, text, state, node) {
   const file = new FileRef(nodePath.resolve(state.root, path), state.root);
   checkInsideRoot(file.absolute, state, node, path);
   checkDenied("writes", state, node);
@@ -4233,17 +4160,6 @@ async function restoreFile(path, text, state, node, labelsBefore) {
     state.seen.set(await fs.realpath(file.absolute), text);
   }
   state.execution.changes.push({ path: file.path, before, after: text, undo: true });
-  // undo puts back old text, and the labels that text had, so undo cannot remove a label
-  const entry = state.fileLabels[file.path];
-  if (labelsBefore && text !== null && labelsBefore.hash === taint.hashText(text)) {
-    state.fileLabels[file.path] = { ...labelsBefore };
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "restored: " + taint.describe(taint.entryLabels(labelsBefore)));
-  } else if (entry !== undefined && (text === null || entry.hash !== taint.hashText(text))) {
-    taint.deleteFile(state.fileLabels, file.path);
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "cleared");
-  }
   await changeHooks("after", step, state, node);
 }
 
@@ -4293,9 +4209,6 @@ async function runHooks(when, names, step, state, node) {
   if (state.inHook) {
     return;
   }
-  // the step's labels: what the command read so far; the step's fields carry them too
-  step.labels = taint.forHook(taint.current(state));
-  taint.attach(step, taint.current(state));
   for (const hook of state.hooks) {
     if (hook.when === when && names.includes(hook.name)) {
       await runHook(hook, step, state, node);
@@ -4307,7 +4220,6 @@ async function runHooks(when, names, step, state, node) {
 async function runHook(hook, step, state, node) {
   const savedVariables = state.variables;
   const savedResult = state.result;
-  const savedResultLabels = state.resultLabels;
   const savedHandler = state.handler;
   const savedHandling = state.handling;
   // the hook gets a copy of the step, so it cannot change what runs; see src/md/features/hooks.md
@@ -4335,7 +4247,6 @@ async function runHook(hook, step, state, node) {
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
-    state.resultLabels = savedResultLabels;
     state.handler = savedHandler;
     state.handling = savedHandling;
     state.inHook = false;
@@ -4358,7 +4269,6 @@ function copyValue(value) {
   } else {
     return value;
   }
-  taint.attach(copy, taint.labelsOf(value));
   return copy;
 }
 
@@ -4448,7 +4358,6 @@ async function assign(target, value, state) {
   if (target.type === "variable") {
     const scope = scopeFor(target.name, state);
     setOwn(scope, target.name, value);
-    taint.setSlot(scope, target.name, taint.current(state));
     return;
   }
 
@@ -4482,8 +4391,6 @@ async function assign(target, value, state) {
   } catch (err) {
     throw new ScriptError("Cannot set '" + name + "'", target);
   }
-  // a list or object keeps one set of labels for all its items
-  taint.attach(object, taint.current(state));
 }
 
 // true if value is target, or holds it at any depth
@@ -4896,15 +4803,6 @@ async function readText(file, state, node) {
   state.seen.set(real, raw);
   const text = withoutBom(raw);
   step.text = text;
-  // file text is private: it must not leave the machine without a question
-  taint.addLabel(state, taint.PRIVATE);
-  // a file that a script wrote with untrusted text is still untrusted
-  const known = taint.forFileText(state.fileLabels, file.path, text);
-  taint.add(state, known.labels);
-  if (known.dropped) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "dropped: changed outside ClankTalk");
-  }
   auditRead(state, file.path);
   await runHooks("after", ["read"], step, state, node);
   return text;
@@ -5033,34 +4931,7 @@ async function writeText(file, text, append, state, node) {
   }
   await fs.writeFile(real, after, "utf8");
   state.seen.set(await fs.realpath(real), after);
-  state.execution.changes.push({ path: file.path, before, after, labelsBefore: labelEntryFor(state, file.path, before) });
-  // an append keeps what is in the file, so it keeps the file's labels too
-  let labels = taint.current(state);
-  if (append && before !== null) {
-    labels = taint.union(labels, taint.forFileText(state.fileLabels, file.path, before).labels);
-  }
-  fileLabelsAfter(state, file.path, after, labels);
-}
-
-// a copy of a file's taint entry, if it holds for this text; undo uses it to put the labels back
-function labelEntryFor(state, path, text) {
-  const entry = state.fileLabels[path];
-  if (entry === undefined || text === null || entry.hash !== taint.hashText(text)) {
-    return null;
-  }
-  return { ...entry, labels: entry.labels.map((item) => ({ label: item.label, from: [...item.from] })) };
-}
-
-// remember the untrusted labels of a file's new text, and audit a change
-function fileLabelsAfter(state, path, text, labels) {
-  const where = { time: new Date().toISOString().slice(0, 16).replace("T", " "), session: state.session, script: state.auditScript };
-  const change = taint.afterWrite(state.fileLabels, path, text, labels, where);
-  if (change === null) {
-    return;
-  }
-  state.fileLabelsChanged = true;
-  const entry = state.fileLabels[path];
-  auditStep(state, "taint", path, change === "set" ? taint.describe(taint.entryLabels(entry)) : "cleared");
+  state.execution.changes.push({ path: file.path, before, after });
 }
 
 // the checks before a script changes a file: one file, writes not denied, not protected, not hidden
@@ -5102,11 +4973,7 @@ async function deleteFile(file, state, node) {
   const text = await fs.readFile(real, "utf8");
   await fs.rm(file.absolute);
   state.seen.delete(real);
-  state.execution.changes.push({ path: file.path, before: text, after: null, labelsBefore: labelEntryFor(state, file.path, text) });
-  if (taint.deleteFile(state.fileLabels, file.path)) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "cleared");
-  }
+  state.execution.changes.push({ path: file.path, before: text, after: null });
   await changeHooks("after", step, state, node);
 }
 
@@ -5133,13 +5000,8 @@ async function moveFile(from, to, state, node) {
   state.seen.delete(real);
   state.seen.set(await fs.realpath(to.absolute), text);
   // two changes, so undo puts the text back at the old path, and removes the new one
-  state.execution.changes.push({ path: from.path, before: text, after: null, labelsBefore: labelEntryFor(state, from.path, text) });
-  state.execution.changes.push({ path: to.path, before: null, after: text, labelsBefore: null });
-  // the labels move with the file
-  if (taint.moveFile(state.fileLabels, from.path, to.path)) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", to.path, "moved from " + from.path);
-  }
+  state.execution.changes.push({ path: from.path, before: text, after: null });
+  state.execution.changes.push({ path: to.path, before: null, after: text });
   await changeHooks("after", step, state, node);
 }
 

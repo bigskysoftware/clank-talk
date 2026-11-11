@@ -49,6 +49,8 @@ before(async () => {
   otherBase = "http://127.0.0.1:" + otherServer.address().port;
   await fs.writeFile(path.join(root, ".env"), "TOKEN=" + TOKEN + "\nRUN_TOKEN=run-abcdefgh12\nRUN_OTHER=other-abcdefgh\n");
   await fs.writeFile(path.join(root, "AGENTS.talk"), [
+    // these tests fetch and run in one session; session taint has its own tests
+    "taint off",
     "allow env PATH",
     "allow fetch from '127.0.0.1', 'localhost'",
     "allow secret TOKEN for fetch to '127.0.0.1'",
@@ -165,7 +167,7 @@ test("allow secret is only for AGENTS.talk, and needs for fetch to or for run", 
 test("the environment wins, then .env.local, then .env", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-secrets-"));
   try {
-    await fs.writeFile(path.join(dir, "AGENTS.talk"), "allow secret CLANK_TEST_ORDER for fetch to '127.0.0.1'\nallow fetch from '127.0.0.1'");
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "taint off\nallow secret CLANK_TEST_ORDER for fetch to '127.0.0.1'\nallow fetch from '127.0.0.1'");
     await fs.writeFile(path.join(dir, ".env"), "# a comment\nexport CLANK_TEST_ORDER='from-dot-env' # not this\n");
     const sent = async () => {
       const result = await run(`fetch '${base}/' with headers: { Authorization: secret CLANK_TEST_ORDER }`, { root: dir });
@@ -206,7 +208,7 @@ test("a redirect to another host drops the secret, and the audit records the red
   assert.equal(redirect.target, base + "/to-other");
   assert.equal(redirect.details, "302 to " + otherBase + "/");
   const fetched = audit.records.find((record) => record.kind === "fetch");
-  assert.match(fetched.details, /  \(secret TOKEN\)  \(untrusted from http:\/\/127\.0\.0\.1:\d+\/\)$/);
+  assert.match(fetched.details, /^200, \d+ bytes  \(secret TOKEN\)$/);
   // a 301 after a PUT keeps the body, so it does not go on to another host
   assert.deepEqual(await errors(`fetch '${base}/put-to-other' with method: 'PUT', body: secret TOKEN`), [`fetch will not send the body on to another host: ${base} redirects to ${otherBase}`]);
 });
@@ -316,4 +318,3 @@ test("on error sees no secret's value, also from a file that holds it", async ()
   assert.ok(!leak.includes(TOKEN));
   assert.match(leak, /<secret TOKEN>/);
 });
-

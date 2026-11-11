@@ -43,7 +43,8 @@ after(async () => {
 });
 
 async function agents(...lines) {
-  await fs.writeFile(path.join(root, "AGENTS.talk"), lines.join("\n"));
+  // these tests fetch many times in one session; session taint has its own tests
+  await fs.writeFile(path.join(root, "AGENTS.talk"), ["taint off", ...lines].join("\n"));
 }
 
 async function firstError(source, options = {}) {

@@ -87,7 +87,6 @@ export function clankTalkExtension(pi, Type) {
           agent: agent || null,
           policy: session.policy,
           fetchHosts: session.fetchHosts,
-          privateHosts: session.privateHosts,
           processes: session.processes,
           audit: session.audit,
           ask: askFor(ctx),
@@ -97,11 +96,9 @@ export function clankTalkExtension(pi, Type) {
           onStep: progressFor(onUpdate),
           signal,
           previousOutput: scope.output.text,
-          previousOutputLabels: scope.output.labels,
           session: session.name,
         });
         scope.output.text = keptOutput(result);
-        scope.output.labels = result.outputLabels || null;
         return {
           content: [{ type: "text", text: formatResult(result, params.script, session.root) }],
           details: { status: result.status, steps: result.steps },
@@ -113,7 +110,7 @@ export function clankTalkExtension(pi, Type) {
 }
 
 function newSession(root) {
-  return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), privateHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
+  return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
 }
 
 // a subagent uses pi's own model and login, so it needs no API key; see src/md/features/subagents.md

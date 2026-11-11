@@ -335,13 +335,15 @@ untrusted tool issue with id
 end
 ```
 
-Here, the `untrusted` keyword marks that the content returned by this tool cannot be trusted.  It is _tainted_.
+Here, the `untrusted` keyword marks that the content returned by this tool cannot be trusted.  After your agent reads it, the whole session is _tainted_.
 
-Text from fetch, an `untrusted tool` or a subagent is untrusted. 
+TODO (Carson): why the session and not the value: the agent can read an injection and type it back into a new script, so taint follows the agent's context.
 
-Text from files, git and programs on your local machine is considered private and _untainted_.
-
-When untrusted text is used in a `run`, `start`, a commit or a branch name, you will be  asked first. 
+- Text from fetch, an `untrusted tool` or a subagent makes the session untrusted.
+- ClankTalk keeps a copy of each untrusted input in `.talk/untrusted/`, for you to review. Your agent cannot change it.
+- While the session is untrusted, a push, a commit, a `run` or `start` with network or with no sandbox, a fetch to a new host, and a fetch with a secret ask you first.
+- You can answer `approve them and go on`, `yes, this time only` or `no`.
+- `taint off`, `taint on` and `taint required` in `AGENTS.talk` set the default. `keep untrusted inputs up to 5 MB` sets how much of each input is kept (1 MB by default).
 
 <h3 id="secrets">Calling the GitHub API</h3>
 
@@ -396,19 +398,19 @@ end
 - Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `move`, `delete`, `change` (any file change), `undo`, `run`, `start`, `stop`, `git`, `fetch`, or a tool name.
 - A hook cannot change the step, and cannot run a program, also through a tool.
 
-### No Web Text in Programs
+### No Programs After Web Text
 
-TODO (Carson): the problem: you do not want text from an issue to reach a program at all, not even with a question.
+TODO (Carson): the problem: after your agent reads an issue, you do not want it to run programs at all, not even with a question.
 
 ```talk AGENTS.talk
 before run
-  if the run's args is untrusted
-    reject 'No web text in programs'
+  if the session is untrusted
+    reject 'No programs after web text'
   end
 end
 ```
 
-- A hook can check the taint labels of the step: `is untrusted` and `is private`.
+- A hook can check `the session is untrusted`, and list `the session's untrusted inputs`.
 
 ### Ask Me Before a Push
 
@@ -585,8 +587,8 @@ before run
   if the run's sandbox is null
     reject 'Use a sandbox'
   end
-  if the run's args is untrusted
-    reject 'No web text in programs'
+  if the session is untrusted
+    reject 'No programs after web text'
   end
 end
 

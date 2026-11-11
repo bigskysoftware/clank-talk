@@ -273,11 +273,14 @@ export function parse(source, options = {}) {
       i++;
       return operator + " empty";
     }
-    // is private, is untrusted: taint checks; see src/md/features/taint.md
-    if (isWord("private") || isWord("untrusted")) {
-      const word = current().value;
+    // is untrusted: only for the session; see src/md/features/taint.md
+    if (isWord("untrusted")) {
       i++;
-      return operator + " " + word;
+      return operator + " untrusted";
+    }
+    if (isWord("private")) {
+      error("'" + operator + " private' was removed: values have no taint labels. Check the session: the session is untrusted");
+      return null;
     }
     if (isWord("in")) {
       i++;
@@ -287,7 +290,7 @@ export function parse(source, options = {}) {
   }
 
   // operators with no right side
-  const CHECKS = ["exists", "does not exist", "is empty", "is not empty", "is private", "is not private", "is untrusted", "is not untrusted"];
+  const CHECKS = ["exists", "does not exist", "is empty", "is not empty", "is untrusted", "is not untrusted"];
 
   function parseComparison() {
     const left = parseMath();
@@ -350,6 +353,10 @@ export function parse(source, options = {}) {
 
     // checks have no right side
     if (CHECKS.includes(operator)) {
+      if (operator.endsWith("untrusted") && left.type !== "session") {
+        error("'" + operator + "' only checks the session: values have no taint labels. Use: the session is untrusted");
+        return null;
+      }
       return node("check", token, { operator, value: left });
     }
 
@@ -457,6 +464,11 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
+    // the session's untrusted inputs: a name of two words
+    if (object !== null && object.type === "session" && name.value === "untrusted" && isWord("inputs")) {
+      i++;
+      return node("property", token, { object, name: "untrusted inputs" });
+    }
     return node("property", token, { object, name: name.value });
   }
 
@@ -475,6 +487,11 @@ export function parse(source, options = {}) {
       if (next !== undefined && next.type === "word" && next.value === "processes") {
         i++;
         return node("processes", next, {});
+      }
+      // the session: is untrusted, and its untrusted inputs; see src/md/features/taint.md
+      if (next !== undefined && next.type === "word" && next.value === "session") {
+        i++;
+        return node("session", next, {});
       }
       // the previous output: the full print output of the last script, which the host can cut
       if (next !== undefined && next.type === "word" && next.value === "previous" && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "output") {
@@ -2279,8 +2296,13 @@ export function parse(source, options = {}) {
       return { type: "policyName", name: name.value, ...at };
     }
     if (token.value === "require") {
+      // require taint: the session taint stays on; see src/md/features/taint.md
+      if (isWord("taint")) {
+        i++;
+        return { type: "requireTaint", ...at };
+      }
       if (!isWord("sandbox")) {
-        error("Expected 'sandbox for run, start'");
+        error("Expected 'sandbox for run, start' or 'taint'");
         return null;
       }
       i++;
@@ -2407,6 +2429,35 @@ export function parse(source, options = {}) {
     return { type: "keepAudit", days, atLeast, line: token.line, column: token.column };
   }
 
+  // keep untrusted inputs up to 5 MB: the most text that the store keeps of one untrusted input
+  function parseKeepUntrusted(token) {
+    for (const word of ["untrusted", "inputs", "up", "to"]) {
+      if (!isWord(word)) {
+        error("Expected '" + word + "', as in: keep untrusted inputs up to 5 MB");
+        return null;
+      }
+      i++;
+    }
+    const number = current();
+    const size = number === undefined || number.type !== "number" ? NaN : Number(number.value);
+    if (!Number.isInteger(size) || size < 1) {
+      error("Expected a whole number above 0, such as: keep untrusted inputs up to 5 MB");
+      return null;
+    }
+    i++;
+    let bytes;
+    if (isWord("MB") || isWord("mb")) {
+      bytes = size * 1024 * 1024;
+    } else if (isWord("KB") || isWord("kb")) {
+      bytes = size * 1024;
+    } else {
+      error("Expected 'MB' or 'KB', as in: keep untrusted inputs up to 5 MB");
+      return null;
+    }
+    i++;
+    return { type: "keepUntrusted", bytes, line: token.line, column: token.column };
+  }
+
   // limit output to 400 lines [or 20 KB]: the most print output the agent sees, in AGENTS.talk or a policy
   // see src/md/infrastructure/host.md
   function parseOutputLimit(token) {
@@ -2462,13 +2513,26 @@ export function parse(source, options = {}) {
         continue;
       }
       // keep audit for <n> days (AGENTS.talk), keep audit for at least <n> days (a policy); see src/md/features/audit.md
+      // keep untrusted inputs up to <n> MB (AGENTS.talk); see src/md/features/taint.md
       if (isWord("keep")) {
         const token = current();
         i++;
-        const definition = parseKeepAudit(token);
+        const definition = isWord("untrusted") && !options.policy ? parseKeepUntrusted(token) : parseKeepAudit(token);
         if (definition !== null) {
           definitions.push(definition);
         }
+        continue;
+      }
+      // taint on | taint off | taint required (AGENTS.talk); see src/md/features/taint.md
+      if (isWord("taint") && !options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("on") && !isWord("off") && !isWord("required")) {
+          error("Expected 'on', 'off' or 'required', as in: taint required");
+          continue;
+        }
+        definitions.push({ type: "taint", mode: current().value, line: token.line, column: token.column });
+        i++;
         continue;
       }
       // a policy: policy 'name', require ..., limit ..., deny ..., audit also to ...; see src/md/features/policy.md

@@ -56,6 +56,9 @@ before(async () => {
   await new Promise((resolve) => otherServer.listen(0, "127.0.0.1", resolve));
   otherBase = "http://127.0.0.1:" + otherServer.address().port;
   await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
+  // these tests fetch many times in one session: taint is off, as "npx clank-talk taint off" sets it
+  await fs.mkdir(path.join(root, ".talk"), { recursive: true });
+  await fs.writeFile(path.join(root, ".talk", "taint-state.json"), '{ "taint": "off" }\n');
 });
 
 after(async () => {
