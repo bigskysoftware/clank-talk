@@ -227,6 +227,28 @@ async function approveNow(root, session, numbers, by) {
   return changed;
 }
 
+// take back approvals: the inputs with these numbers are not approved again; gives the numbers that changed
+export async function unapprove(root, session, numbers) {
+  return await locked(root, session, async () => {
+    const entries = await inputs(root, session);
+    if (entries.some((entry) => entry.n === 0)) {
+      return [];
+    }
+    const changed = [];
+    for (const entry of entries) {
+      if (numbers.includes(entry.n) && entry.approved) {
+        entry.approved = false;
+        delete entry.approvedBy;
+        delete entry.approvedAt;
+        changed.push(entry.n);
+      }
+    }
+    if (changed.length > 0) {
+      await save(root, session, entries);
+    }
+    return changed;
+  });
+}
 // the "keep audit" rules: delete the sessions whose newest input is from before the oldest kept day (2026-11-08)
 // only sessions where all inputs are approved: an input that is not approved keeps the project untrusted until a human looks
 // gives the names of the deleted sessions; a broken store is kept, for the human

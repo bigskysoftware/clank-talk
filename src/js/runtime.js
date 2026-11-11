@@ -12,7 +12,7 @@ import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { keepItems, withNotes } from "./keeping.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
 import * as untrusted from "./untrusted.js";
-import { judgeText } from "./judge.js";
+import { judgeLines, judgeText } from "./judge.js";
 import { runSubagent, anthropicModel, SubagentError, API_URL } from "./subagent.js";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -4206,7 +4206,7 @@ export async function projectJudge(root, options = {}) {
   } catch (err) {
     return { error: "The judge cannot run: " + err.message };
   }
-  return { approves: agents.judge.approves, judge: (source, text) => judgeText({ ask, prompt: agents.judge.prompt, source, text }) };
+  return { approves: agents.judge.approves, judge: (source, text) => judgeText({ ask, prompt: agents.judge.prompt, source, text }), lines: (source, text) => judgeLines({ ask, source, text }) };
 }
 
 // at most this many characters, with "..." at the end of a longer text

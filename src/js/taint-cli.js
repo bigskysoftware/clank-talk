@@ -6,6 +6,7 @@ import nodePath from "node:path";
 import { parse } from "./parser.js";
 import * as untrusted from "./untrusted.js";
 import { projectJudge } from "./runtime.js";
+import { runTui } from "./taint-tui.js";
 
 export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
 
@@ -14,9 +15,11 @@ export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
   clank-talk taint approve <ref> ...   approve inputs
   clank-talk taint approve --all       approve all inputs: clears all taints
   clank-talk taint approve --clean     approve the inputs that the judge found clean
+  clank-talk taint unapprove <ref> ... take back approvals: the inputs taint the session again
   clank-talk taint judge <ref> ...     the judge reads inputs, and gives clean, suspect or unsure
   clank-talk taint judge --all         the judge reads the inputs that it did not read and that are not approved
   clank-talk taint on | off            turn session taint on or off for this project
+  clank-talk taint --tui               a full-screen review: read, mark and approve inputs (q to quit)
   clank-talk taint --line              one short line for a status bar: taint off, untainted, or tainted <n> (inputs to review)
 
 A <ref> is <session>/<n>, such as claude-code-4f2a/3, or <n> for the newest session.`;
@@ -82,6 +85,7 @@ async function findRef(root, ref) {
 
 // runs one taint command; out takes lines of text; gives the exit code
 // options.lendModel: for tests, a model in place of the one in AGENTS.talk
+// options.input, options.output: for tests, the terminal for --tui
 export async function taintCommand(args, root, out, options = {}) {
   const [command = "list", ...rest] = args;
   const agentsLine = await agentsTaintLine(root);
@@ -107,6 +111,10 @@ export async function taintCommand(args, root, out, options = {}) {
     const waiting = (await allInputs(root)).filter(({ entry }) => !entry.approved).length;
     out(state[0] === "off" ? "taint off" : waiting === 0 ? "untainted" : "tainted " + waiting);
     return 0;
+  }
+
+  if (command === "--tui") {
+    return await runTui(root, options.input || process.stdin, options.output || process.stdout, out, options);
   }
 
   if (command === "list") {
@@ -176,6 +184,28 @@ export async function taintCommand(args, root, out, options = {}) {
       count += (await untrusted.approve(root, session, numbers, "the command line")).length;
     }
     out("Approved " + count + (count === 1 ? " input." : " inputs."));
+    return 0;
+  }
+
+  if (command === "unapprove") {
+    if (rest.length === 0) {
+      out("Name the inputs to unapprove.\n\n" + USAGE);
+      return 1;
+    }
+    const picked = [];
+    for (const ref of rest) {
+      const found = await findRef(root, ref);
+      if (found === null) {
+        out("No untrusted input " + ref + ". Nothing was unapproved.");
+        return 1;
+      }
+      picked.push(found);
+    }
+    let count = 0;
+    for (const { session, entry } of picked) {
+      count += (await untrusted.unapprove(root, session, [entry.n])).length;
+    }
+    out("Unapproved " + count + (count === 1 ? " input." : " inputs."));
     return 0;
   }
 
