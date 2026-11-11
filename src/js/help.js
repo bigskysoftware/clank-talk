@@ -250,7 +250,7 @@ export const HELP = [
       "'wait until' checks every 200 ms. An error in the condition counts as false. With no 'within', it stops after 30 seconds.",
       "Durations: 100ms, 2s, 5 seconds, 1 minute.",
     ],
-    examples: ["wait 2 seconds", "wait until (fetch http://localhost:4000/ as response)'s status is 200 within 10 seconds"],
+    examples: ["wait 2 seconds", "wait until the status of fetch http://localhost:4000/ as response is 200 within 10 seconds"],
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",
@@ -442,8 +442,11 @@ export const HELP = [
   {
     name: "of", kind: "expression",
     syntax: "<value>'s <name> | <value>.<name> | <name> of <value> | <value>[<index>]",
-    description: "Get a property. file's text, file.text and text of file are the same. A missing property is null. set x[i] on a list takes a whole number from 0 to the length.",
-    examples: ["print the name of the file", "print config.version", "print items[0]"],
+    description: [
+      "Get a property. file's text, file.text and text of file are the same. A missing property is null. set x[i] on a list takes a whole number from 0 to the length.",
+      "If the grouping is not clear, the of form usually reads more clearly: the status of fetch url as response, not (fetch url as response)'s status.",
+    ],
+    examples: ["print the name of the file", "print config.version", "print items[0]", "wait until the status of fetch http://localhost:4000/ as response is 200 within 10 seconds"],
   },
   {
     name: "lines", kind: "expression",
@@ -657,7 +660,7 @@ export const RECIPES = [
   {
     name: "Start a server, and wait for it",
     description: "A tool starts it; wait until it answers; look at its output if it does not.",
-    example: "dev_server\nwait until (fetch http://localhost:8000/ as response)'s status is 200 within 15 seconds\non error\n  print the output of process 'dev'\nend",
+    example: "dev_server\nwait until the status of fetch http://localhost:8000/ as response is 200 within 15 seconds\non error\n  print the output of process 'dev'\nend",
   },
   {
     name: "Commit your work",

@@ -23,6 +23,16 @@ const WINDOWED = ["docs.html", "policy.html"];
 let windowAll = false;
 marked.use({
   renderer: {
+    // ### Title {#id}: a heading with an id, for links such as docs.html#id
+    heading(token) {
+      const html = this.parser.parseInline(token.tokens);
+      const match = html.match(/^(.*?)\s*\{#([\w-]+)\}$/);
+      if (match === null) {
+        return false;
+      }
+      // the heading text links to itself, so a reader can copy the link
+      return "<h" + token.depth + ' id="' + match[2] + '"><a class="heading-link" href="#' + match[2] + '">' + match[1] + "</a></h" + token.depth + ">\n";
+    },
     code(token) {
       const parts = (token.lang || "").trim().split(/\s+/);
       const lang = parts[0];

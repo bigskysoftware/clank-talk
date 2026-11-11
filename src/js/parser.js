@@ -510,7 +510,7 @@ export function parse(source, options = {}) {
       }
     }
 
-    // fetch as a value, as read is: (fetch url as response)'s status
+    // fetch as a value, as read is: the status of fetch url as response
     if (isWord("fetch")) {
       const fetchToken = current();
       i++;

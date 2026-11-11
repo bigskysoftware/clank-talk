@@ -45,8 +45,8 @@ git delete branch 'fix-total'
 ```talk
 site_server
 set home to http://localhost:8000/
-wait until (fetch home as response)'s
-  status is 200 within 20 seconds
+wait until the status of fetch home as response
+  is 200 within 20 seconds
 
 print process 'site'
 ```

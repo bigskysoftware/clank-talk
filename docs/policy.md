@@ -8,7 +8,7 @@
 
 A ClankTalk policy is a file of rules that your organization ships with its agent harness. It sets limits for every agent session, and no project can widen them.
 
-<h2 id="why">Why a Policy</h2>
+## Why a Policy {#why}
 
 Each project has an `AGENTS.talk` file. The developers of the project write it, and it says what agents can do in that project. That is right for one project, but an organization needs rules that hold everywhere:
 
@@ -19,7 +19,7 @@ Each project has an `AGENTS.talk` file. The developers of the project write it, 
 
 A policy gives these rules. The policy is written in ClankTalk, the same language as `AGENTS.talk`, so security reviewers can read it.
 
-<h2 id="example">An Example Policy</h2>
+## An Example Policy {#example}
 
 ```talk policy.talk
 policy 'acme-secure'
@@ -51,7 +51,7 @@ before fetch
 end
 ```
 
-<h2 id="controls">The Controls</h2>
+## The Controls {#controls}
 
 | Rule | Effect |
 |---|---|
@@ -75,7 +75,7 @@ end
 
 Each rule applies when `AGENTS.talk` loads, and again at each step while a script runs. A script cannot get around a rule.
 
-<h2 id="conflicts">When a Project Goes Past the Policy</h2>
+## When a Project Goes Past the Policy {#conflicts}
 
 A conflict is an error, not a silent change. If `AGENTS.talk` allows more than the policy, nothing runs until the project is fixed. The error names both files and both lines:
 
@@ -83,7 +83,7 @@ A conflict is an error, not a silent change. If `AGENTS.talk` allows more than t
 AGENTS.talk 1:1 'allow fetch from 'evil.example'' is outside the policy: policy.talk 5:1 limits fetch to api.github.com, *.acme.internal
 ```
 
-<h2 id="deploy">Deploying a Policy</h2>
+## Deploying a Policy {#deploy}
 
 The harness starts ClankTalk with the policy file. The file lives with the harness, outside every project, so agents cannot read or change it.
 
@@ -93,7 +93,7 @@ The harness starts ClankTalk with the policy file. The file lives with the harne
 
 With the hash, ClankTalk refuses to start if the policy file was changed.
 
-<h2 id="evidence">Evidence</h2>
+## Evidence {#evidence}
 
 The header of each script in the audit names the policy and a short hash of it:
 
@@ -103,7 +103,7 @@ The header of each script in the audit names the policy and a short hash of it:
 
 Thus a session that ran with no policy, or with a changed policy, shows in the audit. The goal is a record that is tamper-evident: a change cannot be silent.
 
-<h2 id="limits">Limits</h2>
+## Limits {#limits}
 
 - A policy limits what ClankTalk does. It does not limit other tools that a harness gives to the agent. Turn those tools off in the harness.
 - The OS sandbox limits files and the network, not CPU or memory.

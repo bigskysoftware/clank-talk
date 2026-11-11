@@ -12,7 +12,7 @@
 <li><a href="#agents-talk">Your AGENTS.talk</a></li>
 <li><a href="#reading-output">Reading Your Agent's Work</a></li>
 <li><a href="#harness-notes">Harness and Agent Notes</a></li>
-<li><a href="#fine-print">The Fine Print</a></li>
+<li><a href="#limitations">Limitations</a></li>
 </ul>
 
 <div class="construction">
@@ -21,7 +21,7 @@ ClankTalk is under construction!
 
 </div>
 
-<h2 id="overview">Overview</h2>
+## Overview {#overview}
 
 ClankTalk is a scripting language designed mainly for agents to write and for humans to read.  Humans write a little bit of it, defining tools and policies for agents in the ClankTalk runtime, but that's pretty much it. 
 
@@ -73,7 +73,7 @@ ClankTalk replaces this, let's just say it, digital anarchy, with a much more co
 
 The ClankTalk environment isn't perfect, of course, but it gives you a lot more control and observability when compared with most agent runtimes today.
 
-<h2 id="install">Install</h2>
+## Install {#install}
 
 
 ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server with one tool, `clank_talk`.  There is also a pi package available for it.
@@ -160,7 +160,7 @@ If ClankTalk cannot do a task, stop and tell the human what is missing.
 ```
 
 
-<h2 id="agents-talk">Your AGENTS.talk</h2>
+## Your AGENTS.talk {#agents-talk}
 
 As I mentioned, you, the reader, will not likely write very much ClankTalk (you will mostly be reading the ClankTalk your agent wrote.)  However, there is one area where you will be asked to write some code: the `AGENTS.talk` file.
 
@@ -204,7 +204,7 @@ ClankTalk resolves the project root to look for `AGENTS.talk` in the following o
 
 Note that agents cannot modify any `.talk` files in your project, so they are a protected space for you to write permissions and tools for them.
 
-<h3 id="tools">A Tool for Running A Single Test</h3>
+### A Tool for Running A Single Test {#tools}
 
 Running the entire test suite is great, but sometimes you only want to run a single test.  Or, at least, you only want your agent to run a single test.
 
@@ -248,7 +248,7 @@ end
 
 Agent can set shorter limit on a tool call: `run_tests within 2 minutes` as well.
 
-<h3 id="sandboxing">Accessing A Cache Outside the Project</h3>
+### Accessing A Cache Outside the Project {#sandboxing}
 
 By default, ClankTalk runtime file access is _sandboxed_ to the current project directory and subdirectories.  
 
@@ -306,8 +306,8 @@ Your agent can then start it, and, if it wants, wait for it to come up:
 
 ```talk
 dev_server
-wait until (fetch http://localhost:5173/ as response)'s status is 200 
-  within 15 seconds
+wait until the status of fetch http://localhost:5173/ as response
+  is 200 within 15 seconds
 print the output of process 'dev'
 ```
 
@@ -334,7 +334,7 @@ end
 ```
 We give the `npm_install` tool the minimal set of permissions it needs.
 
-<h3 id="secrets">Calling the GitHub API</h3>
+### Calling the GitHub API {#secrets}
 
 Sometimes you need _secrets_ in a project.  Of course, secrets are dangerous because they can leak.
 
@@ -391,7 +391,7 @@ Now, a word of warning: a program with a secret and the network can send that se
 
 ClankTalk is here to help, but it's not omnicient!
 
-<h3 id="hooks">Hooks</h3>
+### Hooks {#hooks}
 
 Let's say you want a global rule that every program your agent runs must be in a sandbox.  
 
@@ -553,7 +553,7 @@ Nothing is lost, though: the result's `full` has every line, so your agent can d
 
 The same `keeping` works for everything a script prints, with a line at the top of `AGENTS.talk`, like `limit output keeping the last 400 lines`.  The full text is then in `the previous output`.  ClankTalk already cuts at 1000 lines or 30 KB by default, so you will rarely need it.
 
-<h3 id="audit">ClankTalk Audit History</h3>
+### ClankTalk Audit History {#audit}
 
 ClankTalk writes down every step that touches the world: every read, change, `run`, git command, `fetch`, `ask` and tool call, along with the script that did it.  You can watch it live:
 
@@ -600,7 +600,7 @@ Note that a `./` path starts from the file doing the importing and `@/` starts f
 
 Just like `AGENTS.talk`, your agent can't change anything in `talk/`, or any `.talk` file for that matter, so your shared tools stay safe.
 
-<h3 id="taint">Taint & Reading GitHub Issues</h3>
+### Taint & Reading GitHub Issues {#taint}
 
 OK, now we are going to cover a feature that, I'm going to be honest, I'm not 100% sure on: tainting.
 
@@ -695,7 +695,7 @@ We are trying to balance security with usefulness of this features, so people ac
 
 Taint stays until you approve the untrusted input.  It covers the whole project, not one conversation: if you resume a conversation, the injection is still in your agent's context, so a new session starts tainted too.  
 
-You can approve inputs in two places.
+You can approve inputs in three places.
 
 When ClankTalk asks you about a risky action, the question gives the untrusted content:
 
@@ -719,6 +719,14 @@ $ npx clank-talk taint approve --all    # approve all
 ```
 
 Your agent has no shell in ClankTalk, so it cannot run these commands.
+
+Or, without leaving your harness, ask your agent to run `taint review`.  It shows you a form with a table of the inputs that are not approved, and a box to approve each one.  Only you can fill in the form.
+
+<aside>
+
+In Claude Code, you can show the taint state in your status bar with `npx clank-talk taint --line`, which prints `taint off`, `untainted` or `tainted <n>`.
+
+</aside>
 
 #### LLM Judging
 
@@ -777,24 +785,21 @@ Read <link> and walk me through creating an AGENTS.talk file for this project
 
 ### Policies for Teams
 
-TODO (Carson): for teams and harness owners: a policy file, shipped with the harness, sets limits that no `AGENTS.talk` can widen. See [Policies for Teams](policy.html).
+If you're running agents for a team, you probably want some rules that individual projects can't loosen.  That's what a policy is for: a file that ships with the harness and sets limits no `AGENTS.talk` can widen.
 
-<h2 id="reading-output">Reading Your Agent's Work</h2>
+See [Policies for Teams](policy.html) for the details.
 
-TODO (Carson): intro. You stay in charge: you read the scripts, answer the questions, check the audit, and undo.
+## Reading ClankTalk {#reading-output}
 
-<h3 id="reading">Reading a Script</h3>
+We don't expect you to write much ClankTalk, but you are going to probably want to read some of it.  We hope that it's pretty obvious what's going on, at least when compared with, say, bash.
 
-TODO (Carson): a short tour for readers. The agent writes this; you need to read it.
+Still, probably worth a quick tour of the language:
 
-- Comments start with `#`. Commands follow one another; `then` puts two on one line. Blocks close with `end`.
-- `the` is optional. `robot's name`, `robot.name` and `the name of robot` are the same.
-- Mixed math needs parentheses: `1 + 2 * 3` is an error, so nobody has to remember precedence.
-- Most commands put their value in `it`, also called `the result`.
-- A plain name is local to the script; a `$` name is a global that stays between scripts.
-- Code, and text with quotes, goes in a text block: lines that start with `|`, exactly as typed.
-- `on error` handles an error; with no `on error`, an error stops the script.
-- Every command, with examples, is in the [Docs for Agents](reference.html).
+- `#` starts a comment, and blocks close with `end`.
+- `the` is optional, and `robot's name`, `robot.name` and `the name of robot` all mean the same thing.
+- `it` (or `the result`) is whatever the last command gave back.
+- `@/` paths start at the project root, and `./` paths at the current folder.
+- Lines that start with `|` are text, exactly as typed, usually code.
 
 ```talk
 # this is a comment
@@ -812,59 +817,60 @@ with
 in ./src/config.js
 ```
 
+If you run into something you don't recognize, every command is in the [Docs for Agents](reference.html).
+
 ### Questions From ClankTalk
 
+ClankTalk will occasionally stop to ask you something.  You get a question when:
+
+- Your agent fetches from a host for the first time (unless an `allow fetch from` line covers it)
+- Your session is tainted and your agent tries something on the `taint asks before` list, like a push
+- A hook asks you, with `ask`
+- Your agent asks you directly, also with `ask`
+
+### Undo {#undo}
+
+The ClankTalk runtime maintains an undo list of all operations it has seen, so either an agent or you, the human,
+can request that changes be undone.
+
+Here is an example of an agent making a change, running a test and, if the test fails, undoing the change:
+
 ```talk
-ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes
-if the result is 'yes'
-  print 'ok'
+in ./src/config.js replace 'retries: 3' with 'retries: 5'
+run_test_file @/test/config.test.js
+if the result's code is not 0
+  undo
+  print 'The test failed, so the change is undone'
 end
 ```
 
-TODO (Carson): only you answer; no answer is `null`, which means no.
+## Harness and Agent Notes {#harness-notes}
 
-- You get a question when the agent fetches from a new host, when untrusted text goes into a program, a commit or a branch name, and when private text goes to a host for the first time.
-- Your agent can ask you too, with `ask`. Your hooks can ask you, as in [Hooks](#hooks).
-- With no answer in 2 minutes, the answer is no.
+<div class="construction">
 
-<h3 id="undo">Undo</h3>
+Work in progress
 
-```talk
-undo
-undo 3
-undo changes to ./src/app.js
-print the undo list
-```
+Notes for specific harnesses and agents are coming soon.
 
-TODO (Carson): undo works across scripts in a session, and touches nothing that changed since; it covers file changes, not programs or commits.
-<h2 id="harness-notes">Harness and Agent Notes</h2>
+</div>
 
-TODO (Carson): intro. Notes for specific harnesses and agents.
+## Limitations {#limitations}
 
-### Claude Code subagents
+I hope that ClankTalk is a step forward in providing a safer environment for agents to work in.  It can feel
+a little constricting at first when you initially build out your `AGENTS.talk` file, but that's probably a good thing.
 
-```bash
-claude --tools "Agent" \
-  --strict-mcp-config --mcp-config .mcp.json \
-  --allowedTools mcp__clank-talk
-```
-
-TODO (Carson): subagent notes.
-
-- Subagents get only the session's tools, so they get ClankTalk and nothing else.
-- A custom subagent that lists `Glob` or `Grep` in its `tools:` gets them anyway: do not list them.
-- Each subagent can pass its name as `agent`: it gets its own undo list and `$` variables, and the audit says who did what.
-
-<h2 id="fine-print">The Fine Print</h2>
-
-TODO (Carson): the honest limits.
+That being said, ClankTalk isn't foolproof:
 
 - A `run` without `in a sandbox` is where the sandbox ends.
 - The sandbox limits files and the network, not CPU or memory.
 - On Windows, there is no sandbox yet: `in a sandbox` is an error. To use the sandbox, run your agent and ClankTalk inside WSL2, where the Linux sandbox (`bubblewrap`) works. WSL1 does not work.
 - On Linux, the sandbox protects hidden files and `.talk` files only at the top of the project, and only those that exist when the program starts.
-- Web pages and tool output can try to steer your agent. ClankTalk keeps the damage small, but cannot stop the agent from believing what it reads.
-- Secrets are safe only in `.env` files. A copy of a secret in another file is ordinary text that a script can read and change.
-- `git push` to a remote folder outside the project runs that repo's hooks. A remote folder inside the project is refused.
+- Web pages and tool output can still try to steer your agent. ClankTalk tries to keep the damage contained, but cannot stop a sufficiently determined and corrupted agent.
+- Secrets are safe only in `.env` files.  If they end up in other spots, they can be compromised.
+- `git push` to a remote folder outside the project runs that repo's hooks.
+
+And there are probably holes in the implementation as it stands.  We'll try to get them patched up, but we think the basic idea is sound.
+
+Hope it helps!
 
 </div>

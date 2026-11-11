@@ -2083,7 +2083,7 @@ async function evaluateNode(node, state) {
     state.result = saved;
     return value;
   }
-  // fetch as a value: (fetch url as response)'s status
+  // fetch as a value: the status of fetch url as response
   if (type === "fetch") {
     return await runFetch(node, state);
   }
