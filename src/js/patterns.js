@@ -10,7 +10,7 @@ import { Worker } from "node:worker_threads";
 // the time limit for one pattern job, in ms
 export const PATTERN_TIME_LIMIT = 2000;
 
-/** A pattern value, made by: pattern '<regexp>' */
+/** A pattern value, made by: pattern /<regexp>/flags or pattern '<regexp>' */
 export class Pattern {
   // flags: "", or some of i, m and s (from pattern /regex/flags); u is always on
   constructor(source, flags = "") {

@@ -72,7 +72,7 @@ test("replace pattern can use back references", async () => {
 test("matches checks text against a pattern", async () => {
   assert.deepEqual(await output(`if 'v1.20' matches pattern """^v\\d+\\.\\d+$"""\n  print 'a version'\nend`), ["a version"]);
   assert.deepEqual(await output("print 'main' matches pattern '^v'"), ["false"]);
-  assert.deepEqual(await errors("print 'x' matches 'x'"), ["matches needs a pattern, such as: matches pattern '^v[0-9]+', found 'x'"]);
+  assert.deepEqual(await errors("print 'x' matches 'x'"), ["matches needs a pattern, such as: matches pattern /^v[0-9]+/, found 'x'"]);
 });
 
 test("a bad pattern, and no match", async () => {

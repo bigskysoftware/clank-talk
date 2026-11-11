@@ -1997,7 +1997,7 @@ async function evaluateNode(node, state) {
     }
     return kept;
   }
-  // pattern '<regexp>': a JavaScript regexp, with the u flag
+  // pattern /<regexp>/flags or pattern '<regexp>': a JavaScript regexp, with the u flag
   if (type === "pattern") {
     const source = toText(await evaluate(node.source, state));
     try {
@@ -2193,10 +2193,10 @@ async function evaluateNode(node, state) {
     if (node.operator !== "+" && (left instanceof Secret || right instanceof Secret)) {
       throw new SecretUse(left instanceof Secret ? left : right, "'" + node.operator + "'");
     }
-    // <text> matches pattern '<regexp>'
+    // <text> matches pattern /<regexp>/
     if (node.operator === "matches") {
       if (!(right instanceof Pattern)) {
-        throw new ScriptError("matches needs a pattern, such as: matches pattern '^v[0-9]+', found " + describe(right), node.right);
+        throw new ScriptError("matches needs a pattern, such as: matches pattern /^v[0-9]+/, found " + describe(right), node.right);
       }
       const answer = await patternJob({ kind: "test", source: right.source, flags: right.flags, text: toText(await asText(left, state, node)) }, state, node);
       return answer.matches;

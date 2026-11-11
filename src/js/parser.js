@@ -616,7 +616,7 @@ export function parse(source, options = {}) {
       }
     }
 
-    // pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
+    // pattern /<regexp>/ or pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
     if (isWord("pattern")) {
       const after = tokens[i + 1];
       // pattern /regex/flags: the regex as written, with its flags

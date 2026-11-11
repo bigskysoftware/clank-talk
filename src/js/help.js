@@ -496,7 +496,7 @@ export const HELP = [
       "No text contains, starts with or ends with null.",
       "matches takes a pattern.",
     ],
-    examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern '^v[0-9]+' print 'a version' end"],
+    examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern /^v[0-9]+/ print 'a version' end"],
   },
   {
     name: "untrusted", kind: "expression",
