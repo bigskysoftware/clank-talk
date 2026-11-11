@@ -187,20 +187,6 @@ print auth contains 'ghp'
 # error: a secret cannot go into 'contains'
 ```
 
-## Taint Tracking
-
-Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agents environment, and to control how things work
-after that happens.
-
-```talk triage.talk
-fetch https://example.com/issues/42
-git commit [./src/cart.js] with 'Fix the cart total'
-# asks you: Commit 'Fix the cart total'? 1 untrusted input
-#   is not approved: https://example.com/issues/42
-```
-
-TODO (Carson): the session is tainted, not the value; you review the inputs with `npx clank-talk taint`.
-
 ## Coherent Security Policy
 
 You can define a sophisticated security policy for your project (or company!)
@@ -265,6 +251,20 @@ git switch to new branch 'fix-retries'
 git commit [./src/config.js] with 'More retries'
 git push
 ```
+
+## Taint Tracking
+
+Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agents environment, and to control how things work
+after that happens.
+
+```talk triage.talk
+fetch https://example.com/issues/42
+git push
+# asks you: Push to origin? 1 untrusted input
+#   is not approved: https://example.com/issues/42
+```
+
+TODO (Carson): the session is tainted, not the value; you review the inputs with `npx clank-talk taint`.
 
 ## Agent & Harness Agnostic
 

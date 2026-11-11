@@ -2662,7 +2662,7 @@ async function runGit(command, state) {
   if (command.operation === "commit") {
     await askUntrusted(state, "commit", "Commit '" + (step.message === undefined ? "" : step.message) + "'", command);
   } else if (command.operation === "push") {
-    await askUntrusted(state, "push", "Push " + args.join(" "), command);
+    await askUntrusted(state, "push", "Push to origin", command);
   }
 
   const env = gitEnv(process.env);

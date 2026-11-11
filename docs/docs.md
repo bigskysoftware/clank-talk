@@ -25,7 +25,7 @@ ClankTalk is under construction!
 
 ClankTalk is a scripting language designed mainly for agents to write and for humans to read.  Humans write a little bit of it, defining tools and policies for agents in the ClankTalk runtime, but that's pretty much it. 
 
-ClankTalk is an [xTalk](https://en.wikipedia.org/wiki/HyperTalk) language, which reads like English.  As I learn every time [hyperscript](https://hyperscript.org) is posted to HackerNews or Reddit, many people dislike *writing* code in this style.  But I think, if you have an open mind, you can agree that it at least _reads_ well.
+ClankTalk is an [xTalk](https://en.wikipedia.org/wiki/HyperTalk) language, which reads like English.  As we learn every time [hyperscript](https://hyperscript.org) is posted to HackerNews or Reddit, many people dislike *writing* code in this style.  But we think, if you have an open mind, you can agree that it at least _reads_ well.
 
 And, for a language intended to be written by agents and read by humans... it's just about perfect.
 
@@ -169,15 +169,23 @@ args = ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
 
 ### pi
 
+ClankTalk ships as a pi package, so it runs inside pi.  It turns off every other tool.
+
 ```bash
+# try it once, with no install
+$ pi -e git:github.com/bigskysoftware/clank-talk
+
+# install it for this project only
 $ pi install -l git:github.com/bigskysoftware/clank-talk
+
+# turn it on or off for this project
+$ pi config --local
+
+# remove it from this project
+$ pi remove -l git:github.com/bigskysoftware/clank-talk
 ```
 
-TODO (Carson): pi notes.
-
-- It runs inside pi: `ask` and fetch approvals are pi dialogs, and it turns off every other tool for you. No flags to forget.
-- Try it once with no install: `pi -e git:github.com/bigskysoftware/clank-talk`.
-- Careful with `pi install` without `-l`: every pi session on the machine then gets only ClankTalk.
+Careful with `pi install` without the `-l`: then every pi session on your machine gets ClankTalk!
 
 </div>
 
@@ -204,7 +212,7 @@ If your client lets you, turn off its other tools, so the agent uses ClankTalk f
 </div>
 <script src="js/install.js"></script>
 
-If you are using ClankTalk, I recommend that you put the following directions in your `AGENTS.md`
+If you are using ClankTalk, we recommend that you put the following directions in your `AGENTS.md`
 
 ```md
 ## Tools
@@ -217,7 +225,7 @@ If ClankTalk cannot do a task, stop and tell the human what is missing.
 
 ## Your AGENTS.talk {#agents-talk}
 
-As I mentioned, you, the reader, will not likely write very much ClankTalk (you will mostly be reading the ClankTalk your agent wrote.)  However, there is one area where you will be asked to write some code: the `AGENTS.talk` file.
+As we mentioned, you, the reader, will not likely write very much ClankTalk (you will mostly be reading the ClankTalk your agent wrote.)  However, there is one area where you will be asked to write some code: the `AGENTS.talk` file.
 
 ### The AGENTS.talk File
 
@@ -657,13 +665,13 @@ Just like `AGENTS.talk`, your agent can't change anything in `talk/`, or any `.t
 
 ### Taint & Reading GitHub Issues {#taint}
 
-OK, now we are going to cover a feature that, I'm going to be honest, I'm not 100% sure on: tainting.
+OK, now we are going to cover a feature that, we're going to be honest, we're not 100% sure on: tainting.
 
 Tainting has a long history in programming languages.  Perl's [taint mode](https://perldoc.perl.org/perlsec), for example, won't let data from outside the program, like command line arguments or environment variables, reach a shell command or a file write until you check it with a regular expression.
 
-I am trying to come up with something similar around [prompt injection](https://simonwillison.net/2022/Sep/12/prompt-injection/), and this is my current thinking on the problem.
+We are trying to come up with something similar around [prompt injection](https://simonwillison.net/2022/Sep/12/prompt-injection/), and this is our current thinking on the problem.
 
-Let's motivate the discussion with an interesting use of agents near and dear ot my heart: sifting through issues on github.
+Let's motivate the discussion with an interesting use of agents near and dear to our hearts: sifting through issues on github.
 
 Before we get into ClankTalk's tain infrastucture, let's set up a _subagent_ with a restricted tool set to do github issue analysis for us:
 
@@ -755,7 +763,7 @@ You can approve inputs in three places.
 When ClankTalk asks you about a risky action, the question gives the untrusted content:
 
 ```text
-Push origin master? 2 untrusted inputs are not approved:
+Push to origin? 2 untrusted inputs are not approved:
 tool issue (42), https://api.github.com/...
 Review them with: npx clank-talk taint
 ```
@@ -911,7 +919,7 @@ Notes for specific harnesses and agents are coming soon.
 
 ## Limitations {#limitations}
 
-I hope that ClankTalk is a step forward in providing a safer environment for agents to work in.  It can feel
+We hope that ClankTalk is a step forward in providing a safer environment for agents to work in.  It can feel
 a little constricting at first when you initially build out your `AGENTS.talk` file, but that's probably a good thing.
 
 That being said, ClankTalk isn't foolproof:
