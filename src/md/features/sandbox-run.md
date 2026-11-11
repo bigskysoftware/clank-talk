@@ -58,3 +58,13 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - Linux: hidden files, `.talk` files and `@/talk` are read only only if they exist when the program starts, and only at the top of the project. A program can make a new hidden file, or change one deeper in the tree. Landlock can close this later.
 - Linux: with no network, a server in the sandbox has its own network, so the host cannot reach it. A sandboxed `start` on Linux needs `with network`.
 - Tested on macOS (Darwin 27, Node 26), and in CI on Ubuntu and macOS with Node 22 and 26. On Ubuntu 24.04, bwrap needs `kernel.apparmor_restrict_unprivileged_userns=0`; CI sets it. In the self-test, the host checks the outside write and the home folder names after the run, because on Linux the sandbox has its own `/tmp` and a home folder with only the bound folders.
+
+## Output: keeping
+
+- Approved (built): `run ... keeping <lines>` cuts the program's output in the tool's result. Why: a limit for one noisy program is more useful than the global `limit output`, and the tool's result holds the output, not the script's print.
+- Approved (built): the forms are `keeping the first <n> lines`, `keeping the last <n> lines`, `keeping the first <n> and the last <n> lines` and `keeping lines matching pattern /x/`.
+- Approved (built): `keeping` is the last part of `run`, after `in a sandbox ...` and `within`. The human asked for it last.
+- Approved (built): one line takes the place of the cut lines: `... 1834 lines cut (all lines: the result's full) ...`. With a pattern, one line at the end: `... 7 other lines cut ...`. The result's `full` has every line: `{ code, output, full }`. The audit records the count.
+- Approved (built): `or <n> KB` after any form also limits the size. With the first and the last, each end gets half.
+- Approved (built): `limit output keeping ...` uses the same forms; see [host.md](../infrastructure/host.md). The code for both is `src/js/keeping.js`.
+- Approved (built): only `run`. `start` keeps the last 64 KB already. A subagent gives back an answer, so `keeping` there is an error.

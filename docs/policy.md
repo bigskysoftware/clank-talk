@@ -32,7 +32,7 @@ limit fetch to 'api.github.com', '*.acme.internal'
 limit env to PATH, HOME, JAVA_HOME
 limit changes to @/.github/
 limit secrets to GITHUB_TOKEN
-limit output to 400 lines or 20 KB
+limit output keeping the first 200 and the last 200 lines or 20 KB
 
 # things that are off, whatever AGENTS.talk says
 deny git push
@@ -61,7 +61,7 @@ end
 | `limit changes to <path>, ...` | Projects can allow changes only to these hidden files and folders. |
 | `limit secrets to <NAME>, ...` | Projects can use only these secrets. |
 | `deny secrets` | Projects cannot use secrets. |
-| `limit output to <n> lines [or <n> KB]` | Agents see at most this much output from one script. |
+| `limit output keeping <lines> [or <n> KB]` | Agents see only these lines of the output of one script: the first, the last, both, or lines matching a pattern. |
 | `deny git push` | No push. |
 | `deny start` | No background programs, such as servers. |
 | `deny run` | No programs. |

@@ -144,7 +144,7 @@ test("the description lists the tools from AGENTS.talk, after session_start", as
 test("--clank-policy sets a harness policy, and a wrong hash refuses every call", async () => {
   const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-policy-"));
   const policyFile = path.join(project, "p.talk");
-  await fs.writeFile(policyFile, "policy 'p'\nlimit output to 3 lines");
+  await fs.writeFile(policyFile, "policy 'p'\nlimit output keeping the last 3 lines");
   try {
     const other = fakePi();
     clankTalkExtension(other, Type);

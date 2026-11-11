@@ -94,6 +94,7 @@ Approved (from hyperscript):
 - Math: `+ - * /` and `mod`.
 - Comparison: `is`, `is not`, `is less than`, `is greater than`, `is less than or equal to`, `is greater than or equal to`. Symbols too: `== != < > <= >=`. Both forms stay.
 - Text and lists: `contains`, `does not contain`, `starts with`, `ends with`, `is in`, `is not in`, `is empty`, `is not empty`, `exists`, `does not exist`. These also work on files: on a file they use the file's text, so `the file contains 'TODO'` is the same as `the file's text contains 'TODO'`.
+- Approved (built): `is in` and `is not in` with a folder check a path, not text: `the change's path is in @/migrations/`. The folder is a path written with a `/` at the end, or a folder that exists. On the left: a file, or a text path from the project root, as in `the change's path`. A path is not in itself. Why: `starts with 'migrations/'` on a path was string work, and `starts with @/migrations/` read the file.
 - Logic: `and`, `or`.
 - Conversion: `as json`, `as pretty json`, `as number`, `as text`. `as json` formats compact JSON, `as pretty json` uses 2-space indents.
 - Order, highest first: access, unary, `as`, math, comparison, logic.

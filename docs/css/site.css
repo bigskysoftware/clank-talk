@@ -17,6 +17,7 @@
   --accent: #4a84c4;
   --code-bg: #1e2228;
   --code-text: #d8dee9;
+  --code-inline: #1f4fb4;
   --chrome-gradient: linear-gradient(180deg, #eaeaea 0%, #d6d6d6 100%);
   --font-heading: "IBM Plex Sans", system-ui, sans-serif;
   --font-display: "Archivo Black", system-ui, sans-serif;
@@ -172,13 +173,19 @@ pre {
   border-radius: var(--radius);
 }
 :not(pre) > code { padding: 1px 4px; background: var(--bg-subtle); border-radius: 3px; }
+/* tables in the docs: a light frame, a chrome header, and lines between rows */
+.content table { border-collapse: collapse; margin: 1.2rem 0; font-size: 0.95em; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.content th { text-align: left; padding: 6px 14px; background: var(--chrome-gradient); border-bottom: 1px solid var(--border-strong); font-weight: 600; }
+.content td { padding: 5px 14px; border-top: 1px solid var(--border); vertical-align: top; }
+.content tr:nth-child(even) td { background: var(--bg-subtle); }
+.content td:first-child { white-space: nowrap; }
 
-/* syntax highlighting (Nord-like) */
-.tok-keyword { color: #81a1c1; }
-.tok-string { color: #a3be8c; }
-.tok-number { color: #b48ead; }
-.tok-path { color: #ebcb8b; }
-.tok-comment { color: #7b88a1; font-style: italic; }
+/* syntax highlighting: bright colors on the dark window; comments stay quiet */
+.tok-keyword { color: #5aa2ff; }
+.tok-string { color: #6fdc8c; }
+.tok-number { color: #ff79c6; }
+.tok-path { color: #ffb86c; }
+.tok-comment { color: #8a99b8; font-style: italic; }
 
 /* features */
 .features { max-width: 680px; margin: 2rem auto; }
@@ -195,7 +202,7 @@ pre {
   border: 1px solid var(--border); border-radius: 999px;
 }
 .areas a:hover { border-color: var(--accent); }
-/* docs typography: a calmer text color, more air between lines and sections, lighter inline code, and quieter links */
+/* docs typography: a calmer text color, more air between lines and sections, bold colored inline code, and quieter links */
 .features:not(.showcase) { color: #2b2b2b; }
 .features:not(.showcase) h1 { margin: 0.6rem 0 1rem; font-size: 2.3rem; line-height: 1.15; letter-spacing: -0.02em; }
 .features:not(.showcase) h2 { margin-top: 3.6rem; font-size: 1.55rem; letter-spacing: -0.01em; }
@@ -207,7 +214,7 @@ pre {
 .features:not(.showcase) li::marker { color: var(--text-muted); }
 .features:not(.showcase) a { text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
 .features:not(.showcase) a:hover { text-decoration-thickness: 2px; }
-.features:not(.showcase) :not(pre) > code { padding: 0.1em 0.35em; font-size: 0.86em; font-weight: 400; background: #f3f3f1; border: 1px solid #e4e4e0; }
+.features:not(.showcase) :not(pre) > code { padding: 0; font-size: 0.88em; font-weight: 600; color: var(--code-inline); background: none; border: none; }
 .features:not(.showcase) > pre { margin: 1.1rem 0 1.4rem; font-size: 0.88rem; line-height: 1.6; }
 /* in the docs, a window is as wide as its code, up to the width of the text, and centered */
 .features:not(.showcase) .window:not(.compare > .window) { width: fit-content; min-width: min(500px, 100%); max-width: 100%; margin: 1.1rem auto 1.4rem; }

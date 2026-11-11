@@ -89,22 +89,15 @@ export function sessionName(client) {
 // the step budget for each call
 export const MAX_STEPS = 10_000;
 
-// the most print output that goes to the model, unless AGENTS.talk or a policy sets less ("limit output to")
+// the most print output that goes to the model; "limit output keeping" in AGENTS.talk or a policy cuts before this
 // above it, a host such as pi cuts the output at a place it chooses, so ClankTalk cuts first, and says where the rest is
 export const OUTPUT_MAX_LINES = 1000;
 export const OUTPUT_MAX_BYTES = 30 * 1024;
 
 // long print output: the start and the end, and a line that says where the rest is
-// limit is { lines, bytes } from the run, with null for none; it can only make the host's limit smaller
-export function cutOutput(text, limit = null) {
-  let maxLines = OUTPUT_MAX_LINES;
-  let maxBytes = OUTPUT_MAX_BYTES;
-  if (limit !== null && limit.lines !== null) {
-    maxLines = Math.min(maxLines, limit.lines);
-  }
-  if (limit !== null && limit.bytes !== null) {
-    maxBytes = Math.min(maxBytes, limit.bytes);
-  }
+export function cutOutput(text) {
+  const maxLines = OUTPUT_MAX_LINES;
+  const maxBytes = OUTPUT_MAX_BYTES;
   const lines = text.split("\n");
   if (lines.length <= maxLines && Buffer.byteLength(text) <= maxBytes) {
     return text;
@@ -192,7 +185,8 @@ export async function describeTool(root) {
 export function formatResult(result, script, root) {
   const sections = [];
   if (result.output.length > 0) {
-    sections.push(cutOutput(result.output.join("\n"), result.outputLimit || null));
+    // 'limit output keeping' in AGENTS.talk or the policy cut it first; the host's own limit cuts last
+    sections.push(cutOutput(result.shown !== undefined ? result.shown : result.output.join("\n")));
   }
   const warnings = [...(result.warnings || [])];
   const stale = staleCodeWarning();

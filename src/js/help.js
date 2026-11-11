@@ -193,7 +193,7 @@ export const HELP = [
   },
   {
     name: "run", kind: "command", where: "AGENTS.talk",
-    syntax: "run <program and args> | run <program> with <arg>, ... [using secret <NAME>, ...] [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>]",
+    syntax: "run <program and args> | run <program> with <arg>, ... [using secret <NAME>, ...] [in a sandbox [with network, local network, writes to <path>, reads of <path>]] [within <duration>] [keeping the first <n> lines | the last <n> lines | the first <n> and the last <n> lines | lines matching pattern /x/]",
     description: [
       "Run a program with no shell. Only in a tool. The result is { code, output }.",
       "Write the program in the tool: run 'npm' with name, not run name.",
@@ -208,8 +208,9 @@ export const HELP = [
       "On an OS with no sandbox, a sandboxed run is an error, and nothing runs.",
       "'using secret NPM_TOKEN' (or 'using secrets A, B') gives the program the secret as an environment variable. AGENTS.talk needs 'allow secret NPM_TOKEN for run'. The value shows as <secret NPM_TOKEN> in the output.",
       "'run <prompt> in a subagent with only <tools>' gives the task to a model that can call only those tools. Its answer is untrusted.",
+      "'keeping' cuts the output in the result to those lines, and 'or 20 KB' also limits the size. One line takes the place of the cut lines. The result's full has all of them.",
     ],
-    examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend", "# Summarizes the most important open issues.\ntool summarize_issues\n  run 'Summarize the most important open issues' in a subagent with only gh_issues\nend"],
+    examples: ["tool test\n  run 'npm test' in a sandbox within 10 minutes keeping the last 200 lines\nend", "tool lint\n  run 'npx eslint .' in a sandbox keeping lines matching pattern /error/\nend", "tool install\n  run 'npm install' in a sandbox with network, writes to '~/.npm'\nend", "tool publish\n  run 'npm publish' using secret NPM_TOKEN\nend", "# Summarizes the most important open issues.\ntool summarize_issues\n  run 'Summarize the most important open issues' in a subagent with only gh_issues\nend"],
   },
   {
     name: "import", kind: "command", where: "AGENTS.talk",
@@ -223,7 +224,7 @@ export const HELP = [
     description: [
       "Run commands before a step. Only in AGENTS.talk.",
       "Steps: read, write, append, replace, put, remove, move, delete, change (any file change), undo, run, start, stop, git, fetch, or a tool name.",
-      "'the <step>' holds the step, also for a tool: the deploy's args.",
+      "'the <step>' holds the step. For a tool, each parameter is a field by its name: the deploy's target. args and named hold all the arguments.",
       "'reject' stops the step.",
       "A hook cannot change the step. A hook cannot run a program, or call a tool that runs one.",
     ],
@@ -238,8 +239,8 @@ export const HELP = [
   {
     name: "reject", kind: "command", where: "AGENTS.talk",
     syntax: "reject <message>",
-    description: "Stop the step, in a 'before' hook. The script gets an error with the message. 'on error' can catch it.",
-    examples: ["before write\n  reject 'This project is read only'\nend"],
+    description: "In a 'before' hook: stop the step. In a tool: stop the tool. The script gets an error with the message, at the command that it stopped. 'on error' can catch it.",
+    examples: ["before write\n  reject 'This project is read only'\nend", "tool deploy with target\n  if target is 'prod'\n    reject 'Only a human deploys to prod'\n  end\n  run 'fly' with 'deploy', '--app', 'shop-' + target in a sandbox with network\nend"],
   },
   {
     name: "wait", kind: "command",
@@ -340,7 +341,7 @@ export const HELP = [
     syntax: "the previous output",
     description: [
       "All the print output of the last script, as text.",
-      "The host shows at most 1000 lines or 30 KB (less with 'limit output to' in AGENTS.talk), and cuts the middle of longer output. This value has all of it.",
+      "The host shows at most 1000 lines or 30 KB (less with 'limit output keeping' in AGENTS.talk), and cuts the middle of longer output. This value has all of it.",
       "Each script replaces it. To keep it: set $log to the previous output.",
     ],
     examples: ["print lines 1001 to 1500 of the previous output", "set failures to find 'not ok' in the previous output"],
@@ -391,9 +392,9 @@ export const HELP = [
   },
   {
     name: "limit", kind: "command", where: "AGENTS.talk",
-    syntax: "limit output to <n> lines [or <n> KB]",
-    description: "Set the most print output that the agent sees from one script. Only at the top of AGENTS.talk, or in a policy. The host cuts the middle of longer output, and the previous output has all of it. It can only make the host's limit (1000 lines or 30 KB) smaller.",
-    examples: ["limit output to 400 lines", "limit output to 400 lines or 20 KB"],
+    syntax: "limit output keeping the first <n> lines | the last <n> lines | the first <n> and the last <n> lines | lines matching pattern /x/ [or <n> KB]",
+    description: "Choose the print output that the agent sees from one script, with the same forms as run ... keeping. Only at the top of AGENTS.talk, or in a policy. One line takes the place of the cut lines, and the previous output has all of them. AGENTS.talk cuts first, then the policy, then the host (1000 lines or 30 KB).",
+    examples: ["limit output keeping the first 200 and the last 200 lines", "limit output keeping the last 400 lines or 20 KB"],
   },
 
   // ----- expressions -----
@@ -496,8 +497,9 @@ export const HELP = [
       "On a file or a line, they use its text. On a list, they compare items by their content.",
       "No text contains, starts with or ends with null.",
       "matches takes a pattern.",
+      "is in a folder checks a path, not text: a file, or a path from the project root, is in @/migrations/ if it is inside that folder.",
     ],
-    examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern /^v[0-9]+/ print 'a version' end"],
+    examples: ["if the file contains 'TODO' print the file's path end", "if name matches pattern /^v[0-9]+/ print 'a version' end", "for f in @/**/*.sql\n  if f is in @/migrations/ print f's path end\nend"],
   },
   {
     name: "untrusted", kind: "expression",

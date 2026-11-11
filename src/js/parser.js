@@ -1210,10 +1210,10 @@ export function parse(source, options = {}) {
     const next = current();
     return next !== undefined && next.line === token.line && !isCommandStart();
   }
-  // reject <message>, only in a "before" hook: the step does not happen
+  // reject <message>, in a "before" hook (the step does not happen) or in a tool (the tool stops)
   function parseReject(token) {
-    if (inHook !== "before") {
-      errors.push({ message: "'reject' is only allowed in a 'before' hook", line: token.line, column: token.column });
+    if (inHook !== "before" && !inTool) {
+      errors.push({ message: "'reject' is only allowed in a 'before' hook or a tool", line: token.line, column: token.column });
       return null;
     }
     const message = parseExpression();
@@ -1784,6 +1784,11 @@ export function parse(source, options = {}) {
         if (param === null) {
           return null;
         }
+        // a hook for the tool reads the step's args, named, and each parameter by name
+        if (param === "args" || param === "named") {
+          error("A tool parameter cannot be named '" + param + "': hooks use 'the " + name + "'s " + param + "'. Use another name");
+          return null;
+        }
         params.push(param);
         if (!isOp(",")) {
           break;
@@ -1860,7 +1865,7 @@ export function parse(source, options = {}) {
       errors.push({ message: "'run' is only allowed in a tool", line: token.line, column: token.column });
       return null;
     }
-    const program = parseBefore(["with", "using", "in", "within"], parseExpression);
+    const program = parseBefore(["with", "using", "in", "within", "keeping"], parseExpression);
     if (program === null) {
       return null;
     }
@@ -1869,7 +1874,7 @@ export function parse(source, options = {}) {
       i++;
       args = [];
       while (true) {
-        const arg = parseBefore(["using", "in", "within"], parseExpression);
+        const arg = parseBefore(["using", "in", "within", "keeping"], parseExpression);
         if (arg === null) {
           return null;
         }
@@ -1910,7 +1915,96 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "run", program, args, secrets, sandbox, subagent, within, line: token.line, column: token.column };
+    // keeping is the last part of run
+    let keeping = null;
+    if (isWord("keeping")) {
+      if (subagent !== null) {
+        error("A subagent gives back its answer, not program output, so 'keeping' does not apply");
+        return null;
+      }
+      i++;
+      keeping = parseKeeping();
+      if (keeping === null) {
+        return null;
+      }
+    }
+    return { type: "run", program, args, keeping, secrets, sandbox, subagent, within, line: token.line, column: token.column };
+  }
+
+  // after run ... keeping: which lines of the program's output the tool gives back; see src/md/features/sandbox-run.md
+  //   the first <n> lines | the last <n> lines | the first <n> and the last <n> lines | lines matching pattern /x/
+  //   then, optional: or <n> KB
+  function parseKeeping() {
+    const example = "keeping the last 200 lines";
+    if (isWord("lines")) {
+      i++;
+      if (!isWord("matching")) {
+        error("Expected 'matching', as in: keeping lines matching pattern /FAIL/");
+        return null;
+      }
+      i++;
+      const pattern = parseBefore(["or"], parseExpression);
+      if (pattern === null) {
+        return null;
+      }
+      return parseKeepingBytes({ first: null, last: null, pattern, bytes: null });
+    }
+    if (isWord("the")) {
+      i++;
+    }
+    const keep = { first: null, last: null, pattern: null };
+    if (isWord("first")) {
+      i++;
+      keep.first = parseBefore(["and", "lines"], parseExpression);
+      if (keep.first === null) {
+        return null;
+      }
+      if (isWord("and")) {
+        i++;
+        if (isWord("the")) {
+          i++;
+        }
+        if (!isWord("last")) {
+          error("Expected 'the last', as in: keeping the first 20 and the last 200 lines");
+          return null;
+        }
+      }
+    } else if (!isWord("last")) {
+      error("Expected 'the first', 'the last' or 'lines matching', as in: " + example);
+      return null;
+    }
+    if (isWord("last")) {
+      i++;
+      keep.last = parseBefore(["lines"], parseExpression);
+      if (keep.last === null) {
+        return null;
+      }
+    }
+    if (!isWord("lines")) {
+      error("Expected 'lines', as in: " + example);
+      return null;
+    }
+    i++;
+    keep.bytes = null;
+    return parseKeepingBytes(keep);
+  }
+
+  // after keeping ...: or <n> KB
+  function parseKeepingBytes(keep) {
+    if (!isWord("or")) {
+      return keep;
+    }
+    i++;
+    keep.bytes = parseBefore(["KB", "kb"], parseMath);
+    if (keep.bytes === null) {
+      return null;
+    }
+    if (!isWord("KB") && !isWord("kb")) {
+      error("Expected 'KB', as in: keeping the last 200 lines or 20 KB");
+      return null;
+    }
+    i++;
+    return keep;
   }
 
   // in a subagent with only <tool>, <tool>: after run; gives { tools }
@@ -2028,7 +2122,7 @@ export function parse(source, options = {}) {
           return null;
         }
         i++;
-        const path = parseBefore(["within"], parseExpression);
+        const path = parseBefore(["within", "keeping"], parseExpression);
         if (path === null || !isLiteralGrant(path, "writes to")) {
           return null;
         }
@@ -2040,7 +2134,7 @@ export function parse(source, options = {}) {
           return null;
         }
         i++;
-        const path = parseBefore(["within"], parseExpression);
+        const path = parseBefore(["within", "keeping"], parseExpression);
         if (path === null || !isLiteralGrant(path, "reads of")) {
           return null;
         }
@@ -2557,38 +2651,41 @@ export function parse(source, options = {}) {
     return { type: "keepUntrusted", bytes, line: token.line, column: token.column };
   }
 
-  // limit output to 400 lines [or 20 KB]: the most print output the agent sees, in AGENTS.talk or a policy
-  // see src/md/infrastructure/host.md
+  // limit output keeping ...: the print output the agent sees, in AGENTS.talk or a policy; the same forms as run ... keeping
+  // see src/md/infrastructure/host.md and src/md/features/sandbox-run.md
   function parseOutputLimit(token) {
     i++;
-    if (!isWord("to")) {
-      error("Expected 'to'");
+    if (isWord("to")) {
+      error("'limit output to' is replaced by 'keeping', as in: limit output keeping the first 200 and the last 200 lines or 20 KB");
+      return null;
+    }
+    if (!isWord("keeping")) {
+      error("Expected 'keeping', as in: limit output keeping the last 400 lines");
       return null;
     }
     i++;
-    const limit = { type: "outputLimit", lines: null, bytes: null, line: token.line, column: token.column };
-    while (true) {
-      // a number token holds its digits as text
-      const number = current();
-      const value = number === undefined || number.type !== "number" ? NaN : Number(number.value);
+    const keep = parseKeeping();
+    if (keep === null) {
+      return null;
+    }
+    // here the numbers are written out: whole numbers above 0
+    const whole = (node) => {
+      if (node === null) {
+        return null;
+      }
+      const value = node.type === "number" ? Number(node.value) : NaN;
       if (!Number.isInteger(value) || value < 1) {
-        error("Expected a whole number above 0, such as: limit output to 400 lines");
-        return null;
+        error("Expected a whole number above 0, such as: limit output keeping the last 400 lines");
+        return undefined;
       }
-      i++;
-      if (isWord("lines") && limit.lines === null) {
-        limit.lines = value;
-      } else if ((isWord("KB") || isWord("kb")) && limit.bytes === null) {
-        limit.bytes = value * 1024;
-      } else {
-        error("Expected 'lines' or 'KB', such as: limit output to 400 lines or 20 KB");
-        return null;
-      }
-      i++;
-      if (!isWord("or")) {
-        break;
-      }
-      i++;
+      return value;
+    };
+    const limit = { type: "outputLimit", first: whole(keep.first), last: whole(keep.last), pattern: keep.pattern, bytes: whole(keep.bytes), line: token.line, column: token.column };
+    if (limit.first === undefined || limit.last === undefined || limit.bytes === undefined) {
+      return null;
+    }
+    if (limit.bytes !== null) {
+      limit.bytes *= 1024;
     }
     return limit;
   }
@@ -2597,7 +2694,7 @@ export function parse(source, options = {}) {
   function parseDefinitions() {
     const definitions = [];
     while (!atEnd()) {
-      // limit output to ...: both AGENTS.talk and a policy can have it
+      // limit output keeping ...: both AGENTS.talk and a policy can have it
       if (isWord("limit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "output") {
         const token = current();
         i++;

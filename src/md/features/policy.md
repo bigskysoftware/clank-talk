@@ -44,7 +44,7 @@ require sandbox for run, start
 limit fetch to 'api.github.com', '*.acme.internal'
 limit env to PATH, HOME, JAVA_HOME
 limit changes to @/.github/
-limit output to 400 lines or 20 KB
+limit output keeping the first 200 and the last 200 lines or 20 KB
 
 # things that are off, whatever AGENTS.talk says
 deny git push
@@ -69,7 +69,7 @@ end
 - Approved (built): the rules apply at load time to AGENTS.talk tools and hooks, and again at run time to each step. Thus a script cannot get around them.
 - Approved (built): under `limit fetch`, a host outside the limit is refused. The human is not asked.
 - Approved (built): `limit secrets to GITHUB_TOKEN, NPM_TOKEN`: an `allow secret` line for another name is a load error. `deny secrets`: any `allow secret` line is a load error. A host in `allow secret ... for fetch to` outside `limit fetch to` is a load error, the same as `allow fetch from`. See [secrets.md](secrets.md).
-- Approved (built): `limit output to <n> lines [or <n> KB]` makes the print output that the agent sees smaller. The smallest of the host, AGENTS.talk and the policy wins. See [host.md](../infrastructure/host.md).
+- Approved (built): `limit output keeping ...` chooses the print output that the agent sees, with the same forms as `run ... keeping`. AGENTS.talk cuts first, then the policy, then the host. See [host.md](../infrastructure/host.md). Replaced: `limit output to <n> lines [or <n> KB]`, which is now an error that names the new form.
 
 ## Errors
 

@@ -94,7 +94,7 @@ will start using it.
 </div>
 </div>
 
-
+/cc these instructions are different than the landing page  
 <div class="harness" data-agent="claude">
 
 ### Claude Code
@@ -184,15 +184,19 @@ tool run_tests
 end
 ```
 
-This file passes the `PATH` and `HOME` environment variables on to the programs that its tools run, and then defines a custom tool for running the tests in the project.
+This `AGENTS.talk` file passes the `PATH` and `HOME` environment variables on to the programs that its tools run, and then defines a custom tool for running the tests in the project.
 
 The `in a sandbox` part runs `npm test` in an OS sandbox.  In the sandbox, the program can write only to your project (not to `.git`, `.talk` files or hidden files), it can read only system folders, its install folder and tool caches, and it has no network.
 
-The `with local network` part then gives the program `localhost`, so tests that start a local server still work.  The program still cannot get to the internet.
+The `with local network` part then gives the program `localhost`, so tests that start a local server still work.
 
-Agents can then execute `run_tests` and read its output.
+The program still cannot get to the internet.
 
-ClankTalk resolves your project root in the following order:
+Agents can then execute the `run_tests` tool and read its output.
+
+#### Finding AGENTS.talk
+
+ClankTalk resolves the project root to look for `AGENTS.talk` in the following order:
 
 1. `--root /path/to/project`, if you start the MCP server with it.
 2. The environment variable `CLANK_TALK_ROOT=/path/to/project`.
@@ -223,17 +227,17 @@ end
 ```
 The `@/test/app.test.js` path is a _project relative_ path (don't worry, your agent will figure it out.)
 
-Note that `run` only works in a tool definition that *you* define.  So you have control over what an agent is allowed to do in your project.
+Note that an agent can *never* execute `run` directly, only via the tools that you give it in an `AGENT.talk` file.  The agent can't use shell and the execution passes in only the variables in `allow env`.
 
-An agent can *never* execute it directly, only via tools that you give it in an `AGENT.talk` file.  The agent never uses a shell, and the execution passes in only the variables in `allow env`.
+This gives you significant control over what an agent is and is not allowed to do in your project.
 
 ### Dealing With Hanging Tests
 
-Now let's go back and improve the `run_tests` tools.  
+Now let's go back and improve the `run_tests` tools.
 
-Let's say that it is prone to hanging sometimes, and we don't want our tool to wait forever for it.
+Let's say that it is prone to hanging at times and we don't want our tool to wait forever when it does.
 
-We can add `within 2 minutes` to the end of our `run` and kill hung tests.
+We can add `within 2 minutes` to the end of our `run` and it will kill a hung test.
 
 ```talk AGENTS.talk
 # Runs the full test suite.
@@ -244,11 +248,15 @@ end
 
 Agent can set shorter limit on a tool call: `run_tests within 2 minutes` as well.
 
-<h3 id="sandboxing">A Cache Outside the Project</h3>
+<h3 id="sandboxing">Accessing A Cache Outside the Project</h3>
 
-By default, ClankTalk runtime file access is _sandboxed_ to the current project directory and sub-directories.  This is not a fool-proof sandbox in the strict sense, but a best-effort "prevent agents from messing with stuff" mechanism.
+By default, ClankTalk runtime file access is _sandboxed_ to the current project directory and subdirectories.  
 
-Of course, sometimes you might need to give tools access to a directory (e.g. a playwright cache).  You can do this in your `AGENTS.talk` tool definitions like so:
+This is not a fool-proof sandbox in the strict sense, but a best-effort "prevent agents from messing with stuff" mechanism.
+
+Of course, sometimes you might need to give tools access to a directory (e.g. a playwright cache).  
+
+You can do this in your `AGENTS.talk` tool definitions like so:
 
 ```talk AGENTS.talk
 # Runs the full test suite.
@@ -261,21 +269,23 @@ end
 
 ### Fixing the CI Config
 
-By default, agents are also not allowed to change hidden files.  This prevents rogue agents from changing dangerous files like `.git/hooks/pre-commit`, a script that git runs on your machine at your next commit.
+Another CatTalk default is that agents are not allowed to change hidden files.  
+
+This prevents rogue agents from changing dangerous files like `.git/hooks/pre-commit`, a script that git runs on your machine at your next commit.
 
 Sometimes, though, you want to allow an agent to modify hidden files like your CI config in `.github/`.  
 
-To do so, you can use the `allow changes` syntax:
+To do so, you can use the `allow changes` syntax in your AGENTS.talk file:
 
 ```talk AGENTS.talk
 allow changes to @/.github/
 ```
 
-Note that ClankTalk *never* allows changes to `.talk` files and also bans all reading and writing of `.env`, `.env.*` and `.envrs` files in any folders.
+Note that ClankTalk *never* allows agent changes to `.talk` files and also bans all reading and writing of `.env`, `.env.*` and `.envrs` files in any folders.
 
 ### The Dev Server
 
-OK, now let's give our agent the ability to start a dev server for us by executing an NPM command, `npm run dev`
+Next, let's give our agent the ability to start a dev server for us by executing an NPM command, `npm run dev`
 
 This is not a synchronous task, instead you want to be able to launch it and then continue working.  
 
@@ -290,6 +300,8 @@ tool dev_server
 end
 ```
 
+Note that we allow `fetch` from `http://localhost:5173` explicitly: we don't want to give agents the ability to just spam our machine looking at ports, now do we?  By default, fetches will be disallowed.
+
 Your agent can then start it, and, if it wants, wait for it to come up:
 
 ```talk
@@ -298,7 +310,6 @@ wait until (fetch http://localhost:5173/ as response)'s status is 200
   within 15 seconds
 print the output of process 'dev'
 ```
-Note that we had to allow `fetch` from `localhost:5173` explicitly: we don't want to give agents the ability to just spam our machine looking at ports, now do we?
 
 The agent can then stop the process with `stop`:
 
@@ -311,41 +322,59 @@ stop process 'dev'
 
 OK, let's add another tool to, *sigh*, install NPM pacakges.
 
-`npm install` needs the wider network obviously, and also needs access to its cache directory.
+`npm install` needs the wider network obviously, and also needs access to npms cache directory.
 
 To give it access to that we would write:
 
 ```talk AGENTS.talk
 # Installs the dependencies.
-tool install
+tool npm_install
   run 'npm install' in a sandbox with network, writes to '~/.npm'
 end
 ```
+We give the `npm_install` tool the minimal set of permissions it needs.
 
 <h3 id="secrets">Calling the GitHub API</h3>
 
-TODO (Carson): the problem: the API needs your token, and your agent must not see it.
+Sometimes you need _secrets_ in a project.  Of course, secrets are dangerous because they can leak.
+
+ClankTalk uses the `.env` convention for secrets, and refuses to let scripts read or write `.env` files.
+
+Secrets are resolved in the following way:
+
+* First, the environment that ClankTalk runs in.
+* Then `.env.local`, in the project root.
+* Then `.env`, in the project root.
+
+An empty value counts as no value.  ClankTalk reads the files on each script run, so changes are picked up immediately.
+
+The files use the usual dotenv form: `KEY=value` lines, `#` comments, an optional `export`, and quoted values.
+
+Scripts cannot read `.env`, `.env.*` or `.envrc` files in any folder, and `git diff` and `git show` hide their contents.
+
+ClankTalk loads only the secrets that an `allow secret` line specifies in your AGENTS.talk file:
 
 ```talk AGENTS.talk
 allow fetch from 'api.github.com'
 allow secret GITHUB_TOKEN for fetch to 'api.github.com'
 ```
 
-Your agent then uses the token by name:
+With this line, your agent can then use the token when fetching from Github.
+
+However, it cannot see its value.
 
 ```talk
-fetch https://api.github.com/user as json with headers: { Authorization: 'Bearer ' + secret GITHUB_TOKEN }
+fetch https://api.github.com/user as json
+  with headers: {
+    Authorization: 'Bearer ' + secret GITHUB_TOKEN
+  }
 ```
-
-TODO (Carson): the first fetch to a new host asks you; `localhost` and private addresses must be listed; each redirect goes into the audit.
-
-- Your agent uses a key by name, and never sees it: print shows `<secret GITHUB_TOKEN>`, and any other use is an error.
-- Values come from the environment, then `.env.local`, then `.env`.
-- A value that comes back (output, responses, errors, the audit) shows as `<secret NAME>`.
 
 ### Publishing to npm
 
-TODO (Carson): the problem: publishing needs a token in the environment of `npm`.
+OK, now let's say we want our agent to publish our package to npm.
+
+To publish, `npm` needs a token in its environment.  We don't want the agent to ever see that token, so we give it to the tool rather than to the agent:
 
 ```talk AGENTS.talk
 allow secret NPM_TOKEN for run
@@ -356,12 +385,23 @@ tool publish
 end
 ```
 
-- `using secret NPM_TOKEN` gives the program the token as an environment variable. It shows as `<secret NPM_TOKEN>` in the output.
-- Risks: a program with a secret and the network can send it anywhere. Give secrets only to programs whose code your agent cannot change (`npm publish` runs scripts from `package.json`).
+The `using secret NPM_TOKEN` bit hands the token to `npm` as an environment variable.  If the token ever shows up in the output, ClankTalk replaces it with `<secret NPM_TOKEN>`.
 
-<h3 id="hooks">Every Program in a Sandbox</h3>
+Now, a word of warning: a program with a secret and the network can send that secret anywhere it likes.  And `npm publish` runs scripts from `package.json`, a file your agent can happily edit.  So be careful about handing secrets to programs whose code your agent can change!
 
-TODO (Carson): the problem: you want a rule, not a habit. Hooks are your security policy, as code that you can read.
+ClankTalk is here to help, but it's not omnicient!
+
+<h3 id="hooks">Hooks</h3>
+
+Let's say you want a global rule that every program your agent runs must be in a sandbox.  
+
+You *could* write that down in your `AGENTS.md` and hope for the best but, agents being agents, sooner or later one will forget.
+
+What you really want is a way to verify on every run that the run is in a sandbox.
+
+That's what hooks are for: they let you hook into before and after runtime calls to, well, pretty much anything, and potentially stop what's going on.
+
+Here is a hook that rejects any `run` that isn't in a sandbox:
 
 ```talk AGENTS.talk
 before run
@@ -371,13 +411,43 @@ before run
 end
 ```
 
-- A `before` hook runs before each step of that kind. `reject` stops the step, and the script gets the message as an error.
-- Steps: `read`, `write`, `append`, `replace`, `put`, `remove`, `move`, `delete`, `change` (any file change), `undo`, `run`, `start`, `stop`, `git`, `fetch`, or a tool name.
-- A hook cannot change the step, and cannot run a program, also through a tool.
+A `before` hook runs before every step of its kind.  If the hook calls `reject`, the step doesn't happen, and the script gets your message back as an error.
+
+You can hook into pretty much anything an agent does:
+
+| Step          | Runs before                                                                     |
+|---------------|---------------------------------------------------------------------------------|
+| `read`        | a script reads a file                                                           |
+| `write`       | a script writes a file                                                          |
+| `append`      | a script adds text to the end of a file                                         |
+| `replace`     | a script replaces text in a file                                                |
+| `put`         | a script puts lines into a file                                                 |
+| `remove`      | a script removes lines from a file                                              |
+| `move`        | a script moves a file                                                           |
+| `delete`      | a script deletes a file                                                         |
+| `undo`        | a script puts files back with `undo`                                            |
+| `change`      | any file change at all: all of the above except `read`                          |
+| `run`         | a tool runs a program                                                           |
+| `start`       | a tool starts a background program                                              |
+| `stop`        | a script stops a background process                                             |
+| `git`         | any git command                                                                 |
+| `fetch`       | a fetch from a URL                                                              |
+| `<tool name>` | a call to one of your own tools: `the <tool name>'s <parameter>`                |
+
+There are also `after` hooks.  An `after` hook runs once the step is done, and `the result` is whatever the step gave back.
+
+Note that a hook can't change the step it is looking at, and it can't run a program, not even through a tool.  
+
+Hooks say yes or no, and that's it.
 
 ### Ask Me Before a Push
 
-TODO (Carson): the problem: a push is public, and you want to say yes first.
+
+A git push is (often) public and can be an egress mechanism for external communication, one leg of the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/).
+
+Let's say you want your agent to ask you before it pushes anything, so you can be sure.
+
+Here's a hook to accomplish that:
 
 ```talk AGENTS.talk
 before git
@@ -390,81 +460,113 @@ before git
 end
 ```
 
-TODO (Carson): commit takes only named files; merge only fast-forwards; rebase is all or nothing; push sends the current branch, never with force; hooks, pagers and filters are off.
+The `ask` command is special: only a human can answer it and the agent can't get around it.
 
-- Only you answer `ask`. No answer in 2 minutes is `null`, which means no.
-- If the project is a subfolder of a repo, `git status`, `diff`, `show` and `log` cover only the project.
+If you wander off and don't answer within 2 minutes, the result is `null`, which means no.
 
-### Keep Out of the Migrations
+#### Git In ClankTalk
 
-TODO (Carson): the problem: database migrations are written by people.
+Note that the git in ClankTalk is already reasonably locked down:
+
+* `commit` takes only the files you name
+* `merge` only fast-forwards
+* `rebase` is all or nothing
+* `push` sends the current branch and never uses force
+* Git hooks, pagers and filters are all turned off
+
+Also, if your project is a subfolder of a bigger repo, `git status`, `diff`, `show` and `log` only cover your project
+
+### Keeping Agents Out of Migrations
+
+Maybe your company has a policy that all database migrations, found in `/migrations/` must be written by humans.  (Fair!)
+
+You could enforce this policy with the following hook:
 
 ```talk AGENTS.talk
 before change
-  if the change's path starts with 'migrations/'
+  if the change's path is in @/migrations/
     reject 'A human writes the migrations'
   end
 end
 ```
 
-- `change` covers every file change: write, append, replace, line edits, move, delete and undo.
+Note that `change` covers every sort file change: write, append, replace, line edits, move, delete and undo.
 
 ### Deploys
 
-TODO (Carson): the problem: your agent can deploy to staging, but a deploy to prod needs you.
+Let's say you're OK with your agent deploying to staging whenever it likes. (Brave!)
+
+Production, however, is a bit much, and you'd like to be asked.
+
+Here's a `deploy` tool that asks you before any deploy to prod:
 
 ```talk AGENTS.talk
 # Deploys the app: staging or prod.
 tool deploy with target
-  run 'fly' with 'deploy', '--app', 'shop-' + target in a sandbox with network
-end
-
-before deploy
-  if the deploy's args contains 'prod'
-    ask 'Deploy to prod?' with 'yes' or 'no'
+  if target is 'prod'
+    ask 'Hey boss, deploy to prod?' with 'yes' or 'no'
     if the result is not 'yes'
-      reject 'Only a human can approve a prod deploy'
+      reject 'Not today, robot'
     end
   end
+  run 'fly' with 'deploy', '--app', 'shop-' + target in a sandbox with network
 end
 ```
 
-- A hook for a tool reads the tool's step by its name: `the deploy's args`, and `the deploy's named` for arguments by name.
+A `reject` in a tool stops the tool, and your agent gets the message back as an error.
 
-### A Log of Failed Test Runs
-
-TODO (Carson): the problem: you want to see how often the tests fail for your agent.
+Now, if the rule lives somewhere else, say in a team policy, you can also hook into *your own tools*, not just the built-in steps.  Inside the hook, each parameter goes by its own name:
 
 ```talk AGENTS.talk
-after run_tests
-  if the result's code is not 0
-    append 'tests failed\n' to ./tmp/test-failures.log
+before deploy
+  if the deploy's target is 'prod'
+    reject 'Prod deploys go through CI'
   end
 end
 ```
 
-- An `after` hook runs after the step, and `the result` is what the step gave back.
+By the way, that `'shop-' + target` might make you a little itchy around injection attacks, but `run` *never* goes through a shell.  
+
+Each value after `with` goes to `fly` as exactly one argument, so a strange `target` can only change the app name.  It can't sneak in a new flag or a second command.
 
 ### Less Test Output
 
-TODO (Carson): the problem: thousands of lines of test output fill your agent's context.
+Test runners typically output tremendous amounts of text.  A failing suite can easily dump thousands of lines on your agent, eating up context.
+
+In ClankTalk, you can trim the output of a chatty programs when you run it, using the `keeping` clause:
 
 ```talk AGENTS.talk
-limit output to 400 lines
+tool run_tests
+  run 'npm test' in a sandbox keeping the last 200 lines
+end
+
+tool lint
+  run 'npx eslint .' in a sandbox keeping lines matching pattern /error/
+end
 ```
 
-- Your agent sees at most 400 lines from one script. The middle is cut. The next script gets all of it as `the previous output`.
+You can keep `the first <n> lines`, `the last <n> lines`, both, or only `lines matching` a pattern.  
 
-### Keeping the Audit
+ClankTalk puts a single line like `... 1834 lines cut ...` where the rest used to be.  You can add `or 20 KB` to any of these to cap the size, too.
 
-TODO (Carson): the problem: you want a week of history, in a form that your own tools can read.
+Nothing is lost, though: the result's `full` has every line, so your agent can dig in if it really needs to.
+
+The same `keeping` works for everything a script prints, with a line at the top of `AGENTS.talk`, like `limit output keeping the last 400 lines`.  The full text is then in `the previous output`.  ClankTalk already cuts at 1000 lines or 30 KB by default, so you will rarely need it.
+
+### ClankTalk Audit History
+
+ClankTalk writes down every step that touches the world: every read, change, `run`, git command, `fetch`, `ask` and tool call, along with the script that did it.  (You can see what that looks like in the [audit](#audit) section.)
+
+The history goes to `.talk/audit/`, one file a day, and scripts can't change it.  Your agent can read its own steps with `the audit`, which is handy when it wants to remember what it just did.
+
+By default ClankTalk keeps three days of history.  If you want a week, in a form your own tools can chew on, add this to your `AGENTS.talk`:
 
 ```talk AGENTS.talk
 keep audit for 7 days
 audit as json
 ```
 
-- The audit is in `.talk/audit/`, one file a day. With `audit as json`, each line is a JSON object.
+With `audit as json`, each line of the file is a JSON object, so `jq` and friends work on it.
 
 ### Summaries From a Model
 
@@ -504,7 +606,8 @@ They are, sadly, a vector of attack for [prompt injections](https://simonwilliso
 ```talk AGENTS.talk
 # Shows a GitHub issue.
 untrusted tool issue with id
-  run 'gh' with 'issue', 'view', id in a sandbox with network, reads of '~/.config/gh'
+  run 'gh' with 'issue', 'view', id in a sandbox with network,
+    reads of '~/.config/gh'
 end
 ```
 
@@ -549,7 +652,8 @@ Taint stays until you approve each untrusted input.  It covers the whole project
 When ClankTalk asks you about a risky action, the question names the inputs:
 
 ```text
-Push origin master? 2 untrusted inputs are not approved: tool issue (42), https://api.github.com/...
+Push origin master? 2 untrusted inputs are not approved:
+tool issue (42), https://api.github.com/...
 Review them with: npx clank-talk taint
 ```
 
@@ -560,10 +664,10 @@ Review them with: npx clank-talk taint
 Or, from your terminal:
 
 ```bash
-$ npx clank-talk taint                  # list the inputs, with their source and status
+$ npx clank-talk taint                  # list the inputs
 $ npx clank-talk taint show 2           # read one
 $ npx clank-talk taint approve 1 2      # approve some
-$ npx clank-talk taint approve --all    # approve all of them
+$ npx clank-talk taint approve --all    # approve all
 ```
 
 Your agent has no shell in ClankTalk, so it cannot run these commands.
@@ -624,7 +728,7 @@ allow secret GITHUB_TOKEN for fetch to 'api.github.com'
 allow secret NPM_TOKEN for run
 allow secret ANTHROPIC_API_KEY for subagents
 use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY
-limit output to 400 lines
+limit output keeping the first 200 and the last 200 lines
 keep audit for 7 days
 audit as json
 
@@ -649,7 +753,7 @@ tool dev_server
 end
 
 # Installs the dependencies.
-tool install
+tool npm_install
   run 'npm install' in a sandbox with network, writes to '~/.npm'
 end
 
@@ -660,6 +764,12 @@ end
 
 # Deploys the app: staging or prod.
 tool deploy with target
+  if target is 'prod'
+    ask 'Deploy to prod?' with 'yes' or 'no'
+    if the result is not 'yes'
+      reject 'Only a human can approve a prod deploy'
+    end
+  end
   run 'fly' with 'deploy', '--app', 'shop-' + target in a sandbox with network
 end
 
@@ -682,23 +792,8 @@ before git
 end
 
 before change
-  if the change's path starts with 'migrations/'
+  if the change's path is in @/migrations/
     reject 'A human writes the migrations'
-  end
-end
-
-before deploy
-  if the deploy's args contains 'prod'
-    ask 'Deploy to prod?' with 'yes' or 'no'
-    if the result is not 'yes'
-      reject 'Only a human can approve a prod deploy'
-    end
-  end
-end
-
-after run_tests
-  if the result's code is not 0
-    append 'tests failed\n' to ./tmp/test-failures.log
   end
 end
 ```
@@ -793,7 +888,9 @@ TODO (Carson): intro. Notes for specific harnesses and agents.
 ### Claude Code subagents
 
 ```bash
-claude --tools "Agent" --strict-mcp-config --mcp-config .mcp.json --allowedTools mcp__clank-talk
+claude --tools "Agent" \
+  --strict-mcp-config --mcp-config .mcp.json \
+  --allowedTools mcp__clank-talk
 ```
 
 TODO (Carson): subagent notes.

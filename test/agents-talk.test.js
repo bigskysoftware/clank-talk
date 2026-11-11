@@ -268,22 +268,27 @@ test('scripts cannot import', async () => {
   assert.equal(e.message, "Unknown command 'import'");
 });
 
-test("limit output: one line only, with whole numbers above 0", async () => {
-  await agentsTalk("limit output to 10 lines\nlimit output to 5 lines");
+test("limit output: one line only, with keeping and whole numbers above 0", async () => {
+  await agentsTalk("limit output keeping the last 10 lines\nlimit output keeping the last 5 lines");
   assert.equal((await errors("print 1"))[0].message, "Only one 'limit output' line is allowed");
-  await agentsTalk("limit output to 0 lines");
-  assert.equal((await errors("print 1"))[0].message, "Expected a whole number above 0, such as: limit output to 400 lines");
-  await agentsTalk("limit output to 10 pages");
-  assert.equal((await errors("print 1"))[0].message, "Expected 'lines' or 'KB', such as: limit output to 400 lines or 20 KB");
-  await agentsTalk("limit output to 10 lines or 2 KB");
-  const result = await run("print 1", { root });
-  assert.deepEqual(result.outputLimit.lines, 10);
-  assert.deepEqual(result.outputLimit.bytes, 2048);
+  await agentsTalk("limit output keeping the last 0 lines");
+  assert.equal((await errors("print 1"))[0].message, "Expected a whole number above 0, such as: limit output keeping the last 400 lines");
+  await agentsTalk("limit output to 10 lines");
+  assert.match((await errors("print 1"))[0].message, /^'limit output to' is replaced by 'keeping'/);
+  await agentsTalk("limit output keeping the first 2 and the last 1 lines");
+  const result = await run("repeat 5 times\n  print 'x'\nend\nprint 'end'", { root });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.shown, "x\nx\n... 3 lines cut. All 6 lines are in: the previous output\nend");
+  assert.equal(result.output.length, 6);
 });
 
-test("limit output: the smaller of AGENTS.talk and the policy wins", async () => {
-  await agentsTalk("limit output to 50 lines");
-  const result = await run("print 1", { root, policy: { name: "p.talk", source: "policy 'p'\nlimit output to 7 lines or 3 KB" } });
+test("limit output: AGENTS.talk cuts, then the policy cuts what is left; patterns and KB work", async () => {
+  await agentsTalk("limit output keeping lines matching pattern /^FAIL/");
+  const result = await run("print 'ok 1'\nprint 'FAIL 2'\nprint 'FAIL 3'\nprint 'ok 4'", { root, policy: { name: "p.talk", source: "policy 'p'\nlimit output keeping the first 1 lines" } });
   assert.deepEqual(result.errors, []);
-  assert.deepEqual({ lines: result.outputLimit.lines, bytes: result.outputLimit.bytes }, { lines: 7, bytes: 3072 });
+  assert.equal(result.shown, "FAIL 2\n... 3 lines cut. All 4 lines are in: the previous output");
+  await agentsTalk("limit output keeping the last 100 lines or 1 KB");
+  const big = await run("repeat 300 times\n  print 'line'\nend", { root });
+  assert.ok(Buffer.byteLength(big.shown) < 1200);
+  assert.match(big.shown, /^\.\.\. \d+ lines cut\. All 300 lines are in: the previous output\n/);
 });

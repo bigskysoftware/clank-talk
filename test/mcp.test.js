@@ -174,14 +174,14 @@ test('long output is cut, and the next script can read all of it as the previous
 });
 
 test('limit output in AGENTS.talk makes the cut smaller, and never larger', async () => {
-  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 10 lines');
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output keeping the first 5 and the last 5 lines');
   try {
     const text = (await call("repeat 30 times\n  print 'line'\nend")).result.content[0].text;
     assert.equal(text.split("\n").length, 11);
     assert.match(text, /\.\.\. 20 lines cut\. All 30 lines/);
-    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 5000 lines or 100 KB');
+    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output keeping the first 2500 and the last 2500 lines or 100 KB');
     assert.equal((await call("repeat 1500 times\n  print 'line'\nend")).result.content[0].text.split("\n").length, 1001);
-    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 1 KB');
+    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output keeping the first 300 lines or 1 KB');
     assert.match((await call("repeat 300 times\n  print 'line'\nend")).result.content[0].text, /lines cut\. All 300 lines/);
   } finally {
     await fs.rm(path.join(root, 'AGENTS.talk'));

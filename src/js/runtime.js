@@ -9,6 +9,7 @@ import { parse } from "./parser.js";
 import { helpIndex, helpFor } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
+import { keepItems, withNotes } from "./keeping.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
 import * as untrusted from "./untrusted.js";
 import { judgeText } from "./judge.js";
@@ -47,16 +48,18 @@ class ScriptError extends Error {
 // the host cancelled the script
 class Cancelled extends ScriptError {}
 
-// a "before" hook rejected a step; "on error" can handle this
+// a "before" hook rejected a step, or a tool rejected its call; "on error" can handle this
 class Rejected extends ScriptError {}
 
 // the step budget is used up; "on error" cannot handle this
 class StepBudget extends ScriptError {}
 
 // a file in the project; nothing is read until a property is used
+// folder: the path was written with a / at the end, such as @/migrations/
 class FileRef {
-  constructor(absolute, root) {
+  constructor(absolute, root, folder = false) {
     this.absolute = absolute;
+    this.folder = folder;
     // the path relative to the project root, with / on every platform
     this.path = nodePath.relative(root, absolute).split(nodePath.sep).join("/");
     this.name = nodePath.basename(absolute);
@@ -368,9 +371,9 @@ async function execute(source, options, execution) {
       execution.warnings.push({ message: "Could not write " + untrusted.POLICY_FILE + ": " + err.message, line: 1, column: 1 });
     }
   }
-  // the smaller of the output limits in AGENTS.talk and the policy; the host has its own too
+  // limit output keeping ...: AGENTS.talk, then the policy; each cuts what the one before it kept, and the host cuts last
   const policyLimit = policy.policy === null ? null : policy.policy.rules.find((rule) => rule.type === "outputLimit") || null;
-  execution.outputLimit = smallerLimit(agents.outputLimit, policyLimit);
+  execution.outputLimits = [agents.outputLimit, policyLimit].filter((limit) => limit !== null);
   state.audit.scripts++;
   state.auditScript = state.audit.scripts;
 
@@ -399,6 +402,7 @@ async function execute(source, options, execution) {
   execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
   failure = failure.map((error) => ({ ...error, message: redact(nullHint(error.message), state) }));
+  await limitOutput(execution, state);
   for (const warning of execution.warnings) {
     warning.message = redact(warning.message, state);
   }
@@ -629,9 +633,7 @@ async function runSubagentCommand(command, state) {
     const savedFrom = state.auditFrom;
     state.auditFrom = owner;
     try {
-      const step = Object.create(null);
-      step.args = args;
-      step.named = Object.create(null);
+      const step = toolStep(definition, args, Object.create(null));
       await runHooks("before", [name], step, state, command);
       auditStep(state, "tool", name, args.map((arg) => toText(arg)).join(", "));
       const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps);
@@ -1457,25 +1459,32 @@ async function loadTalkFile(absolute, root, chain, files, errors) {
   }
 }
 
-// two output limits, { lines, bytes } with null for none: the smaller of each part
-function smallerLimit(a, b) {
-  if (a === null) {
-    return b;
+// limit output keeping ...: the print output that the agent sees; the previous output keeps all of it
+// a pattern that runs too long is a warning, and the host's own cut still applies
+async function limitOutput(execution, state) {
+  if (execution.outputLimits.length === 0 || execution.output.length === 0) {
+    return;
   }
-  if (b === null) {
-    return a;
+  let text = execution.output.join("\n");
+  const total = text.split("\n").length;
+  const note = (n) => "... " + n + " lines cut. All " + total + " lines are in: the previous output";
+  try {
+    const keeps = execution.outputLimits.map((limit) => ({ keep: { first: limit.first, last: limit.last, bytes: limit.bytes }, pattern: limit.pattern }));
+    execution.shown = (await keepText(text, keeps, state, execution.outputLimits[0], note)).text;
+  } catch (err) {
+    execution.warnings.push({ message: "'limit output' failed: " + err.message, line: 1, column: 1 });
+  } finally {
+    execution.patterns.stop();
   }
-  const smaller = (x, y) => (x === null ? y : y === null ? x : Math.min(x, y));
-  return { lines: smaller(a.lines, b.lines), bytes: smaller(a.bytes, b.bytes) };
 }
 
 function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
   const result = { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
-  // only when AGENTS.talk or the policy sets one; the host uses it to cut long output
-  if (execution.outputLimit) {
-    result.outputLimit = execution.outputLimit;
+  // only when AGENTS.talk or the policy has 'limit output': the print output after that cut
+  if (execution.shown !== undefined) {
+    result.shown = execution.shown;
   }
   return result;
 }
@@ -1866,10 +1875,8 @@ async function runCommand(command, state, tools, maxSteps) {
       named[arg.name] = await evaluate(arg.value, state);
     }
 
-    const step = Object.create(null);
-    step.args = args;
-    step.named = named;
     const definition = state.definitions[command.name];
+    const step = toolStep(definition, args, named);
     await runHooks("before", [command.name], step, state, command);
     auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).join(", "));
 
@@ -2205,6 +2212,11 @@ async function evaluateNode(node, state) {
       const answer = await patternJob({ kind: "test", source: right.source, flags: right.flags, text: toText(await asText(left, state, node)) }, state, node);
       return answer.matches;
     }
+    // is in a folder: a path check, so it reads no file
+    if ((node.operator === "is in" || node.operator === "is not in") && right instanceof FileRef && (await isFolder(right))) {
+      const inside = await inFolder(left, { absolute: right.absolute, root: state.root }, node);
+      return node.operator === "is in" ? inside : !inside;
+    }
     // + joins a file as its path, and a line as its text; 'text of' gives a file's text
     if (node.operator === "+") {
       left = joinPart(left);
@@ -2218,6 +2230,19 @@ async function evaluateNode(node, state) {
   }
 
   throw new ScriptError("Unknown expression type '" + type + "'", node);
+}
+
+// the step that a hook for a tool sees: args, named, and each parameter by its name (null if not given)
+function toolStep(definition, args, named) {
+  const step = Object.create(null);
+  step.args = args;
+  step.named = named;
+  if (definition !== undefined) {
+    definition.params.forEach((param, index) => {
+      step[param] = Object.hasOwn(named, param) ? named[param] : index < args.length ? args[index] : null;
+    });
+  }
+  return step;
 }
 
 // run a tool from AGENTS.talk, with its own local variables
@@ -2272,6 +2297,10 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
     if (definition.untrusted && err instanceof ScriptError && !(err instanceof Cancelled) && !(err instanceof StepBudget)) {
       const printed = state.execution.output.slice(printedFrom);
       await noteUntrusted(state, "tool " + definition.name + " (error)", (printed.length > 0 ? printed.join("\n") + "\n" : "") + err.message, command);
+    }
+    // a reject points at the tool call, so the agent sees where
+    if (err instanceof Rejected) {
+      throw new Rejected(err.message, command);
     }
     // an error inside the tool points into AGENTS.talk
     if (err instanceof ScriptError && !err.file) {
@@ -2352,15 +2381,62 @@ async function runProgram(command, state) {
     }
   }
 
-  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + secretNote(command.secrets));
   // the output can hold a secret's value, for example from "env"
   result.output = redact(result.output, state);
+  const cut = command.keeping ? await keepRunOutput(result, command.keeping, state, command) : 0;
+  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + (cut > 0 ? ", " + cut + " lines cut" : "") + secretNote(command.secrets));
 
   // after hooks see the result
   state.result = result;
   await runHooks("after", ["run"], step, state, command);
   return result;
 }
+// run ... keeping: cut the program's output to the lines the tool wants; one line takes the place of the cut lines
+// the result's full keeps all of it; gives the number of lines cut; see src/md/features/sandbox-run.md
+async function keepRunOutput(result, keeping, state, command) {
+  result.full = result.output;
+  const count = async (node, unit) => {
+    if (node === null) {
+      return null;
+    }
+    const n = toNumber(await evaluate(node, state), node);
+    if (!Number.isInteger(n) || n < 0) {
+      throw new ScriptError("keeping needs a whole number of " + unit + ", 0 or more, found " + n, node);
+    }
+    return n;
+  };
+  const kb = await count(keeping.bytes, "KB");
+  const keep = { first: await count(keeping.first, "lines"), last: await count(keeping.last, "lines"), matches: null, bytes: kb === null ? null : kb * 1024 };
+  const other = keeping.pattern !== null ? " other" : "";
+  const cut = await keepText(result.output, [{ keep, pattern: keeping.pattern }], state, command, (n) => "... " + n + other + " lines cut (all lines: the result's full) ...");
+  result.output = cut.text;
+  return cut.cut;
+}
+
+// cut a text with one or more keeps, each one on what the one before it kept: [{ keep, pattern }]
+// pattern is null or a node that gives a pattern; with a pattern, one note goes at the end, else one at each gap
+// a text that ends with a line break still does
+async function keepText(text, keeps, state, node, note) {
+  const ends = text.endsWith("\n");
+  let items = (ends ? text.slice(0, -1) : text).split("\n").map((line, index) => ({ index, text: line }));
+  const total = items.length;
+  let atEnd = false;
+  for (const { keep, pattern } of keeps) {
+    let matches = null;
+    if (pattern !== null) {
+      const value = await evaluate(pattern, state);
+      if (!(value instanceof Pattern)) {
+        throw new ScriptError("keeping lines matching needs a pattern, such as: keeping lines matching pattern /FAIL/, found " + describe(value), pattern);
+      }
+      matches = (await patternJob({ kind: "lines", source: value.source, flags: value.flags, lines: items.map((item) => item.text) }, state, node)).indexes;
+      atEnd = true;
+    }
+    items = keepItems(items, { ...keep, matches });
+  }
+  const kept = withNotes(items, total, note, atEnd);
+  return { text: kept.lines.join("\n") + (ends && kept.lines.length > 0 ? "\n" : ""), cut: kept.cut };
+}
+
 // the sandbox's temp folder goes after the program; a program can leave a file there that cannot be removed,
 // and that is a warning, not a failed run
 async function removeSandboxTmp(tmp, state) {
@@ -5111,7 +5187,36 @@ async function resolvePath(text, state, node) {
 
   const absolute = nodePath.resolve(base, rest);
   checkInsideRoot(absolute, state, node, text);
-  return new FileRef(absolute, state.root);
+  return new FileRef(absolute, state.root, rest.endsWith("/"));
+}
+
+// <path or file> is in <folder>: true if the path is inside the folder, at any depth
+// a text path is from the project root, as in the change's path; see src/md/features/language.md
+async function inFolder(left, folder, node) {
+  if (left === null) {
+    return false;
+  }
+  let absolute;
+  if (left instanceof FileRef) {
+    absolute = left.absolute;
+  } else if (typeof left === "string") {
+    absolute = nodePath.resolve(folder.root, left);
+  } else {
+    throw new ScriptError("'is in' a folder needs a path or a file, found " + describe(left), node.left);
+  }
+  return absolute !== folder.absolute && isInside(absolute, folder.absolute);
+}
+
+// a path written with a / at the end, or a folder that exists
+async function isFolder(file) {
+  if (file.folder) {
+    return true;
+  }
+  try {
+    return (await fs.stat(file.absolute)).isDirectory();
+  } catch (err) {
+    return false;
+  }
 }
 
 // the parts of a glob before its first wildcard, such as dist/lib for dist/lib/**/*.js
