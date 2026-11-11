@@ -9,7 +9,7 @@ const KEYWORDS = new Set([
   // commands and blocks
   "print", "set", "increment", "decrement", "if", "else", "end", "then", "do",
   "for", "in", "index", "repeat", "times", "while", "until", "break", "continue",
-  "read", "write", "append", "replace", "find", "put", "remove", "with", "to", "by", "line", "lines", "keeping", "matching",
+  "read", "write", "append", "replace", "find", "put", "remove", "with", "to", "by", "line", "lines", "keeping", "matching", "add", "check",
   "tool", "import", "run", "start", "stop", "fetch", "ask", "wait", "undo", "help", "reject",
   "before", "after", "on", "error", "allow", "env", "changes", "git", "audit",
   "sandbox", "network", "local", "writes", "reads",

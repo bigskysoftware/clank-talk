@@ -2,6 +2,39 @@
 
 Ideas that are not approved yet. When a human approves one, it moves to the record of its feature, as Proposed or Approved. Built items leave this file.
 
+## Next: work that still needed Bash (from 2026-11-11)
+
+On the day of the 0.1.0 release, about 20 kinds of steps needed Bash or another tool. These items let an agent do that work in ClankTalk alone. Order: A, then B, then C.
+
+### A. AGENTS.talk lines only (no new features)
+
+- **GitHub:** `untrusted tool` entries that run `gh` in a sandbox with network and `reads of '~/.config/gh'`: repo state, Pages state, workflow runs.
+- **npm registry:** `fetch https://registry.npmjs.org/<name> as json`, with `allow fetch from 'registry.npmjs.org'`, in place of `npm view`.
+- **Site checks:** `fetch ... as response` and its status, with `allow fetch from 'clank.talk'`. A certificate error is a script error.
+- **Secret scan:** a tool that runs gitleaks, or `git log -p`, in a sandbox, before history goes public.
+- **Docs of other tools:** for example a `pi_docs` tool that runs `grep` in a sandbox with `reads of` the pi install folder.
+- Done: `build_site` and `package_test`.
+
+### B. Small features
+
+- Done: `git push tag '<name>'`, `check <text>` (and `as AGENTS.talk`), `add <value> to <list>`, `does not start with`, `git commit a, b` with no brackets, a clear error for an `in` after `replace lines`, and `reads of` for a named secret path.
+- **`check ... as tree`:** the parse tree, to see how a line groups.
+- **More `git log`:** for example all branches, and patches with the `.env` parts hidden, as `git show` does. Today only `--oneline -n`.
+- **Raw strings:** a raw string cannot start with a quote, by design; the error now says to start the text on the next line. A `\u` escape in a raw string stays as text, so the real U+2028 in one edit most likely came from the agent's input.
+- **A script runner for reviews:** a tool that runs a ClankTalk script in a temp project, so a security reviewer can test without Node.
+
+### C. Larger features
+
+- **Worktrees:** `git worktree` commands, and a session that can switch its root to a worktree inside the project. Today the MCP root stays on the main checkout.
+- **Long waits:** a background check that reports to the agent when it is done (a deploy, a registry, a certificate). `wait until ... within` blocks the tool call.
+
+### Stays outside ClankTalk, by design
+
+- Harness files: memory in `~/.claude/`, `.claude/settings.local.json`.
+- A commit of `.talk` files: a human commits them (a human may ask the agent to use the harness shell).
+- The `/cc` watch, screenshots, web research, subagent orchestration, editor edits.
+- Human release steps: `npm publish`, repo visibility, Pages settings.
+
 ## Plugins
 
 A plugin adds tools, syntax, or both, so a team can share what it built. See `features/plugins.md` (a stub) and `features/agents-talk.md` (Import).

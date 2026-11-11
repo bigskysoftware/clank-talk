@@ -110,6 +110,17 @@ test("git commit commits only the named files, new ones too", async () => {
   await fs.writeFile(path.join(root, "a.txt"), "one\nmore\n");
 });
 
+test("git commit takes a list with no brackets too", async () => {
+  await fs.writeFile(path.join(root, "c.txt"), "c\n");
+  await fs.writeFile(path.join(root, "d.txt"), "d\n");
+  await output("git commit ./c.txt, ./d.txt with 'Two files'");
+  assert.equal(git(["show", "--name-only", "--format=", "HEAD"]), "c.txt\nd.txt\n");
+  // the repo is shared with the next tests: take the commit and the files back
+  git(["reset", "-q", "HEAD~1"]);
+  await fs.rm(path.join(root, "c.txt"));
+  await fs.rm(path.join(root, "d.txt"));
+});
+
 test("git commit checks its values", async () => {
   await fs.writeFile(path.join(root, ".env"), "SECRET=1\n");
   try {
@@ -170,6 +181,26 @@ test("git push pushes the branch to origin, and never asks", async () => {
     assert.match((await errors("git push"))[0], /^Expected 'env', 'changes to', 'fetch from' or 'secret'/);
   } finally {
     await fs.rm(path.join(root, "AGENTS.talk"), { force: true });
+    git(["remote", "remove", "origin"]);
+    await fs.rm(bare, { recursive: true, force: true });
+  }
+});
+
+test("git push tag sends one tag to origin, and never moves a tag that is there", async () => {
+  const bare = await fs.mkdtemp(path.join(os.tmpdir(), "clank-origin-"));
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  git(["remote", "add", "origin", bare]);
+  const remoteTags = () => execFileSync("git", ["tag", "--list"], { cwd: bare, encoding: "utf8" });
+  try {
+    await output("git tag 'v9.9.9'\ngit push tag 'v9.9.9'");
+    assert.equal(remoteTags(), "v9.9.9\n");
+    // a tag with the same name on another commit is refused: no force
+    git(["tag", "-d", "v9.9.9"]);
+    git(["tag", "v9.9.9", "HEAD~1"]);
+    assert.match((await errors("git push tag 'v9.9.9'"))[0], /^git push failed: /);
+    assert.deepEqual(await errors("git push tag '-f'"), ["Not a safe tag name: '-f'. Use letters, digits, -, _, / and ."]);
+  } finally {
+    git(["tag", "-d", "v9.9.9"]);
     git(["remote", "remove", "origin"]);
     await fs.rm(bare, { recursive: true, force: true });
   }

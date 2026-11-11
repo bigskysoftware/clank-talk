@@ -343,8 +343,16 @@ export function parse(source, options = {}) {
       } else if (isWord("exist")) {
         i++;
         operator = "does not exist";
+      } else if (isWord("start") || isWord("end")) {
+        operator = "does not " + current().value + " with";
+        i++;
+        if (!isWord("with")) {
+          error("Expected 'with'");
+          return null;
+        }
+        i++;
       } else {
-        error("Expected 'contain' or 'exist'");
+        error("Expected 'contain', 'exist', 'start with' or 'end with'");
         return null;
       }
     } else {
@@ -1114,6 +1122,14 @@ export function parse(source, options = {}) {
       }
       i++;
     }
+    // git push, git push tag <name>
+    if (op.value === "push" && isWord("tag") && current().line === op.line) {
+      i++;
+      command.tag = parseExpression();
+      if (command.tag === null) {
+        return null;
+      }
+    }
     // git stash, git stash pop
     if (op.value === "stash") {
       command.pop = false;
@@ -1184,6 +1200,20 @@ export function parse(source, options = {}) {
       command.value = parseBefore(["with"], parseExpression);
       if (command.value === null) {
         return null;
+      }
+      // git commit a, b with ...: a list with no brackets, as the arguments of run take
+      if (isOp(",")) {
+        const first = command.value;
+        const items = [first];
+        while (isOp(",")) {
+          i++;
+          const item = parseBefore(["with"], parseExpression);
+          if (item === null) {
+            return null;
+          }
+          items.push(item);
+        }
+        command.value = { type: "list", items, line: first.line, column: first.column };
       }
       if (!isWord("with")) {
         error("Expected 'with' and a message");
@@ -1310,6 +1340,12 @@ export function parse(source, options = {}) {
     // replace lines 5 to 7 of <file> with <text>: an edit by line number; "of" names the file,
     // so it never takes an "in", and an "in" after it starts a new command
     if (old.type === "lines") {
+      // an "in" on the same line is a mistake, not a new command: "of" already names the file
+      const before = tokens[i - 1];
+      if (isWord("in") && before !== undefined && !source.slice(before.end, current().start).includes("\n")) {
+        error("replace lines ... of <file> names the file after 'of', so it takes no 'in'. Remove the 'in' part");
+        return null;
+      }
       return { type: "replaceLines", range: old, text: replacement, line: token.line, column: token.column };
     }
     // in an "in <target> do ... end" block, the block names the target, and an "in" here starts a new command
@@ -1492,6 +1528,45 @@ export function parse(source, options = {}) {
     return { type: "set", target, value, line: token.line, column: token.column };
   }
 
+  // check <text> [as AGENTS.talk]: the parse errors of a script, or of AGENTS.talk text; nothing runs
+  function parseCheck(token) {
+    const value = parseBefore(["as"], parseExpression);
+    if (value === null) {
+      return null;
+    }
+    let agents = false;
+    if (isWord("as")) {
+      const next = tokens[i + 1];
+      const dot = tokens[i + 2];
+      const talk = tokens[i + 3];
+      if (next === undefined || next.value !== "AGENTS" || dot === undefined || dot.value !== "." || talk === undefined || talk.value !== "talk") {
+        error("Expected 'AGENTS.talk', as in: check text as AGENTS.talk");
+        return null;
+      }
+      i += 4;
+      agents = true;
+    }
+    return { type: "check", value, agents, line: token.line, column: token.column };
+  }
+
+  // add <expression> to <target>: the target is a list, or a variable that is not set yet
+  function parseAdd(token) {
+    const value = parseBefore(["to"], parseExpression);
+    if (value === null) {
+      return null;
+    }
+    if (!isWord("to")) {
+      error("Expected 'to', as in: add item to items");
+      return null;
+    }
+    i++;
+    const target = parseTarget();
+    if (target === null) {
+      return null;
+    }
+    return { type: "add", value, target, line: token.line, column: token.column };
+  }
+
   // increment <target> [by <expression>]
   // decrement <target> [by <expression>]
   // with no "by", the amount is 1
@@ -1550,6 +1625,8 @@ export function parse(source, options = {}) {
     undo: parseUndo,
     ask: parseAsk,
     taint: parseTaint,
+    add: parseAdd,
+    check: parseCheck,
     fetch: parseFetch,
     start: parseStart,
     wait: parseWait,
@@ -1774,6 +1851,11 @@ export function parse(source, options = {}) {
   function parseToolDefinition(token) {
     const name = parseName();
     if (name === null) {
+      return null;
+    }
+    // a call to it would run the command, so the tool could never be called
+    if (Object.hasOwn(COMMANDS, name)) {
+      error("A tool cannot be named '" + name + "', because '" + name + "' is a command. Use another name");
       return null;
     }
     const params = [];

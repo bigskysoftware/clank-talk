@@ -86,7 +86,7 @@
         },
         {
           "name": "keyword.other.command.clanktalk",
-          "match": "\\b(print|set|increment|decrement|read|write|append|replace|find|put|remove|run|start|fetch|ask|undo|help|tool|import|before|after|allow|git|audit)\\b"
+          "match": "\\b(print|set|add|check|increment|decrement|read|write|append|replace|find|put|remove|run|start|fetch|ask|undo|help|tool|import|before|after|allow|git|audit|reject|taint|keeping)\\b"
         },
         {
           "name": "constant.language.clanktalk",

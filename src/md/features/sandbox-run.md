@@ -19,6 +19,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - Approved (built): a `run` with no `in a sandbox` works as now. A hook can require a sandbox: the step's `sandbox` is null without one.
 - Approved (built): each sandboxed run gets its own temp folder (`TMPDIR`), removed after the run, or when a process ends.
 - Approved (built): `HOME` is a fresh folder in that temp folder. The allowed parts of the real home (the caches, `reads of`, `writes to`) are linked into it. Why: many programs look for config in the home folder. A missing file is fine for them, but a blocked file is a fatal error (git: `unable to access '~/.gitconfig'`). Thus secrets such as `~/.npmrc` are not even visible.
+- Approved (built, 2026-11-11): a `reads of` or `writes to` line that names a secret path (`~/.ssh`, `~/.config/gh`, and the rest of the list in `sandbox.js`), or a path inside one, opens that path. The human wrote the line, so it is consent. A parent path, such as `reads of '~'`, does not open the secrets in it. Why: the docs `issue` tool needs `reads of '~/.config/gh'` for the `gh` login.
 - Approved (built): a sandboxed program gets `CLANK_TALK_SANDBOXED=1`. A sandbox cannot start inside another, so a ClankTalk inside the sandbox fails at once with a clear reason.
 - Tested: this repo's `npm test` passes in a sandbox `with local network` (the fetch tests need local servers). The real-sandbox tests skip there.
 

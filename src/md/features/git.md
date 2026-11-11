@@ -89,3 +89,5 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 - Approved (built): `git blame <file>`: read only, `--no-textconv`. A `.env` file (also through a link) and a missing file are refused.
 - Approved (built): `git tag <name>` (a light tag on HEAD, with the check of a branch name) and `git tags`. A tag is a git write. `git push` does not send tags.
 - The audit shows them as written: `stash`, `stash pop`, `restore a.txt  1 file`, `pull origin main  fast-forward`, `blame a.txt`, `tag v1.0`.
+- Approved (built, 2026-11-11): `git commit ./a.js, ./b.js with '...'` takes files with commas and no brackets, as the arguments of `run` do. Why: agents wrote it that way and got an error.
+- Approved (built, 2026-11-11): `git push tag '<name>'` sends one tag that is here to origin, as `refs/tags/<name>`, never with force, so a tag that is on origin is never moved. It has the checks and the question of a push. Why: the release tag needed a shell.

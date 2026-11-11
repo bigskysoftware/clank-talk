@@ -386,7 +386,8 @@ export function tokenize(source) {
         advance();
       }
       if (!closed) {
-        const needs = fence.length === 3 ? "Unterminated raw string" : "Unterminated raw string: it opens with " + fence.length + " quotes, so it ends at " + fence.length + " quotes";
+        // four or more quotes open a longer fence, so text that starts with a quote needs a line break first
+        const needs = fence.length === 3 ? "Unterminated raw string" : "Unterminated raw string: it opens with " + fence.length + " quotes, so it ends at " + fence.length + " quotes. For text that starts with a quote, put a line break right after the three opening quotes";
         push("error", needs, startLine, startColumn);
         continue;
       }

@@ -229,3 +229,60 @@ test("a command word as a name gives an error that names the fix", () => {
   assert.equal(errors("set x to 1\nprint stop")[0], "Expected a value, found the command word 'stop'. If it is a name, write 'the stop' @2:7");
   assert.deepEqual(errors("set the stop to 5\nprint the stop"), []);
 });
+
+test("an in after replace lines on the same line is a clear error; on a new line it is a new command", async () => {
+  const { parse } = await import("../src/js/parser.js");
+  const q3 = '"'.repeat(3);
+  const same = parse("replace lines 1 to 2 of ./a.txt with " + q3 + "\nx\n" + q3 + " in ./a.txt");
+  assert.match(same.errors[0].message, /^replace lines \.\.\. of <file> names the file after 'of', so it takes no 'in'/);
+  const next = parse("replace lines 1 to 2 of ./a.txt with 'x'\nin ./a.txt replace 'a' with 'b'");
+  assert.deepEqual(next.errors, []);
+});
+test("does not start with and does not end with", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  const result = await run("print 'abc' does not start with 'b'\nprint 'abc' does not start with 'a'\nprint 'abc' does not end with 'c'\nprint null does not end with 'c'", { root: os.tmpdir() });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.output, ["true", "false", "false", "true"]);
+});
+
+test("add puts an item at the end of a list; an unset variable starts empty", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  const result = await run("add 'a' to found\nadd 'b' to found\nprint found\nset box to {items: [1]}\nadd 2 to box's items\nprint box's items", { root: os.tmpdir() });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.output, ['["a","b"]', "[1,2]"]);
+  const text = await run("set t to 'x'\nadd 'y' to t", { root: os.tmpdir() });
+  assert.match(text.errors[0].message, /^add needs a list, found 'x'\. To join text, use \+/);
+});
+
+test("check gives the parse errors of a script or of AGENTS.talk text, and runs nothing", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-check-"));
+  try {
+    const script = [
+      "check 'print 1 + 2'",
+      "print it",
+      "check 'write 1 to'",
+      "print it's length",
+      "check 'tool t with a\\n  run \\'node\\' with a in a sandbox\\nend\\nbefore t\\n  reject \\'no\\'\\nend' as AGENTS.talk",
+      "print it",
+      "check 'run \\'node\\''",
+      "print the message of first of it",
+      "check 'write \\'x\\' to ./made.txt'",
+      "print ./made.txt exists",
+    ].join("\n");
+    const result = await run(script, { root });
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.output[0], "[]");
+    assert.equal(result.output[1], "1");
+    assert.equal(result.output[2], "[]");
+    assert.match(result.output[3], /only allowed in a tool/);
+    assert.equal(result.output[4], "false");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

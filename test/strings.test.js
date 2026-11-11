@@ -114,7 +114,7 @@ test('a raw string with more quotes ends at the same count, so it can hold three
   const q4 = '"'.repeat(4);
   assert.deepEqual(await output('print ' + q4 + 'say ' + q3 + 'hi' + q3 + q4), ['say ' + q3 + 'hi' + q3]);
   assert.deepEqual(await output('print ' + q4 + '\n  x\n' + q4), ['  x\n']);
-  assert.deepEqual(await errors('print ' + q4 + 'oops' + q3), ['Unterminated raw string: it opens with 4 quotes, so it ends at 4 quotes', 'Expected a value']);
+  assert.deepEqual(await errors('print ' + q4 + 'oops' + q3), ['Unterminated raw string: it opens with 4 quotes, so it ends at 4 quotes. For text that starts with a quote, put a line break right after the three opening quotes', 'Expected a value']);
 });
 
 // ----- text blocks: lines that start with | -----

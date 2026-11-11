@@ -62,6 +62,25 @@ test("the macOS profile: deny by default, the project, no secrets, network only 
   await assert.rejects(sandboxPlan({ root: '/p/a"b', tmp: "/t" }), /cannot hold a quote/);
 });
 
+test("a reads of line that names a secret path opens it; a parent path does not", async () => {
+  const home = await fs.realpath(os.homedir());
+  const named = await sandboxPlan({ root: "/p/proj", tmp: "/t/x", reads: ["~/.config/gh"] });
+  assert.deepEqual(named.opened, [{ path: path.join(home, ".config/gh"), write: false }]);
+  const profile = macosProfile(named);
+  const deny = profile.indexOf("(deny file-read*");
+  const allow = profile.indexOf('(allow file-read* (subpath "' + path.join(home, ".config/gh") + '"))');
+  assert.ok(deny !== -1 && allow > deny, "the allow comes after the deny, so it wins");
+  assert.match(profile, /\.ssh"\)/);
+  const parent = await sandboxPlan({ root: "/p/proj", tmp: "/t/x", reads: ["~"] });
+  assert.deepEqual(parent.opened, []);
+  const inside = await sandboxPlan({ root: "/p/proj", tmp: "/t/x", writes: ["~/.config/gh/hosts.yml"] });
+  assert.deepEqual(inside.opened, [{ path: path.join(home, ".config/gh/hosts.yml"), write: true }]);
+  assert.match(macosProfile(inside), /\(allow file-write\* \(subpath "[^"]*\.config\/gh\/hosts\.yml"\)\)/);
+  const args = (await bwrapArgs({ ...named, root: "/p/proj", tmp: "/t/x" }, "/p/proj")).join(" ");
+  assert.ok(args.lastIndexOf("--ro-bind-try " + path.join(home, ".config/gh")) > args.indexOf(path.join(home, ".ssh")));
+});
+
+
 test("the sandbox really holds", { skip: realKind === null }, async () => {
   assert.deepEqual(await selfTest(realKind), { ok: true, problems: [] });
 });

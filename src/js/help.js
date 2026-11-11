@@ -24,6 +24,12 @@ export const HELP = [
     examples: ["set total to 0", "set config's version to 2", "set $last to 'build ok'", "set the result to 'done'"],
   },
   {
+    name: "add", kind: "command",
+    syntax: "add <value> to <list>",
+    description: "Add an item to the end of a list. A variable that is not set starts as an empty list.",
+    examples: ["for file in ./src/**/*.js\n  if file contains 'TODO'\n    add file's path to todos\n  end\nend\nprint todos"],
+  },
+  {
     name: "increment", kind: "command",
     syntax: "increment <variable or property> [by <number>]",
     description: "Add to a number. With no 'by', add 1. A variable that is not set starts at 0.",
@@ -167,6 +173,12 @@ export const HELP = [
     syntax: "remove lines <a> to <b> of <file>",
     description: "Remove lines from a file. Read the file first. The result is the old lines.",
     examples: ["read ./a.js\nremove lines 5 to 7 of ./a.js"],
+  },
+  {
+    name: "check", kind: "command",
+    syntax: "check <text> | check <text> as AGENTS.talk",
+    description: "Parse a script, or AGENTS.talk text, and run nothing. The result is a list of errors, each with line, column and message; an empty list means it parses. Use it to try a line before you run it.",
+    examples: ["check 'wait until the status of fetch home as response is 200'\nprint it", "check 'tool t\\n  run \\'npm test\\' in a sandbox\\nend' as AGENTS.talk\nprint it"],
   },
   {
     name: "help", kind: "command",
@@ -319,12 +331,12 @@ export const HELP = [
   },
   {
     name: "git", kind: "command",
-    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch> | git stash | git stash pop | git stashes | git restore <files> | git pull | git blame <file> | git tag <name> | git tags",
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch> | git stash | git stash pop | git stashes | git restore <files> | git pull | git blame <file> | git tag <name> | git tags | git push tag <name>",
     description: [
       "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text.",
       "If the repo config can run programs, git does not run.",
       "status is short, with the branch. log shows 15 commits, one line each.",
-      "commit adds and commits only the files that you name.",
+      "commit adds and commits only the files that you name: a list, or files with commas (git commit ./a.js, ./b.js with 'Fix').",
       "merge is fast-forward only. delete branch deletes only a merged branch.",
       "push sends the current branch to origin, never with force. It does not ask the human. A policy can turn it off with 'deny git push'.",
       "A push to a remote that is a folder inside the project is an error.",
@@ -332,7 +344,7 @@ export const HELP = [
       "stash puts away the changes to tracked files, so untracked files stay. stash pop brings them back.",
       "restore puts files back as they are in the last commit. It has the checks of a write, and undo can take it back.",
       "pull gets the current branch from origin, fast-forward only. The pulled changes are an untrusted input. A policy with deny fetch denies it.",
-      "blame shows who changed each line of a file. tag puts a tag on the current commit; push does not send tags.",
+      "blame shows who changed each line of a file. tag puts a tag on the current commit; push does not send tags, and push tag sends one tag, never with force.",
     ],
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
@@ -411,6 +423,7 @@ export const HELP = [
       "For code, and for any text with quotes, use a text block: lines that start with |. The text is exactly as typed, with no escapes and no ${}. One space after the | is removed. A line with only | is an empty line.",
       "'text' and \"text\" can span lines, and their common indent is removed. ${...} puts in a value. Write \\${ for a plain ${. Escapes: \\n and \\t.",
       "A raw string in three double quotes has no escapes and no ${}, and keeps its indent. The line break right after the opening quotes is not part of the text.",
+      "Write code in a raw string exactly as it is in the file, with no extra backslashes: one backslash stays one backslash.",
       "To hold three quotes in a raw string, open and close it with four. A raw string cannot start with a quote: start the text on the next line.",
     ],
     examples: ["print 'Hi ${name}'", "set code to \"\"\"\n  const x = `${y}`\n\"\"\""],
@@ -494,7 +507,7 @@ export const HELP = [
   },
   {
     name: "contains", kind: "expression",
-    syntax: "contains  does not contain  starts with  ends with  matches  is in  is not in  exists  does not exist  is empty  is not empty",
+    syntax: "contains  does not contain  starts with  ends with  does not start with  does not end with  matches  is in  is not in  exists  does not exist  is empty  is not empty",
     description: [
       "Checks for text, lists and files.",
       "On a file or a line, they use its text. On a list, they compare items by their content.",
@@ -755,7 +768,7 @@ const GROUPS = [
 
 // the areas of the reference page, in order; each entry of HELP is in one area
 export const AREAS = [
-  { title: "Basics", intro: "Output, variables, the result, and help.", names: ["help", "print", "set", "increment", "decrement", "it", "the", "of", "then", "previous"] },
+  { title: "Basics", intro: "Output, variables, the result, and help.", names: ["help", "check", "print", "set", "add", "increment", "decrement", "it", "the", "of", "then", "previous"] },
   { title: "Values and Text", intro: "Values, text, paths, lists and checks.", names: ["values", "strings", "paths", "operators", "contains", "as", "lines", "first", "last", "sorted", "pattern"] },
   { title: "Control Flow", intro: "Conditions, loops, waits, time limits and errors.", names: ["if", "for", "repeat", "break", "continue", "wait", "within", "on error", "stop"] },
   { title: "Files", intro: "Read, find, change, move and delete files. Undo takes changes back.", names: ["read", "find", "write", "append", "replace", "in", "put", "remove", "move", "delete", "undo"] },

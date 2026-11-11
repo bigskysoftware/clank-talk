@@ -1866,6 +1866,35 @@ async function runCommand(command, state, tools, maxSteps) {
     return;
   }
 
+  // check <text> [as AGENTS.talk]: the parse errors, as a list of { line, column, message }; empty if it parses
+  if (command.type === "check") {
+    const text = toText(notNull(await evaluate(command.value, state), "check needs text. Give it a value", command.value));
+    // the parser needs the tool names: the ones that the session knows, and for AGENTS.talk text, its own tools
+    const names = Object.keys(state.tools || {}).concat(Object.keys(state.definitions || {}));
+    if (command.agents) {
+      const first = parse(text, { definitions: true });
+      for (const definition of (first.script && first.script.definitions) || []) {
+        if (definition.type === "tool") {
+          names.push(definition.name);
+        }
+      }
+    }
+    const parsed = parse(text, command.agents ? { definitions: true, tools: names } : { tools: names });
+    state.result = parsed.errors.map((error) => ({ line: error.line, column: error.column, message: error.message }));
+    return;
+  }
+
+  // add <value> to <list>: a variable that is not set yet starts as an empty list
+  if (command.type === "add") {
+    const unset = command.target.type === "variable" && !Object.hasOwn(scopeFor(command.target.name, state), command.target.name);
+    const current = unset ? [] : await evaluate(command.target, state);
+    if (!Array.isArray(current)) {
+      throw new ScriptError("add needs a list, found " + describe(current) + ". To join text, use +", command.target);
+    }
+    await assign(command.target, [...current, await evaluate(command.value, state)], state);
+    return;
+  }
+
   if (command.type === "increment" || command.type === "decrement") {
     // a variable that is not set yet starts at 0, so it is not an unknown variable here
     const unset = command.target.type === "variable" && !Object.hasOwn(scopeFor(command.target.name, state), command.target.name);
@@ -2662,7 +2691,7 @@ async function runGit(command, state) {
   if (command.operation === "commit") {
     await askUntrusted(state, "commit", "Commit '" + (step.message === undefined ? "" : step.message) + "'", command);
   } else if (command.operation === "push") {
-    await askUntrusted(state, "push", "Push to origin", command);
+    await askUntrusted(state, "push", step.tag === undefined ? "Push to origin" : "Push tag " + step.tag + " to origin", command);
   }
 
   const env = gitEnv(process.env);
@@ -2968,7 +2997,16 @@ async function gitArgs(command, state, step) {
     return ["branch", "--delete", name];
   }
   // the current branch, to a branch with the same name on origin; never force
+  // git push tag <name>: one tag that is here, to origin; never force, so a tag on origin is never moved
   if (op === "push") {
+    if (command.tag) {
+      const name = toText(notNull(await evaluate(command.tag, state), "The tag name is null. Give it a value", command.tag));
+      if (!isSafeBranchName(name)) {
+        throw new ScriptError("Not a safe tag name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.tag);
+      }
+      step.tag = name;
+      return ["push", "--no-verify", "origin", "refs/tags/" + name + ":refs/tags/" + name];
+    }
     return ["push", "--no-verify", "origin", "HEAD"];
   }
   // git mv, so the history follows the file: one file, with the checks of a write for both paths
@@ -4672,6 +4710,9 @@ function gitShown(op, step, args) {
   if (op === "pull") {
     return { target: "pull origin " + step.branch, details: "fast-forward" };
   }
+  if (op === "push" && step.tag !== undefined) {
+    return { target: "push tag " + step.tag, details: "" };
+  }
   // status, branch, branches, push, diff, log, show: the operation, and what the script named, with no flags
   const named = args.slice(1).filter((arg) => !arg.startsWith("-") && arg !== "HEAD" && arg !== "origin");
   return { target: [op, ...named].join(" "), details: "" };
@@ -5151,6 +5192,12 @@ function evaluateBinary(node, left, right) {
   if (op === "ends with") {
     return left !== null && right !== null && toText(left).endsWith(toText(right));
   }
+  if (op === "does not start with") {
+    return !(left !== null && right !== null && toText(left).startsWith(toText(right)));
+  }
+  if (op === "does not end with") {
+    return !(left !== null && right !== null && toText(left).endsWith(toText(right)));
+  }
 
   throw new ScriptError("Unknown operator '" + op + "'", node);
 }
@@ -5184,7 +5231,7 @@ function convert(node, value) {
 // symlinks are followed. Nothing outside the root can be read.
 
 // operators that use the text of a file or a line
-const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "is in", "is not in"];
+const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "does not start with", "does not end with", "is in", "is not in"];
 
 // contains and is in on a list compare items, so a file in the list stays a file
 function inList(op, left, right) {

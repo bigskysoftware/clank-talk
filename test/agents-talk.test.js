@@ -40,8 +40,10 @@ test("a tool with no arguments", async () => {
 });
 
 test("arguments by position", async () => {
+  await agentsTalk("tool sum with a, b\n  set the result to a + b\nend");
+  assert.deepEqual(await output("sum 1, 2\nprint it"), ["3"]);
   await agentsTalk("tool add with a, b\n  set the result to a + b\nend");
-  assert.deepEqual(await output("add 1, 2\nprint it"), ["3"]);
+  assert.match((await errors("print 1"))[0].message, /^A tool cannot be named 'add', because 'add' is a command/);
 });
 
 test("arguments by name", async () => {
@@ -50,9 +52,9 @@ test("arguments by name", async () => {
 });
 
 test("a tool call is also a value, and leaves the result as it was", async () => {
-  await agentsTalk("tool greet\n  set the result to 'hi'\nend\ntool add with a, b\n  set the result to a + b\nend\ntool deploy with env, version\n  set the result to '${env}@${version}'\nend");
+  await agentsTalk("tool greet\n  set the result to 'hi'\nend\ntool plus with a, b\n  set the result to a + b\nend\ntool deploy with env, version\n  set the result to '${env}@${version}'\nend");
   assert.deepEqual(await output("set g to greet\nprint g"), ["hi"]);
-  assert.deepEqual(await output("set sum to add 1, 2\nprint sum"), ["3"]);
+  assert.deepEqual(await output("set sum to plus 1, 2\nprint sum"), ["3"]);
   assert.deepEqual(await output("set the result to 'before'\nset d to deploy with env: 'prod', version: '1.2'\nprint d\nprint the result"), ["prod@1.2", "before"]);
 });
 
