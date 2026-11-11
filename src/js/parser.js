@@ -619,6 +619,12 @@ export function parse(source, options = {}) {
     // pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
     if (isWord("pattern")) {
       const after = tokens[i + 1];
+      // pattern /regex/flags: the regex as written, with its flags
+      if (after !== undefined && after.type === "regex") {
+        const patternToken = current();
+        i += 2;
+        return node("pattern", patternToken, { source: node("string", after, { value: after.value.source }), flags: after.value.flags });
+      }
       if (after !== undefined && after.line === current().line && (after.type === "string" || after.type === "template")) {
         const patternToken = current();
         i++;
@@ -626,7 +632,7 @@ export function parse(source, options = {}) {
         if (source === null) {
           return null;
         }
-        return node("pattern", patternToken, { source });
+        return node("pattern", patternToken, { source, flags: "" });
       }
     }
 

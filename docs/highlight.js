@@ -155,7 +155,7 @@ export function highlight(code) {
       out += isKeyword ? span("keyword", text) : escape(text);
     } else if (token.type === "string" && /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(text)) {
       out += span("path", text);
-    } else if (token.type === "string" || token.type === "template") {
+    } else if (token.type === "string" || token.type === "template" || token.type === "regex") {
       out += span("string", text);
     } else if (token.type === "number") {
       out += span("number", text);

@@ -52,3 +52,12 @@ The runtime records every step that touches the world outside the script, so a h
 - Approved: `the audit` is the list of this session's records, newest last: `time`, `script`, `kind`, `target`, `details`, `from`. An agent can sum up what it did.
 - Approved (built): the host keeps the session (`options.audit`: the script count and the records). The file is written only for a host session, and the MCP host always passes one, so the audit is always on in real use. The runtime library alone, and tests, write no file.
 - Approved (built): a read is recorded once for each file in a script. If the audit file cannot be written, the script still runs, and gets a warning.
+
+## Readability (audit review, 2026-11-10)
+
+- Approved (built): the header puts the script's purpose after its number: `== 21:05:18  script 12  Fix the cart total  (done, 6 steps) ==`. The purpose is a first line `# ...` of the script, and it is not printed again in the script.
+- Approved (built): the session name and `(main)` leave the header. A line `-- session claude-code-4f2a --` comes before the first script of a session in a file. An agent that passed a name still shows it: `script 2 (tester)`.
+- Approved (built): an edit says what it did, not `undo saved`: `3 lines, new file`, `1 line at the end`, `1 line after line 1`, `lines 2-3 with 3 lines`, `lines 1-2`, `2 matches, lines 40-52`, `no match`, `to <path>` for a move.
+- Approved (built): git shows what the script wrote, with no hardening flags: `commit 'Add a'  1 file`, `switch to new branch fix-x`, `merge fix-x  fast-forward`. The JSON audit keeps the full arguments in `args`.
+- Approved (built): a step from inside a tool or a subagent is indented under it, with no `from ...`. The sandbox text is shorter: `sandbox, local network, code 0, 3.7 s`, or `no sandbox, ...`.
+- Rejected: one line for all the reads of one command. Each read keeps its own line.

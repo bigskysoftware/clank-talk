@@ -507,14 +507,15 @@ export const HELP = [
   },
   {
     name: "pattern", kind: "expression",
-    syntax: "pattern '<regexp>'",
+    syntax: "pattern /<regexp>/[i][m][s] | pattern '<regexp>'",
     description: [
       "A regexp, in JavaScript syntax with the u flag, for find, replace and matches.",
-      "Use a raw string for backslashes: pattern \"\"\"\\d+\"\"\".",
+      "pattern /.../ is raw: write the regexp as is, with no string escapes. A / inside is \\/. Flags after it: i (no case), m (^ and $ at each line), s (. matches a line break).",
+      "In pattern '...', the string takes one level of backslashes first, so \\( reaches the regexp as (. Prefer /.../.",
       "In replace, the new text can use $1, $<name>, $& and $$.",
       "A pattern that runs for more than 2 seconds is stopped.",
     ],
-    examples: ["set failures to find pattern 'not ok|FAIL' in the result's output", "replace pattern \"\"\"(\\w+)@old\\.com\"\"\" with '$1@new.com' in ./users.txt", "if tag matches pattern \"\"\"^v\\d+\\.\\d+$\"\"\" print 'a release' end"],
+    examples: ["set failures to find pattern /not ok|FAIL/ in the result's output", "replace pattern /(\\w+)@old\\.com/ with '$1@new.com' in ./users.txt", "if tag matches pattern /^v\\d+\\.\\d+$/ print 'a release' end", "find pattern /todo/i in ./src/**/*.js"],
   },
   {
     name: "as", kind: "expression",

@@ -8,6 +8,28 @@ import { run } from "../src/js/clank-talk.js";
 let root;
 const LOG = "ok 1 first\nnot ok 2 second\nok 3 third\nnot ok 4 fourth\n";
 
+test("pattern /.../ is raw, and takes the flags i, m and s", async () => {
+  const out = async (script) => {
+    const result = await run(script, { root });
+    return result.errors.length > 0 ? result.errors.map((error) => error.message) : result.output;
+  };
+  assert.deepEqual(await out("print find pattern /test\\(/ in 'a test( b'"), ["1: a test( b"]);
+  assert.deepEqual(await out("print 'Taint' matches pattern /^t/i"), ["true"]);
+  assert.deepEqual(await out("print 'a\nb' matches pattern /^b$/m"), ["true"]);
+  assert.deepEqual(await out("print 'a\nb' matches pattern /a.b/s"), ["true"]);
+  assert.deepEqual(await out("print find pattern /a\\/b/ in 'x a/b'"), ["1: x a/b"]);
+  // a / inside [...] does not end the pattern
+  assert.deepEqual(await out("print find pattern /[/]x/ in 'a/x'"), ["1: a/x"]);
+  assert.deepEqual(await out("print 10 / 2"), ["5"]);
+  assert.deepEqual(await out("print find pattern /x/g in 'x'"), ["A pattern takes only the flags i, m and s, once each, found g"]);
+  assert.deepEqual(await out("print find pattern /x/ii in 'x'"), ["A pattern takes only the flags i, m and s, once each, found ii"]);
+  assert.match((await out("print find pattern /x in 'x'"))[0], /^Unterminated pattern/);
+  // replace and find in a file keep the flags
+  await fs.writeFile(path.join(root, "case.txt"), "Var x\nvar y\n");
+  assert.deepEqual(await out("replace pattern /\\bvar\\b/i with 'let' in ./case.txt\nprint read ./case.txt"), ["let x\nlet y\n"]);
+  assert.deepEqual(await out("print find pattern /^LET/i in ./case.txt"), ["case.txt:1: let x\ncase.txt:2: let y"]);
+});
+
 before(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-patterns-"));
   await fs.writeFile(path.join(root, "log.txt"), LOG);

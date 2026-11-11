@@ -398,7 +398,7 @@ async function execute(source, options, execution) {
   // the host shows the changed files to the agent; undo has its own copy of the text, so only the copy for the host is redacted
   execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
-  failure = failure.map((error) => ({ ...error, message: redact(error.message, state) }));
+  failure = failure.map((error) => ({ ...error, message: redact(nullHint(error.message), state) }));
   for (const warning of execution.warnings) {
     warning.message = redact(warning.message, state);
   }
@@ -2001,9 +2001,9 @@ async function evaluateNode(node, state) {
   if (type === "pattern") {
     const source = toText(await evaluate(node.source, state));
     try {
-      return new Pattern(source);
+      return new Pattern(source, node.flags || "");
     } catch (err) {
-      throw new ScriptError("Not a valid pattern: " + err.message, node);
+      throw new ScriptError("Not a valid pattern: " + err.message + patternHint(err.message), node);
     }
   }
   if (type === "null") {
@@ -2198,7 +2198,7 @@ async function evaluateNode(node, state) {
       if (!(right instanceof Pattern)) {
         throw new ScriptError("matches needs a pattern, such as: matches pattern '^v[0-9]+', found " + describe(right), node.right);
       }
-      const answer = await patternJob({ kind: "test", source: right.source, text: toText(await asText(left, state, node)) }, state, node);
+      const answer = await patternJob({ kind: "test", source: right.source, flags: right.flags, text: toText(await asText(left, state, node)) }, state, node);
       return answer.matches;
     }
     // + joins a file as its path, and a line as its text; 'text of' gives a file's text
@@ -2613,7 +2613,9 @@ async function runGit(command, state) {
   if (result.code !== 0) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
-  auditStep(state, "git", args.join(" "), "");
+  // the audit shows git as the script wrote it; the JSON audit keeps the full arguments
+  const shown = gitShown(command.operation, step, args);
+  auditStep(state, "git", shown.target, shown.details, { args: args.join(" ") });
   // a .env file in git must not show in a diff either, since scripts cannot read it
   if (command.operation === "diff" || command.operation === "show") {
     result.output = hideSecretDiffs(result.output);
@@ -2997,7 +2999,7 @@ let sandboxTest = null;
 // for the audit: "in a sandbox with network, " or ""
 function sandboxText(sandbox) {
   if (sandbox === null) {
-    return "";
+    return "no sandbox, ";
   }
   const options = [];
   if (sandbox.network) {
@@ -3012,7 +3014,7 @@ function sandboxText(sandbox) {
   for (const path of sandbox.reads) {
     options.push("reads of " + path);
   }
-  return "in a sandbox" + (options.length > 0 ? " with " + options.join(", ") : "") + ", ";
+  return "sandbox" + (options.length > 0 ? ", " + options.join(", ") : "") + ", ";
 }
 
 // "in a sandbox with ...": the values, or null for no sandbox; hooks see them as the step's sandbox
@@ -3904,6 +3906,28 @@ async function checkTalkFolder(state, before, program, node) {
   throw new ScriptError("The program " + program + " changed files in .talk/, which scripts and programs must not change: " + changed.join(", ") + "." + (restored.length === 0 ? "" : " ClankTalk put back " + restored.join(", ") + ".") + (before.audit === null ? "" : " The output shows the audit from before the run.") + " Run the program in a sandbox", node);
 }
 
+// a hint for the common causes of a pattern that is not valid; see src/md/features/language.md
+function patternHint(message) {
+  if (/\(\?[imsx-]+[):]/.test(message)) {
+    return ".\nJavaScript has no (?i) or other inline flags. For a match with no case, use a character class such as [Tt]aint.";
+  }
+  if (message.endsWith("Invalid escape")) {
+    return ".\nWith the u flag, an escape that is not needed is an error, such as \\- outside [...]: write - alone.";
+  }
+  if (/Unterminated group|Nothing to repeat|Incomplete quantifier|Lone quantifier/.test(message)) {
+    return ".\nIn a quoted string, a backslash is an escape of the string, so \\( reaches the pattern as (. For a pattern with backslashes, write it raw: pattern /test\\(/.";
+  }
+  return "";
+}
+
+// "found null" in an error: say what null means here
+function nullHint(message) {
+  if (!/found null$/.test(message)) {
+    return message;
+  }
+  return message + ": the value has nothing in it.\nIf it came from an earlier find or fetch, that command found nothing.";
+}
+
 // 1536 bytes is "2 KB", 5242880 is "5 MB"
 function sizeText(bytes) {
   return bytes >= 1024 * 1024 ? Math.ceil(bytes / (1024 * 1024)) + " MB" : Math.ceil(bytes / 1024) + " KB";
@@ -4014,8 +4038,12 @@ function localDate(date) {
 }
 
 // one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
-function auditStep(state, kind, target, details) {
+// extra: more fields for the JSON audit only, such as the full git arguments
+function auditStep(state, kind, target, details, extra = {}) {
   const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact(details || "", state), from: state.auditFrom };
+  for (const name of Object.keys(extra)) {
+    record[name] = redact(String(extra[name]), state);
+  }
   state.auditSteps.push(record);
   state.audit.records.push(record);
   if (state.audit.records.length > AUDIT_RECORDS) {
@@ -4042,12 +4070,10 @@ function cut(text, width) {
   return text.length > width ? text.slice(0, width - 3) + "..." : text;
 }
 
+// a step from inside a tool or a subagent is indented under it, so "from" is not needed
 function auditLine(record) {
-  let details = record.details;
-  if (record.from !== "script") {
-    details += (details === "" ? "" : ", ") + "from " + record.from;
-  }
-  return (record.time + "  " + record.kind.padEnd(8) + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(details)).trimEnd();
+  const kind = record.from !== "script" ? "  " + record.kind.padEnd(6) : record.kind.padEnd(8);
+  return (record.time + "  " + kind + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(record.details)).trimEnd();
 }
 
 // the audit keeps this many days by default; see src/md/features/audit.md
@@ -4096,6 +4122,9 @@ async function rotateAudit(state, folder, now) {
   }
 }
 
+// the last session written to each audit file, for the session line
+const auditSessions = new Map();
+
 // append this script's block to the day's file in .talk/audit/; scripts cannot change @/.talk/
 // a failure to write is a warning, so the audit never breaks a script
 async function writeAudit(state, source, status, errors) {
@@ -4117,13 +4146,21 @@ async function writeAudit(state, source, status, errors) {
         text += JSON.stringify({ type: "step", ...record }) + "\n";
       }
     } else {
-      // (main) means no agent name was given: the main agent, or a subagent that did not pass its name
-      const who = state.agent === null ? " (main)" : " (agent " + state.agent + ")";
-      const session = state.session === null ? "" : "  session " + state.session;
+      // a session line when the session changes in this file; the header then has no session name
+      const file = nodePath.join(folder, name);
+      if (state.session !== null && auditSessions.get(file) !== state.session) {
+        auditSessions.set(file, state.session);
+        text += "-- session " + oneLine(state.session) + " --\n";
+      }
+      // an agent name only for an agent that passed one, such as a subagent; the main agent has none
+      const who = state.agent === null ? "" : " (" + oneLine(state.agent) + ")";
       const under = state.policy === null ? "" : "  (policy " + state.policy.name + " " + state.policy.hash + ")";
-      text += "== " + clock(now) + session + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps" + under + " ==\n";
+      // a first line "# Fix the cart total" is the script's purpose: it goes in the header, not twice
+      const lines = source.trim().split("\n");
+      const purpose = lines.length > 0 && lines[0].startsWith("#") ? oneLine(lines.shift().replace(/^#+\s*/, "")) : "";
+      text += "== " + clock(now) + "  script " + state.auditScript + who + (purpose === "" ? "" : "  " + purpose) + "  (" + status + ", " + state.execution.steps + (state.execution.steps === 1 ? " step)" : " steps)") + under + " ==\n";
       // the script is indented, so no line of it can look like a header (==) or the end of the script (--)
-      text += source.trim().split("\n").map((line) => ("  " + oneLine(line)).trimEnd()).join("\n") + "\n--\n";
+      text += lines.map((line) => ("  " + oneLine(line)).trimEnd()).join("\n") + "\n--\n";
       for (const record of state.auditSteps) {
         text += auditLine(record) + "\n";
       }
@@ -4301,6 +4338,31 @@ async function currentText(path, state) {
   }
 }
 
+// a git step for the audit, in the script's words: { target, details }
+function gitShown(op, step, args) {
+  if (op === "switch") {
+    return { target: "switch to " + (args.includes("--create") ? "new branch " : "") + step.branch, details: "" };
+  }
+  if (op === "commit") {
+    return { target: "commit '" + step.message + "'", details: step.files.length + (step.files.length === 1 ? " file" : " files") };
+  }
+  if (op === "merge") {
+    return { target: "merge " + step.branch, details: "fast-forward" };
+  }
+  if (op === "rebase") {
+    return { target: "rebase onto " + step.branch, details: "" };
+  }
+  if (op === "delete") {
+    return { target: "delete branch " + step.branch, details: "" };
+  }
+  if (op === "move") {
+    return { target: "move " + step.from + " to " + step.to, details: "" };
+  }
+  // status, branch, branches, push, diff, log, show: the operation, and what the script named, with no flags
+  const named = args.slice(1).filter((arg) => !arg.startsWith("-") && arg !== "HEAD" && arg !== "origin");
+  return { target: [op, ...named].join(" "), details: "" };
+}
+
 // put a file back to its old text; null removes a file that the script made
 // the same checks as a write, and the "undo" and "change" hooks
 async function restoreFile(path, text, state, node) {
@@ -4356,15 +4418,82 @@ function changeStep(kind, file, fields) {
 }
 
 // a file change runs the hooks for its kind (write, replace, ...) and the "change" hooks
-async function changeHooks(when, step, state, node) {
+// details: what the change did, for the audit; changeDetails gives it for most kinds
+async function changeHooks(when, step, state, node, details) {
   if (when === "after") {
-    let details = "undo saved";
-    if (step.kind === "undo") {
-      details = step.text === null ? "removed" : "put back";
-    }
-    auditStep(state, step.kind, step.path, details);
+    auditStep(state, step.kind, step.path, details !== undefined ? details : changeDetails(step, state));
   }
   await runHooks(when, [step.kind, "change"], step, state, node);
+}
+
+// what a file change did, for the audit: "12 lines, new file", "lines 40-52 with 4 lines", "3 lines after line 120"
+// each change saves its undo, so the audit does not say so
+function changeDetails(step, state) {
+  const lines = (n) => n + (n === 1 ? " line" : " lines");
+  const range = (from, to) => (from === to ? "line " + from : "lines " + from + "-" + to);
+  if (step.kind === "undo") {
+    return step.text === null ? "removed" : "put back";
+  }
+  if (step.kind === "write") {
+    const change = lastChange(state, step.path);
+    return lines(linesIn(step.text)) + (change !== null && change.before === null ? ", new file" : "");
+  }
+  if (step.kind === "append") {
+    return lines(linesIn(step.text)) + " at the end";
+  }
+  if (step.kind === "put") {
+    return lines(linesIn(step.text)) + " " + step.where + " line " + step.line;
+  }
+  if (step.kind === "remove") {
+    return range(step.from, step.to);
+  }
+  if (step.kind === "replace" && step.from !== undefined) {
+    return range(step.from, step.to) + " with " + lines(linesIn(step.text));
+  }
+  if (step.kind === "move") {
+    return "to " + step.to;
+  }
+  return "";
+}
+
+// the number of lines in a text; a line break at the end does not start a line
+function linesIn(text) {
+  if (text === null || text === undefined || text === "") {
+    return 0;
+  }
+  const count = text.split("\n").length;
+  return text.endsWith("\n") ? count - 1 : count;
+}
+
+// the last change to a file in this script, or null
+function lastChange(state, path) {
+  for (let i = state.execution.changes.length - 1; i >= 0; i--) {
+    if (state.execution.changes[i].path === path) {
+      return state.execution.changes[i];
+    }
+  }
+  return null;
+}
+
+// the lines of the new text that a change touched: "line 40", "lines 40-52", or "" for no change
+function changedRange(before, after) {
+  const a = (before || "").split("\n");
+  const b = (after || "").split("\n");
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) {
+    start++;
+  }
+  if (start === a.length && start === b.length) {
+    return "";
+  }
+  let endA = a.length - 1;
+  let endB = b.length - 1;
+  while (endA >= start && endB >= start && a[endA] === b[endB]) {
+    endA--;
+    endB--;
+  }
+  const last = Math.max(endB, start);
+  return start === last ? "line " + (start + 1) : "lines " + (start + 1) + "-" + (last + 1);
 }
 
 // run the hooks for a step, in the order they are defined
@@ -5308,7 +5437,9 @@ async function replaceInFile(file, old, replacement, state, command) {
   if (replacements.length > 0 && text !== before) {
     await writeText(file, text, false, state, command);
   }
-  await changeHooks("after", step, state, command);
+  const count = replacements.length === 1 ? "1 match" : replacements.length + " matches";
+  const where = changedRange(before, text);
+  await changeHooks("after", step, state, command, replacements.length === 0 ? "no match" : count + (where === "" ? "" : ", " + where));
   return replacements;
 }
 
@@ -5331,7 +5462,7 @@ async function replaceIn(text, old, replacement, state, node) {
   if (!(old instanceof Pattern)) {
     return replaceAll(text, old, replacement);
   }
-  const answer = await patternJob({ kind: "replace", source: old.source, text, replacement }, state, node);
+  const answer = await patternJob({ kind: "replace", source: old.source, flags: old.flags, text, replacement }, state, node);
   const replacements = [];
   for (const found of answer.replacements) {
     const before = text.slice(0, found.index);
@@ -5583,7 +5714,7 @@ async function matchingLines(text, lines, state, node) {
   if (!(text instanceof Pattern)) {
     return lines.filter((line) => line.text.includes(text));
   }
-  const answer = await patternJob({ kind: "lines", source: text.source, lines: lines.map((line) => line.text) }, state, node);
+  const answer = await patternJob({ kind: "lines", source: text.source, flags: text.flags, lines: lines.map((line) => line.text) }, state, node);
   return answer.indexes.map((index) => lines[index]);
 }
 

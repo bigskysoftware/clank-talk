@@ -5,6 +5,7 @@
   "comment": "Follows src/js/tokenizer.js. Paths and urls are close, not exact: a glob with [ ] can end early here.",
   "patterns": [
     { "include": "#comment" },
+    { "include": "#regex" },
     { "include": "#raw-string" },
     { "include": "#string-single" },
     { "include": "#string-double" },
@@ -16,6 +17,11 @@
     { "include": "#keywords" }
   ],
   "repository": {
+    "regex": {
+      "comment": "pattern /regex/flags: raw, it ends at a / that has no backslash and is not in [...]",
+      "match": "\\b(pattern)\\s+(/(?:\\\\.|\\[(?:\\\\.|[^\\]\\\\])*\\]|[^/\\\\\\n])*/[ims]*)",
+      "captures": { "1": { "name": "keyword.other.clanktalk" }, "2": { "name": "string.regexp.clanktalk" } }
+    },
     "comment": {
       "name": "comment.line.number-sign.clanktalk",
       "match": "#.*$"

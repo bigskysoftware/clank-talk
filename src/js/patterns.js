@@ -12,10 +12,12 @@ export const PATTERN_TIME_LIMIT = 2000;
 
 /** A pattern value, made by: pattern '<regexp>' */
 export class Pattern {
-  constructor(source) {
+  // flags: "", or some of i, m and s (from pattern /regex/flags); u is always on
+  constructor(source, flags = "") {
     // compile it here, to give a bad pattern as an error at once; compiling cannot run away
-    new RegExp(source, "u");
+    new RegExp(source, "u" + flags);
     this.source = source;
+    this.flags = flags;
   }
 }
 
@@ -49,7 +51,7 @@ function expand(replacement, match) {
 parentPort.on("message", (job) => {
   const answer = { id: job.id };
   if (job.kind === "lines") {
-    const regexp = new RegExp(job.source, "u");
+    const regexp = new RegExp(job.source, "u" + (job.flags || ""));
     answer.indexes = [];
     job.lines.forEach((line, index) => {
       if (regexp.test(line)) {
@@ -57,12 +59,12 @@ parentPort.on("message", (job) => {
       }
     });
   } else if (job.kind === "test") {
-    answer.matches = new RegExp(job.source, "u").test(job.text);
+    answer.matches = new RegExp(job.source, "u" + (job.flags || "")).test(job.text);
   } else if (job.kind === "replace") {
     const pieces = [];
     answer.replacements = [];
     let last = 0;
-    for (const match of job.text.matchAll(new RegExp(job.source, "gu"))) {
+    for (const match of job.text.matchAll(new RegExp(job.source, "gu" + (job.flags || "")))) {
       const piece = expand(job.replacement, match);
       pieces.push(job.text.slice(last, match.index), piece);
       answer.replacements.push({ index: match.index, old: match[0], new: piece });

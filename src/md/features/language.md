@@ -171,6 +171,15 @@ in ./src/app.js
 - Wanted: absolute paths (`/etc/hosts`). They also start with `/`, so they wait for the same regex and division decision.
 - Done: words with `-` in them. A hyphen joins a word when a letter follows it.
 
+## Errors for agents (audit review, 2026-11-10)
+
+- Approved (built): a pattern that is not valid adds a hint for the common causes: an inline flag such as `(?i)`; an escape that the `u` flag rejects, such as `\-` outside `[...]`; and a group or quantifier that broke because a quoted string took a backslash.
+- Approved (built): an error that ends in `found null` adds: "the value has nothing in it. If it came from an earlier find or fetch, that command found nothing."
+- Approved (built): the tool description asks agents to start each script with a `#` line that says what it is for. The audit shows it in the header.
+- Rejected: a rule of one task for each script. A long script for one job is fine, and the `#` line already says what it is for.
+
+- Approved (built): `pattern /regex/flags`. After the word `pattern`, a `/` starts a raw regex: no string escapes and no templates, a `/` inside is `\/`, and a `/` inside `[...]` does not end it. Flags: `i`, `m` and `s`, once each; `u` is always on, and `g` is not needed. An unclosed `/` on the line is an error. `pattern '...'` still works. Why: in a quoted string, `\(` reaches the regex as `(`, and that caused most failed patterns in the audit. Rejected: `pattern( ... )`, because a regex holds parentheses, and it has no place for flags.
+
 ## Open questions
 
 - Error model: TODO

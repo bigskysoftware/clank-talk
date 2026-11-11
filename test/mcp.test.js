@@ -267,8 +267,8 @@ test('each agent name has its own undo list and $ globals', async () => {
   // the audit names the agent
   const [file] = await fs.readdir(path.join(root, '.talk', 'audit'));
   const text = await fs.readFile(path.join(root, '.talk', 'audit', file), 'utf8');
-  assert.match(text, /script 1 \(agent writer\)  done/);
-  assert.match(text, /script 2 \(agent tester\)  done/);
+  assert.match(text, /script 1 \(writer\)  \(done, /);
+  assert.match(text, /script 2 \(tester\)  \(done, /);
 });
 
 test('a bad agent name is an error', async () => {

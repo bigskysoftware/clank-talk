@@ -301,6 +301,52 @@ export function tokenize(source) {
       continue;
     }
 
+    // a regex right after the word pattern: pattern /test\(/i; see src/md/features/language.md
+    // the text between the slashes is raw: no escapes of the string and no templates; a / inside is \/
+    // it ends at the first / that has no backslash before it and is not in [...]; flags i, m, s may follow
+    const last = tokens[tokens.length - 1];
+    if (c === "/" && last !== undefined && last.type === "word" && last.value === "pattern" && last.line === line) {
+      advance();
+      let text = "";
+      let inClass = false;
+      let closed = false;
+      while (i < source.length && source[i] !== "\n") {
+        const ch = source[i];
+        if (ch === "\\" && i + 1 < source.length && source[i + 1] !== "\n") {
+          text += ch + source[i + 1];
+          advance();
+          advance();
+          continue;
+        }
+        if (ch === "[") {
+          inClass = true;
+        } else if (ch === "]") {
+          inClass = false;
+        } else if (ch === "/" && !inClass) {
+          advance();
+          closed = true;
+          break;
+        }
+        text += ch;
+        advance();
+      }
+      if (!closed) {
+        push("error", "Unterminated pattern: a /regex/ needs a / at its end, on the same line", startLine, startColumn);
+        continue;
+      }
+      let flags = "";
+      while (i < source.length && isWordChar(source[i])) {
+        flags += source[i];
+        advance();
+      }
+      if (!/^(?!.*(.).*\1)[ims]*$/.test(flags)) {
+        push("error", "A pattern takes only the flags i, m and s, once each, found " + flags, startLine, startColumn);
+        continue;
+      }
+      push("regex", { source: text, flags }, startLine, startColumn);
+      continue;
+    }
+
     // possessive: the 's in file's
     // it must touch the word before it, and must not be followed by a word character
     const prev = source[i - 1];
