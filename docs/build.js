@@ -18,6 +18,9 @@ function escapeHtml(text) {
 const HIGHLIGHTERS = { talk: highlight, bash: highlightBash, audit: highlightAudit, json: highlightJson, md: highlightMarkdown };
 
 // a title after the language puts the block in a window: ```talk bump.talk
+// on the pages in WINDOWED, every highlighted block gets a window, also with no title
+const WINDOWED = ["docs.html", "policy.html"];
+let windowAll = false;
 marked.use({
   renderer: {
     code(token) {
@@ -30,10 +33,12 @@ marked.use({
       }
       const body = highlighter === null ? escapeHtml(token.text) : highlighter(token.text);
       const code = '<pre><code class="language-' + escapeHtml(lang) + '">' + body + "</code></pre>\n";
-      if (title === "") {
+      if (title === "" && !(windowAll && highlighter !== null)) {
         return code;
       }
-      return '<div class="window">\n<div class="window-title">' + escapeHtml(title) + "</div>\n" + code + "</div>\n";
+      // a window with no title keeps the height of its title bar
+      const label = title === "" ? "&nbsp;" : escapeHtml(title);
+      return '<div class="window">\n<div class="window-title">' + label + "</div>\n" + code + "</div>\n";
     },
   },
 });
@@ -66,6 +71,7 @@ function showcase(html) {
 
 // a page from Markdown, in the template
 function page(md, outName) {
+  windowAll = WINDOWED.includes(outName);
   let content = marked.parse(md);
   // the title is the first h1 of the page, so a "# comment" in a code block cannot become the title
   let title = "clank-talk";
@@ -77,6 +83,10 @@ function page(md, outName) {
   let html = template.split("{{title}}").join(title);
   if (md.includes('class="features showcase"')) {
     content = showcase(content);
+  }
+  // the windowed pages get a Copy button on each window
+  if (windowAll) {
+    content += '<script src="js/copy.js"></script>\n';
   }
   html = html.split("{{content}}").join(content);
   fs.writeFileSync(path.join(OUT, outName), html);

@@ -71,25 +71,6 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// in the docs: a Copy button on each code block of the install steps; a "$ " prompt is not copied
-for (const pre of document.querySelectorAll(".harness pre")) {
-  const wrap = document.createElement("div");
-  wrap.className = "copy-wrap";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "install-copy";
-  button.textContent = "Copy";
-  button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(pre.textContent.replace(/^\$ /gm, ""));
-    button.textContent = "Copied";
-    setTimeout(() => {
-      button.textContent = "Copy";
-    }, 1500);
-  });
-  pre.before(wrap);
-  wrap.append(pre, button);
-}
-
 copy?.addEventListener("click", async () => {
   const block = document.querySelector(".install-code pre:not([hidden])");
   await navigator.clipboard.writeText(block.textContent);

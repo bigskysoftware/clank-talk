@@ -209,6 +209,9 @@ pre {
 .features:not(.showcase) a:hover { text-decoration-thickness: 2px; }
 .features:not(.showcase) :not(pre) > code { padding: 0.1em 0.35em; font-size: 0.86em; font-weight: 400; background: #f3f3f1; border: 1px solid #e4e4e0; }
 .features:not(.showcase) > pre { margin: 1.1rem 0 1.4rem; font-size: 0.88rem; line-height: 1.6; }
+/* in the docs, a window is as wide as its code, up to the width of the text, and centered */
+.features:not(.showcase) .window:not(.compare > .window) { width: fit-content; min-width: min(500px, 100%); max-width: 100%; margin: 1.1rem auto 1.4rem; }
+.features:not(.showcase) .window pre { font-size: 0.88rem; line-height: 1.6; padding-right: 1.6rem; }
 /* the links at the top: smaller, so the title leads */
 .features:not(.showcase) > p:first-of-type { font-size: 0.92rem; color: var(--text-muted); }
 .examples-label { margin: 0.8rem 0 0.2rem; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
@@ -288,9 +291,15 @@ pre {
   color: var(--code-text); background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.3); border-radius: var(--radius);
 }
-/* a Copy button on a code block in the docs */
-.copy-wrap { position: relative; }
-.copy-wrap pre { padding-right: 5rem; }
+/* a small Copy button in the title bar of a code window in the docs */
+.window-copy {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  font: inherit; font-size: 0.7rem; line-height: 1.4; padding: 0 7px; cursor: pointer;
+  color: #8b95a1; background: transparent;
+  border: 1px solid #3a414b; border-radius: 4px;
+}
+.window-copy:hover { color: #d8dee9; border-color: #5a6370; }
+.window:has(.window-copy) .window-title { padding-right: 64px; }
 .install-note { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.4rem; }
 
 /* the home page: features two to a row, one column on phones */

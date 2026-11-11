@@ -6,7 +6,7 @@ import { parse } from "../src/js/clank-talk.js";
 // every ```talk example in the docs must parse
 // an example that starts with "# AGENTS.talk" parses as AGENTS.talk
 // other examples know the tools that the docs define
-const TOOLS = ["run_tests", "run_test", "site_server", "dev_server"];
+const TOOLS = ["run_tests", "run_test", "run_test_file", "site_server", "dev_server"];
 
 // a block is ```talk, or ```talk <title>; a block titled AGENTS.talk parses as AGENTS.talk too
 test("every docs example parses", () => {

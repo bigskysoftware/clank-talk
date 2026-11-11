@@ -2164,6 +2164,7 @@ export function parse(source, options = {}) {
   }
 
   // 'api.github.com', '*.npmjs.org': hosts in quotes, lower case
+  // http://localhost:5173/, https://*.github.com/repos/**: URL patterns, see src/md/features/fetch.md
   function parseHosts() {
     const hosts = [];
     while (true) {
@@ -2173,13 +2174,48 @@ export function parse(source, options = {}) {
         return null;
       }
       i++;
-      hosts.push(host.value.toLowerCase());
+      if (host.value.includes("://")) {
+        const pattern = urlPattern(host.value);
+        if (pattern === null) {
+          return null;
+        }
+        hosts.push(pattern);
+      } else {
+        hosts.push(host.value.toLowerCase());
+      }
       if (!isOp(",")) {
         break;
       }
       i++;
     }
     return hosts;
+  }
+
+  // a URL pattern in its normal form: the scheme, the host, a port that is not the default, and the path
+  function urlPattern(text) {
+    const example = ", such as http://localhost:5173/ or https://*.github.com/";
+    let url;
+    try {
+      url = new URL(text);
+    } catch (err) {
+      error("Expected a URL" + example + ", found '" + text + "'");
+      return null;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      error("A fetch URL must start with http:// or https://, found '" + text + "'");
+      return null;
+    }
+    if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
+      error("A fetch URL here has no user name, password, ? or #, found '" + text + "'");
+      return null;
+    }
+    // * is allowed only as the first part of the host
+    const host = url.hostname.replace(/\.+$/, "");
+    if (host.slice(2).includes("*") || (host.includes("*") && !host.startsWith("*."))) {
+      error("In the host, * must be the first part, as in https://*.github.com/, found '" + text + "'");
+      return null;
+    }
+    return url.protocol + "//" + host + (url.port === "" ? "" : ":" + url.port) + url.pathname;
   }
 
   // allow changes to <path>, <path>: hidden paths that scripts can change

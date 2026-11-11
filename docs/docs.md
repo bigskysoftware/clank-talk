@@ -164,9 +164,9 @@ If ClankTalk cannot do a task, stop and tell the human what is missing.
 
 As I mentioned, you, the reader, will not likely write very much ClankTalk (you will mostly be reading the ClankTalk your agent wrote.)  However, there is one area where you will be asked to write some code: the `AGENTS.talk` file.
 
-### The File
+### The AGENTS.talk File
 
-The `AGENTS.talk` file in the root of a project is loaded by the ClankTalk environment when it starts up and defines:
+An `AGENTS.talk` file lives in the root of your project and is loaded by the ClankTalk environment when it starts up and defines:
 
 * What agents are allowed to do
 * Callbacks when agents take action
@@ -184,85 +184,105 @@ tool run_tests
 end
 ```
 
-This file passes the `PATH` and `HOME` environment variables on to the programs that its tools run, and defines a custom tool for running the tests in the project.  Agents can then execute `run_tests`, and read what it gives back: `set tests to run_tests` then `print tests's output`.
+This file passes the `PATH` and `HOME` environment variables on to the programs that its tools run, and then defines a custom tool for running the tests in the project.
 
-The `AGENTS.talk` file lives at the root of your project. ClankTalk resolves the project root in the following order:
+The `in a sandbox` part runs `npm test` in an OS sandbox.  In the sandbox, the program can write only to your project (not to `.git`, `.talk` files or hidden files), it can read only system folders, its install folder and tool caches, and it has no network.
+
+The `with local network` part then gives the program `localhost`, so tests that start a local server still work.  The program still cannot get to the internet.
+
+Agents can then execute `run_tests` and read its output.
+
+ClankTalk resolves your project root in the following order:
 
 1. `--root /path/to/project`, if you start the MCP server with it.
 2. The environment variable `CLANK_TALK_ROOT=/path/to/project`.
 3. The folder where your agent starts.
 
-Agents cannot modify any `.talk` files in your project, so they are a protected space for you to write permissions and tools for them.
+Note that agents cannot modify any `.talk` files in your project, so they are a protected space for you to write permissions and tools for them.
 
+<h3 id="tools">A Tool for Running A Single Test</h3>
 
-- Scripts cannot reach files outside the root.
-- ClankTalk does not look in parent folders for `AGENTS.talk`. If you start your agent in a subfolder, and a folder above it has an `AGENTS.talk`, ClankTalk warns you and your agent, and names the folder. It does not change the root for you, because a higher root gives scripts more files.
-- Add `.talk/` to `.gitignore`: it holds the audit log and the taint labels.
+Running the entire test suite is great, but sometimes you only want to run a single test.  Or, at least, you only want your agent to run a single test.
 
-TODO (Carson): intro. We start with the file above, and add lines as real needs come up. Each step shows only the new lines; the whole file is at the end.
-
-<h3 id="tools">One Test File at a Time</h3>
-
-TODO (Carson): the problem: the full suite is slow, and the agent only changed one file.
+Let's add another tool to run a single test:
 
 ```talk AGENTS.talk
 # Runs one test file.
-tool run_test with file
+tool run_test_file with file
   run 'node' with '--test', file in a sandbox
 end
 ```
 
-Your agent then calls it with a file:
+Your agent can can call this new tool with a file:
 
 ```talk
-set tests to run_test './test/app.test.js'
+set tests to run_test_file @/test/app.test.js
 if tests's code is not 0
   print find 'FAIL' in tests's output
 end
 ```
+The `@/test/app.test.js` path is a _project relative_ path (don't worry, your agent will figure it out.)
 
-- A parameter is a value that your agent gives. You write the program; your agent gives only the arguments.
-- `run` works only in a tool, never uses a shell, and passes on only the variables in `allow env`.
-- A value from your agent cannot start with `-`, so it cannot be an option, unless it comes after a `'--'` that you wrote.
-- A file value is its path, such as `./test/app.test.js`. In `run 'npm test ${name}'`, the value of `name` is one argument, also with spaces in it.
+Note that `run` only works in a tool definition that *you* define.  So you have control over what an agent is allowed to do in your project.
 
-### When the Tests Hang
+An agent can *never* execute it directly, only via tools that you give it in an `AGENT.talk` file.  The agent never uses a shell, and the execution passes in only the variables in `allow env`.
 
-TODO (Carson): the problem: a test waits forever, and so does the agent.
+### Dealing With Hanging Tests
+
+Now let's go back and improve the `run_tests` tools.  
+
+Let's say that it is prone to hanging sometimes, and we don't want our tool to wait forever for it.
+
+We can add `within 2 minutes` to the end of our `run` and kill hung tests.
 
 ```talk AGENTS.talk
 # Runs the full test suite.
 tool run_tests
-  run 'npm test' in a sandbox with local network within 10 minutes
+  run 'npm test' in a sandbox with local network within 2 minutes
 end
 ```
 
-- After 10 minutes the program stops, with the programs that it started.
-- Your agent can set a shorter limit on a call: `run_tests within 2 minutes`. The shorter limit wins.
+Agent can set shorter limit on a tool call: `run_tests within 2 minutes` as well.
 
 <h3 id="sandboxing">A Cache Outside the Project</h3>
 
-TODO (Carson): the problem: the browser tests need the browsers that Playwright keeps in your home folder, and the sandbox cannot see them.
+By default, ClankTalk runtime file access is _sandboxed_ to the current project directory and sub-directories.  This is not a fool-proof sandbox in the strict sense, but a best-effort "prevent agents from messing with stuff" mechanism.
+
+Of course, sometimes you might need to give tools access to a directory (e.g. a playwright cache).  You can do this in your `AGENTS.talk` tool definitions like so:
 
 ```talk AGENTS.talk
 # Runs the full test suite.
 tool run_tests
-  run 'npm test' in a sandbox with local network, reads of '~/.cache/ms-playwright' within 10 minutes
+  run 'npm test'
+    in a sandbox with local network, reads of '~/.cache/ms-playwright'
+    within 10 minutes
 end
 ```
 
-- Your agent writes code, and `npm test` runs code, so a test tool can run anything your agent writes. That is why tools say `in a sandbox`.
-- In a sandbox: writes only to the project (not `.git`, `.talk` or hidden files), reads only system folders, install folders and caches, no network, and a fresh home folder.
-- Options: `with network`, `with local network`, `writes to <path>`, `reads of <path>`.
-- macOS (`sandbox-exec`) and Linux (`bubblewrap`). Elsewhere a sandboxed `run` is an error; it never runs without the sandbox. A self-test runs first.
-- Ubuntu 23.10 and later: AppArmor can block `bubblewrap`. Fix: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, or an AppArmor profile for `bwrap`.
+### Fixing the CI Config
+
+By default, agents are also not allowed to change hidden files.  This prevents rogue agents from changing dangerous files like `.git/hooks/pre-commit`, a script that git runs on your machine at your next commit.
+
+Sometimes, though, you want to allow an agent to modify hidden files like your CI config in `.github/`.  
+
+To do so, you can use the `allow changes` syntax:
+
+```talk AGENTS.talk
+allow changes to @/.github/
+```
+
+Note that ClankTalk *never* allows changes to `.talk` files and also bans all reading and writing of `.env`, `.env.*` and `.envrs` files in any folders.
 
 ### The Dev Server
 
-TODO (Carson): the problem: your agent wants to see the page that it changed.
+OK, now let's give our agent the ability to start a dev server for us by executing an NPM command, `npm run dev`
+
+This is not a synchronous task, instead you want to be able to launch it and then continue working.  
+
+For something like that, you can use `start`
 
 ```talk AGENTS.talk
-allow fetch from 'localhost'
+allow fetch from http://localhost:5173/
 
 # Starts the dev server.
 tool dev_server
@@ -270,20 +290,30 @@ tool dev_server
 end
 ```
 
-Your agent then starts it, and waits for it:
+Your agent can then start it, and, if it wants, wait for it to come up:
 
 ```talk
 dev_server
-wait until (fetch http://localhost:5173/ as response)'s status is 200 within 15 seconds
+wait until (fetch http://localhost:5173/ as response)'s status is 200 
+  within 15 seconds
 print the output of process 'dev'
 ```
+Note that we had to allow `fetch` from `localhost:5173` explicitly: we don't want to give agents the ability to just spam our machine looking at ports, now do we?
 
-- `start` keeps a program running. Your agent can wait for it, read its output, and stop it with `stop process 'dev'`. The end of the session stops them all.
-- `localhost` and other private addresses must be in an `allow fetch from` line.
+The agent can then stop the process with `stop`:
+
+```talk
+stop process 'dev'
+```
+
 
 ### Installing Packages
 
-TODO (Carson): the problem: `npm install` needs the network, and a place for its cache.
+OK, let's add another tool to, *sigh*, install NPM pacakges.
+
+`npm install` needs the wider network obviously, and also needs access to its cache directory.
+
+To give it access to that we would write:
 
 ```talk AGENTS.talk
 # Installs the dependencies.
@@ -292,26 +322,11 @@ tool install
 end
 ```
 
-- `with network` opens the network for this program only.
-- `writes to '~/.npm'` adds one folder outside the project that the program can write.
-
-### Fixing the CI Config
-
-TODO (Carson): the problem: the CI config is in `.github/`, and your agent cannot change hidden files.
-
-```talk AGENTS.talk
-allow changes to @/.github/
-```
-
-TODO (Carson): scripts cannot change `.talk` files (so the agent cannot change its tools) or hidden files (`.env`, `.git/`, `.github/`); the agent tells you the line to add. `.env` files cannot even be read.
-
-- Scripts cannot read `.env`, `.env.*` or `.envrc`, in any folder.
-- Scripts cannot change a file that is not UTF-8 text, so a binary file is safe from a `replace`.
-- You and your agent can work on the same files: if you save a file after the agent read it, its next write fails, and your change stays.
-
 <h3 id="taint">Reading GitHub Issues</h3>
 
-TODO (Carson): the problem: your agent reads issues, and anyone on the internet can write an issue.
+Now let's get to an interesting one near and dear to my heart: reading issues on github.  It's amazing to have agents sift and sort them, but they are consuming text written by (often angry!) strangers on the internet!
+
+They are, sadly, a vector of attack for [prompt injections](https://simonwillison.net/2022/Sep/12/prompt-injection/).
 
 ```talk AGENTS.talk
 # Shows a GitHub issue.
@@ -320,10 +335,13 @@ untrusted tool issue with id
 end
 ```
 
-- `untrusted` marks what the tool gives back. Text from fetch, an `untrusted tool` or a subagent is untrusted. Text from files, git and programs is private.
-- Labels follow values, and stay with files you write (`.talk/taint.json`).
-- Untrusted text in `run`, `start`, a commit or a branch name asks you first. Private text in a fetch asks once for each host.
-- Limits: the agent can retype what it read; an `if` passes no labels; taint cannot see inside a program.
+Here, the `untrusted` keyword marks that the content returned by this tool cannot be trusted.  It is _tainted_.
+
+Text from fetch, an `untrusted tool` or a subagent is untrusted. 
+
+Text from files, git and programs on your local machine is considered private and _untainted_.
+
+When untrusted text is used in a `run`, `start`, a commit or a branch name, you will be  asked first. 
 
 <h3 id="secrets">Calling the GitHub API</h3>
 
@@ -518,7 +536,7 @@ TODO (Carson): all of it together. The order: `allow`, `use model`, `limit` and 
 
 ```talk AGENTS.talk
 allow env PATH, HOME
-allow fetch from 'localhost', 'api.github.com'
+allow fetch from http://localhost:5173/, 'api.github.com'
 allow changes to @/.github/
 allow secret GITHUB_TOKEN for fetch to 'api.github.com'
 allow secret NPM_TOKEN for run
@@ -533,11 +551,13 @@ import ./talk/github.talk
 
 # Runs the full test suite.
 tool run_tests
-  run 'npm test' in a sandbox with local network, reads of '~/.cache/ms-playwright' within 10 minutes
+  run 'npm test'
+    in a sandbox with local network, reads of '~/.cache/ms-playwright'
+    within 10 minutes
 end
 
 # Runs one test file.
-tool run_test with file
+tool run_test_file with file
   run 'node' with '--test', file in a sandbox
 end
 

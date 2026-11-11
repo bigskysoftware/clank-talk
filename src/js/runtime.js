@@ -1107,16 +1107,16 @@ function checkPolicy(policy, agents) {
       }
       if (limits.fetch) {
         for (const host of definition.hosts) {
-          if (!isFetchHostInside(host, limits.fetch.values)) {
-            errors.push({ message: outside("allow secret " + definition.name + " for fetch to '" + host + "'", limits.fetch), ...where });
+          if (!isFetchHostInside(ruleHost(host), limits.fetch.values)) {
+            errors.push({ message: outside("allow secret " + definition.name + " for fetch to " + shownRule(host), limits.fetch), ...where });
           }
         }
       }
     }
     if (definition.type === "allowFetch" && limits.fetch) {
       for (const host of definition.hosts) {
-        if (!isFetchHostInside(host, limits.fetch.values)) {
-          errors.push({ message: outside("allow fetch from '" + host + "'", limits.fetch), ...where });
+        if (!isFetchHostInside(ruleHost(host), limits.fetch.values)) {
+          errors.push({ message: outside("allow fetch from " + shownRule(host), limits.fetch), ...where });
         }
       }
     }
@@ -3466,8 +3466,14 @@ async function runFetch(command, state) {
   // follow redirects by hand, so each new host is checked too
   let current = url;
   let response = null;
+  // the secrets stay with the request until a redirect to another origin drops the headers
+  let carriesSecrets = secrets.length > 0;
   for (let hops = 0; ; hops++) {
     await checkFetchHost(current, state, command);
+    // a redirect on the same origin keeps the headers, so a URL pattern for a secret is checked again
+    if (hops > 0 && carriesSecrets) {
+      checkSecretHosts(secrets, current, state, command);
+    }
     try {
       response = await fetch(current, { method, headers, body, redirect: "manual", signal });
     } catch (err) {
@@ -3496,6 +3502,7 @@ async function runFetch(command, state) {
     const becomesGet = response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST");
     if (current.origin !== previous.origin) {
       headers = {};
+      carriesSecrets = false;
       // any other redirect keeps the body, for example a 307, or a 301 after a PUT
       if (body !== undefined && !becomesGet) {
         throw new ScriptError("fetch will not send the body on to another host: " + previous.origin + " redirects to " + current.origin, command);
@@ -3585,9 +3592,10 @@ function checkSecretHosts(secrets, url, state, node) {
   const host = url.hostname.toLowerCase().replace(/\.+$/, "");
   for (const name of secrets) {
     const entry = state.secrets.get(name);
-    if (!isAllowedFetchHost(host, entry.hosts)) {
+    if (!entry.hosts.some((rule) => fetchRuleAllows(rule, url, host))) {
       const allowed = entry.hosts.length === 0 ? "a run or start in a tool that is provided it" : entry.hosts.join(", ");
-      throw new ScriptError("A secret cannot go to " + host + ": " + name + ". It can go only to " + allowed + ".", node);
+      const target = entry.hosts.some(isUrlRule) ? url.origin + url.pathname : host;
+      throw new ScriptError("A secret cannot go to " + target + ": " + name + ". It can go only to " + allowed + ".", node);
     }
   }
 }
@@ -3604,21 +3612,21 @@ async function checkFetchHost(url, state, node) {
   const allowLine = "To allow it, a human can add this line to AGENTS.talk:\n  allow fetch from '" + host + "'";
   // a private host needs its own line in AGENTS.talk; a *. pattern is not enough
   if (isPrivateHost(host)) {
-    if (state.allowedFetch.includes(host)) {
+    if (state.allowedFetch.some((rule) => ruleHost(rule) === host && fetchRuleAllows(rule, url, host))) {
       return;
     }
     throw new ScriptError("fetch refused: " + host + " is a local or private address.\n" + allowLine, node);
   }
   // a public name can point to a private address, so look at the addresses too
   // limit: the connection does its own lookup, so a name that changes its answer in between is not caught
-  if (!state.allowedFetch.includes(host)) {
+  if (!state.allowedFetch.some((rule) => ruleHost(rule) === host)) {
     for (const address of await state.lookup(host)) {
       if (isPrivateHost(address)) {
         throw new ScriptError("fetch refused: " + host + " points to a local or private address (" + address + ").\n" + allowLine, node);
       }
     }
   }
-  if (isAllowedFetchHost(host, state.allowedFetch) || state.fetchHosts.has(host)) {
+  if (state.allowedFetch.some((rule) => fetchRuleAllows(rule, url, host)) || state.fetchHosts.has(host)) {
     return;
   }
   const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
@@ -3653,6 +3661,81 @@ function isAllowedFetchHost(host, allowed) {
     }
   }
   return false;
+}
+
+// a fetch rule from AGENTS.talk is a host ('api.github.com', '*.github.com')
+// or a URL pattern (http://localhost:5173/, https://*.github.com/repos/**); see src/md/features/fetch.md
+function isUrlRule(rule) {
+  return rule.includes("://");
+}
+
+// the host of a rule: https://*.github.com/x gives *.github.com
+function ruleHost(rule) {
+  return isUrlRule(rule) ? new URL(rule).hostname : rule;
+}
+
+// a rule as AGENTS.talk writes it: a host in quotes, a URL with none
+function shownRule(rule) {
+  return isUrlRule(rule) ? rule : "'" + rule + "'";
+}
+
+// the rule allows the URL; host is the URL's host in lower case, with no dot at the end
+// a URL pattern must have the same scheme and port; in its host, *. is one more part
+function fetchRuleAllows(rule, url, host) {
+  if (!isUrlRule(rule)) {
+    return isAllowedFetchHost(host, [rule]);
+  }
+  const pattern = new URL(rule);
+  if (pattern.protocol !== url.protocol || pattern.port !== url.port) {
+    return false;
+  }
+  const patternHost = pattern.hostname;
+  if (patternHost.startsWith("*.")) {
+    const rest = patternHost.slice(1);
+    const first = host.slice(0, host.length - rest.length);
+    if (!host.endsWith(rest) || first === "" || first.includes(".")) {
+      return false;
+    }
+  } else if (patternHost !== host) {
+    return false;
+  }
+  return urlPathMatches(pattern.pathname, url.pathname);
+}
+
+// a path that ends in / allows all paths below it; * is any text in one part, ** is any number of parts
+// the URL parser already removed . and .. parts from both paths
+function urlPathMatches(pattern, path) {
+  const wanted = pattern.split("/").slice(1);
+  if (pattern.endsWith("/")) {
+    wanted[wanted.length - 1] = "**";
+  }
+  return pathPartsMatch(wanted, path.split("/").slice(1));
+}
+
+function pathPartsMatch(wanted, given) {
+  if (wanted.length === 0) {
+    return given.length === 0;
+  }
+  if (wanted[0] === "**") {
+    for (let skip = 0; skip <= given.length; skip++) {
+      if (pathPartsMatch(wanted.slice(1), given.slice(skip))) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (given.length === 0 || !pathPartMatches(wanted[0], given[0])) {
+    return false;
+  }
+  return pathPartsMatch(wanted.slice(1), given.slice(1));
+}
+
+function pathPartMatches(wanted, part) {
+  if (!wanted.includes("*")) {
+    return wanted === part;
+  }
+  const source = wanted.split("*").map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  return new RegExp("^" + source + "$", "u").test(part);
 }
 
 // localhost, and IP addresses that are not plain public ones: loopback, private, link-local,

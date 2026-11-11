@@ -29,6 +29,17 @@ The risk: a fetch can send project data to any host, in the URL or the body. A w
 - Approved (built): any redirect that keeps the body is an error if it goes to another origin, also a 301 or 302 after a PUT, PATCH or DELETE. Before, only 307 and 308 were checked. Why: the body can hold a secret.
 - Approved (built): the audit records each redirect, as its own `redirect` step: the URL, the status, and where it goes (`302 to https://...`). Why: a redirect can send a request to another place, so it is a security risk.
 - Approved: a redirect is followed only to a host that is allowed in the same way.
+- Approved (built): `allow fetch from` and `allow secret NAME for fetch to` also take URL patterns, as well as hosts in quotes: `allow fetch from http://localhost:5173/`. Why: a host allows all of its ports, so `'localhost'` also opens databases and admin pages on other ports. A URL can also keep a secret on `https` and on one path.
+  - The scheme and the port must be equal. A URL with no port has the default port. The scheme and the port cannot hold `*`.
+  - In the host, `*.` must be the first part, and it is one more part: `https://*.github.com/` allows `api.github.com`, not `github.com` or `a.b.github.com`.
+  - A path that ends in `/` allows all paths below it, on whole parts: `/api/` allows `/api/x`, not `/apix`. A path with no `/` at the end allows only that path.
+  - In the path, `*` is any text in one part and `**` is any number of parts, as in file globs. The path keeps its case.
+  - The URL parser removes `.` and `..` parts before the match. The query is not part of the match. A pattern cannot hold a user name, a password, `?` or `#`.
+  - A private host needs a pattern with its exact name, as for a host in quotes.
+  - Each redirect must match too. A redirect on the same origin keeps the headers, so a URL pattern for a secret is checked again.
+  - A policy's `limit fetch to` checks the host of a URL pattern. Rejected for now: URL patterns in `limit fetch to`.
+  - Rejected: regexps (`pattern '...'`). It is easy to write one that matches too much.
+  - Hosts in quotes work as before, with all ports and schemes.
 - Approved (built): the runtime also looks up the addresses of a name. If one of them is a local or private address, the fetch is refused, as for a private host. Only a line in AGENTS.talk with that exact name allows it. A name that does not resolve is not refused here: the fetch itself then fails.
 - Limit: the connection does its own lookup. Thus a name that changes its answer between the check and the connection (DNS rebinding) is not caught.
 
