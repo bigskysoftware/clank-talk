@@ -140,6 +140,7 @@ const Q3 = '"'.repeat(3);
 
 // the hand-written part of the tool description: what ClankTalk is, and what the summary cannot say
 const INTRO = `Run a ClankTalk script. ClankTalk is a small, readable scripting language. Use it in place of a shell.
+For any question about ClankTalk, run 'help' in a script: it is complete and matches this version. Do not search the web for ClankTalk docs.
 Each block ends with 'end'. A new line or 'then' separates commands. # starts a comment.
 Strings: 'text' or "text", with \${} inside. ${Q3}raw${Q3} keeps the text exactly, with no escapes and no \${}: use it for code edits. A line break right after the opening ${Q3} is not part of the text. To hold ${Q3}, open and close with four quotes. To start the text with a quote, start it on the next line. For code, and for any text with quotes, use a text block: the lines that start with |, one space after the | dropped, exactly as typed, with no escapes.
 x's y, x.y and y of x are the same. 'the' is optional. it, or the result, is the value from the last command.`;
