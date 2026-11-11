@@ -22,7 +22,7 @@ const MAX_CHAIN = 500;
 // words that join values, so they never start one: "set sorted to 5" sets a variable named sorted
 const LINK_WORDS = ["to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
 
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "move", "push", "delete"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "move", "push", "delete", "stash", "stashes", "restore", "pull", "blame", "tag", "tags"];
 
 /**
  * @typedef {Object} ParseError
@@ -1104,8 +1104,16 @@ export function parse(source, options = {}) {
       }
       i++;
     }
-    // git show <commit>, git merge <branch>, git delete branch <branch>
-    if (op.value === "show" || op.value === "merge" || op.value === "delete") {
+    // git stash, git stash pop
+    if (op.value === "stash") {
+      command.pop = false;
+      if (isWord("pop") && current().line === op.line) {
+        i++;
+        command.pop = true;
+      }
+    }
+    // git show <commit>, git merge <branch>, git delete branch <branch>, git restore <files>, git blame <file>, git tag <name>
+    if (["show", "merge", "delete", "restore", "blame", "tag"].includes(op.value)) {
       command.value = parseExpression();
       if (command.value === null) {
         return null;

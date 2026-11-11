@@ -260,3 +260,104 @@ test("a branch name with no quotes gives an error that shows the quoted form", a
   // a variable that holds the name still works
   await output("set target to 'main'\ngit switch to target");
 });
+
+// ----- stash, restore, pull, blame and tag: each test has its own repo -----
+
+async function repo() {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-gitmore-"));
+  const g = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH, HOME: dir } });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t"]);
+  g(["config", "user.name", "t"]);
+  await fs.writeFile(path.join(dir, "a.txt"), "one\n");
+  await fs.writeFile(path.join(dir, ".env"), "TOKEN=x\n");
+  g(["add", "a.txt", ".env"]);
+  g(["commit", "-q", "-m", "first"]);
+  return { dir, g, go: (source, options = {}) => run(source, { root: dir, ...options }) };
+}
+
+test("git stash keeps untracked files; stash pop brings the changes back", async () => {
+  const { dir, go } = await repo();
+  try {
+    await fs.writeFile(path.join(dir, "a.txt"), "changed\n");
+    await fs.writeFile(path.join(dir, "new.txt"), "untracked\n");
+    assert.deepEqual((await go("git stash\ngit stashes\nprint it")).output[0].trim().split("\n").length, 1);
+    assert.equal(await fs.readFile(path.join(dir, "a.txt"), "utf8"), "one\n");
+    assert.equal(await fs.readFile(path.join(dir, "new.txt"), "utf8"), "untracked\n");
+    assert.deepEqual((await go("git stash pop")).errors, []);
+    assert.equal(await fs.readFile(path.join(dir, "a.txt"), "utf8"), "changed\n");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("git restore puts files back, with the checks of a write, and undo takes it back", async () => {
+  const { dir, go } = await repo();
+  try {
+    await fs.writeFile(path.join(dir, "a.txt"), "changed\n");
+    const audit = { scripts: 0, records: [] };
+    assert.deepEqual((await go("git restore ./a.txt", { audit })).errors, []);
+    assert.equal(await fs.readFile(path.join(dir, "a.txt"), "utf8"), "one\n");
+    assert.ok(audit.records.some((record) => record.kind === "git" && record.target === "restore a.txt"));
+    assert.ok(audit.records.some((record) => record.kind === "restore" && record.details === "put back as in the last commit"));
+    // undo brings the change back
+    const undo = [];
+    await fs.writeFile(path.join(dir, "a.txt"), "changed again\n");
+    assert.deepEqual((await go("git restore ./a.txt", { undo })).errors, []);
+    assert.deepEqual((await go("undo", { undo })).errors, []);
+    assert.equal(await fs.readFile(path.join(dir, "a.txt"), "utf8"), "changed again\n");
+    // a hidden file is refused, as for a write
+    assert.match((await go("git restore ./.env")).errors[0].message, /^A script cannot change hidden files/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("git blame reads a file, and refuses .env files", async () => {
+  const { go } = await repo();
+  const result = await go("git blame ./a.txt\nprint it");
+  assert.deepEqual(result.errors, []);
+  assert.match(result.output[0], /\) one$/m);
+  assert.equal((await go("git blame ./.env")).errors[0].message, "A script cannot read .env files, because they hold secrets: .env");
+  assert.equal((await go("git blame ./nope.txt")).errors[0].message, "File not found: nope.txt");
+});
+
+test("git tag and git tags; a bad tag name is refused", async () => {
+  const { go } = await repo();
+  assert.deepEqual((await go("git tag 'v1.0'\ngit tags\nprint it")).output, ["v1.0\n"]);
+  assert.match((await go("git tag '-x'")).errors[0].message, /^Not a safe tag name/);
+});
+
+test("git pull is fast-forward only, and the pulled changes make the project untrusted", async () => {
+  const origin = await repo();
+  const clone = await fs.mkdtemp(path.join(os.tmpdir(), "clank-gitclone-"));
+  const g = (args) => execFileSync("git", args, { cwd: clone, encoding: "utf8", env: { PATH: process.env.PATH, HOME: clone } });
+  try {
+    execFileSync("git", ["clone", "-q", origin.dir, clone]);
+    g(["config", "user.email", "t@t"]);
+    g(["config", "user.name", "t"]);
+    await fs.writeFile(path.join(origin.dir, "a.txt"), "from someone else\n");
+    origin.g(["commit", "-q", "-am", "theirs"]);
+    const result = await run("git pull\nprint the session is untrusted", { root: clone });
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.output, ["true"]);
+    assert.equal(await fs.readFile(path.join(clone, "a.txt"), "utf8"), "from someone else\n");
+    // a policy that denies fetch denies pull
+    const denied = await run("git pull", { root: clone, policy: { name: "p.talk", source: "policy 'p'\ndeny fetch" } });
+    assert.match(denied.errors[0].message, /fetch/);
+  } finally {
+    await fs.rm(origin.dir, { recursive: true, force: true });
+    await fs.rm(clone, { recursive: true, force: true });
+  }
+});
+
+test("git pull refuses a remote inside the project", async () => {
+  const { dir, g, go } = await repo();
+  try {
+    g(["clone", "-q", "--bare", dir, path.join(dir, "mirror.git")]);
+    g(["remote", "add", "origin", "./mirror.git"]);
+    assert.match((await go("git pull")).errors[0].message, /^git pull cannot use a remote inside the project/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

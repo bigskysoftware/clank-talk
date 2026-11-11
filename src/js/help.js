@@ -318,7 +318,7 @@ export const HELP = [
   },
   {
     name: "git", kind: "command",
-    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch>",
+    syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch> | git stash | git stash pop | git stashes | git restore <files> | git pull | git blame <file> | git tag <name> | git tags",
     description: [
       "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text.",
       "If the repo config can run programs, git does not run.",
@@ -328,6 +328,10 @@ export const HELP = [
       "push sends the current branch to origin, never with force. It does not ask the human. A policy can turn it off with 'deny git push'.",
       "A push to a remote that is a folder inside the project is an error.",
       "If the project root is a subfolder of the repo, status, diff, show and log cover only the root.",
+      "stash puts away the changes to tracked files, so untracked files stay. stash pop brings them back.",
+      "restore puts files back as they are in the last commit. It has the checks of a write, and undo can take it back.",
+      "pull gets the current branch from origin, fast-forward only. The pulled changes are an untrusted input. A policy with deny fetch denies it.",
+      "blame shows who changed each line of a file. tag puts a tag on the current commit; push does not send tags.",
     ],
     examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },

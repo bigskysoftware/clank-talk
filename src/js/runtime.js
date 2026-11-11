@@ -32,7 +32,7 @@ const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
 // git operations that change files or branches; "deny writes" denies them
-const GIT_WRITES = ["switch", "commit", "merge", "rebase", "move", "delete"];
+const GIT_WRITES = ["switch", "commit", "merge", "rebase", "move", "delete", "stash", "restore", "pull", "tag"];
 const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
@@ -2552,6 +2552,10 @@ async function runGit(command, state) {
   } else if (GIT_WRITES.includes(command.operation)) {
     checkDenied("writes", state, command);
   }
+  // a pull uses the network
+  if (command.operation === "pull") {
+    checkDenied("fetch", state, command);
+  }
   await runHooks("before", ["git"], step, state, command);
   // in an untrusted session, a commit and a push ask the human
   if (command.operation === "commit") {
@@ -2575,8 +2579,29 @@ async function runGit(command, state) {
   if (command.operation === "rebase") {
     await checkRebase(step.branch, state, env, command);
   }
-  if (command.operation === "push") {
-    await checkPushRemote(state, env, command);
+  if (command.operation === "push" || command.operation === "pull") {
+    await checkPushRemote(state, env, command, command.operation === "pull");
+  }
+  // pull: the current branch; remember where it was, to find the changed files after
+  let pulledFrom = null;
+  if (command.operation === "pull") {
+    const current = await gitCheck(["branch", "--show-current"], state, env, command);
+    if (current === "") {
+      throw new ScriptError("git pull needs a branch. Switch to a branch first", command);
+    }
+    step.branch = current;
+    args.push(current);
+    pulledFrom = await gitCheck(["rev-parse", "HEAD"], state, env, command);
+  }
+  // restore: the change hooks, and the text before, for undo
+  const restored = [];
+  if (command.operation === "restore") {
+    for (const file of step.refs) {
+      const change = changeStep("restore", file, {});
+      await changeHooks("before", change, state, command);
+      restored.push({ file, change, before: await currentText(file.path, state) });
+    }
+    delete step.refs;
   }
 
   // commit adds the named files first, so new files can be committed too;
@@ -2605,7 +2630,7 @@ async function runGit(command, state) {
     }
   }
 
-  const forPush = command.operation === "push";
+  const forPush = command.operation === "push" || command.operation === "pull";
   const result = await spawnProgram("git", [...guardArgs(forPush), ...args], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
   if (result.code !== 0 && command.operation === "rebase") {
     await stopRebase(state, env, command);
@@ -2616,6 +2641,24 @@ async function runGit(command, state) {
   // the audit shows git as the script wrote it; the JSON audit keeps the full arguments
   const shown = gitShown(command.operation, step, args);
   auditStep(state, "git", shown.target, shown.details, { args: args.join(" ") });
+  // restore: each file is a change, so undo can take it back; the script saw the new text, so a later write is not stale
+  for (const { file, change, before } of restored) {
+    const after = await currentText(file.path, state);
+    if (after !== before) {
+      state.execution.changes.push({ path: file.path, before, after });
+    }
+    if (after !== null) {
+      state.seen.set(await fs.realpath(file.absolute), after);
+    }
+    await changeHooks("after", change, state, command, after === before ? "no change" : "put back as in the last commit");
+  }
+  // pull: code from other people; the changed files go to the store, so the project is untrusted
+  if (pulledFrom !== null) {
+    const changed = await gitCheck(["diff", "--name-only", pulledFrom, "HEAD"], state, env, command);
+    if (changed !== "") {
+      await noteUntrusted(state, "git pull origin " + step.branch, "The pull changed these files:\n" + changed, command);
+    }
+  }
   // a .env file in git must not show in a diff either, since scripts cannot read it
   if (command.operation === "diff" || command.operation === "show") {
     result.output = hideSecretDiffs(result.output);
@@ -2675,8 +2718,9 @@ async function gitCheck(args, state, env, command) {
 // a remote that is a folder runs its own hooks on a push, and the hardened settings do not reach it;
 // a folder inside the project can hold hooks that the agent wrote, so a push to it is refused
 // a folder outside the project is the human's; see src/md/features/git.md
-async function checkPushRemote(state, env, command) {
-  const result = await spawnProgram("git", [...guardArgs(), "remote", "get-url", "--push", "--all", "origin"], state.root, env, state.timeLimit, state, command);
+// a pull checks the fetch URLs: git runs the remote's upload hooks on a local folder too
+async function checkPushRemote(state, env, command, forPull = false) {
+  const result = await spawnProgram("git", [...guardArgs(), "remote", "get-url", ...(forPull ? [] : ["--push"]), "--all", "origin"], state.root, env, state.timeLimit, state, command);
   if (result.code !== 0) {
     return;
   }
@@ -2689,7 +2733,7 @@ async function checkPushRemote(state, env, command) {
     const absolute = nodePath.resolve(state.root, folder);
     const real = await fs.realpath(absolute).catch(() => absolute);
     if (isInside(absolute, state.root) || isInside(real, realRoot)) {
-      throw new ScriptError("git push cannot go to a remote inside the project, because it runs that repo's hooks, and a script can write them: " + url, command);
+      throw new ScriptError((forPull ? "git pull cannot use" : "git push cannot go to") + " a remote inside the project, because it runs that repo's hooks, and a script can write them: " + url, command);
     }
   }
 }
@@ -2893,6 +2937,63 @@ async function gitArgs(command, state, step) {
       }
     }
     return args;
+  }
+  // stash: tracked files only, so untracked files (such as .talk/) stay where they are; see src/md/features/git.md
+  if (op === "stash") {
+    return command.pop ? ["stash", "pop"] : ["stash", "push", "--quiet"];
+  }
+  if (op === "stashes") {
+    return ["stash", "list"];
+  }
+  if (op === "tags") {
+    return ["tag", "--list"];
+  }
+  // a light tag on the current commit; git push does not send tags
+  if (op === "tag") {
+    const name = toText(notNull(await evaluate(command.value, state), "The tag name is null. Give it a value", command.value));
+    if (!isSafeBranchName(name)) {
+      throw new ScriptError("Not a safe tag name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
+    }
+    step.tag = name;
+    return ["tag", name];
+  }
+  // blame: read only, with the checks of a read; .env files hold secrets
+  if (op === "blame") {
+    const file = await evaluate(command.value, state);
+    if (!(file instanceof FileRef)) {
+      throw new ScriptError("git blame needs a file, found " + describe(file), command.value);
+    }
+    const { relative } = await realTarget(file, state, command.value);
+    if (isSecretFile(file.path) || isSecretFile(relative)) {
+      throw new ScriptError("A script cannot read .env files, because they hold secrets: " + file.path, command.value);
+    }
+    if ((await realPath(file, state, command.value)) === null) {
+      throw new ScriptError("File not found: " + file.path, command.value);
+    }
+    step.file = file.path;
+    return ["blame", "--no-textconv", "--", file.path];
+  }
+  // restore: put files back as they are in the last commit, with the checks of a write; undo can take it back
+  if (op === "restore") {
+    const value = flatFiles(await evaluate(command.value, state));
+    const files = Array.isArray(value) ? value : [value];
+    if (files.length === 0) {
+      throw new ScriptError("git restore found no files to restore", command.value);
+    }
+    for (const file of files) {
+      await checkWritable(file, state, command.value);
+      const stats = await fs.stat(file.absolute).catch(() => null);
+      if (stats !== null && stats.isDirectory()) {
+        throw new ScriptError("git restore needs files, not a folder: " + file.path, command.value);
+      }
+    }
+    step.files = files.map((file) => file.path);
+    step.refs = files;
+    return ["restore", "--worktree", "--", ...step.files];
+  }
+  // pull: the current branch from origin, fast-forward only, with the hardening of a push
+  if (op === "pull") {
+    return ["pull", "--ff-only", "--no-rebase", "--no-recurse-submodules", "origin"];
   }
   throw new ScriptError("Unknown git operation: " + op, command);
 }
@@ -4357,6 +4458,24 @@ function gitShown(op, step, args) {
   }
   if (op === "move") {
     return { target: "move " + step.from + " to " + step.to, details: "" };
+  }
+  if (op === "stash") {
+    return { target: args[1] === "pop" ? "stash pop" : "stash", details: "" };
+  }
+  if (op === "stashes" || op === "tags") {
+    return { target: op, details: "" };
+  }
+  if (op === "tag") {
+    return { target: "tag " + step.tag, details: "" };
+  }
+  if (op === "blame") {
+    return { target: "blame " + step.file, details: "" };
+  }
+  if (op === "restore") {
+    return { target: "restore " + step.files.join(", "), details: step.files.length + (step.files.length === 1 ? " file" : " files") };
+  }
+  if (op === "pull") {
+    return { target: "pull origin " + step.branch, details: "fast-forward" };
   }
   // status, branch, branches, push, diff, log, show: the operation, and what the script named, with no flags
   const named = args.slice(1).filter((arg) => !arg.startsWith("-") && arg !== "HEAD" && arg !== "origin");

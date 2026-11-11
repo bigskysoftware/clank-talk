@@ -80,3 +80,12 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
 
 - A `run` program, for example `npm test`, can still change `.git/`. The config check before each call catches most of this. Only an OS sandbox closes it.
 - Filters and helpers in the user's global config still run. They are the user's.
+
+## More commands (2026-11-10)
+
+- Approved (built): `git stash`, `git stash pop`, `git stashes` (the list). Stash takes tracked files only (`stash push`), so untracked files, such as `.talk/` and new files, stay. These count as git writes (`deny writes`). Undo refuses a file that changed after its script, and the stale-write check refuses a write over a file that stash changed.
+- Approved (built): `git restore <files>`: puts files back as in the last commit (`restore --worktree`). Files only, with the checks of a write (inside the project, not protected, not hidden unless allowed). Each changed file is a change for undo, and the change hooks run with kind `restore`.
+- Approved (built): `git pull`: the current branch from origin, `--ff-only --no-rebase --no-recurse-submodules`, with the hardening of a push. `deny fetch` and `deny writes` deny it. A remote folder inside the project is refused, as for push (the fetch URLs). The changed files after a pull are an untrusted input of session taint.
+- Approved (built): `git blame <file>`: read only, `--no-textconv`. A `.env` file (also through a link) and a missing file are refused.
+- Approved (built): `git tag <name>` (a light tag on HEAD, with the check of a branch name) and `git tags`. A tag is a git write. `git push` does not send tags.
+- The audit shows them as written: `stash`, `stash pop`, `restore a.txt  1 file`, `pull origin main  fast-forward`, `blame a.txt`, `tag v1.0`.
