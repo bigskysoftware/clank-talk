@@ -2,6 +2,7 @@
 
 allow env PATH, HOME
 allow fetch from 'localhost', '127.0.0.1'
+allow fetch from 'registry.npmjs.org', 'clank.talk'
 allow changes to @/.github/
 
 # Runs the full test suite.
@@ -25,4 +26,35 @@ end
 # Builds the docs site into _site/.
 tool build_site
   run 'npm run build-site' in a sandbox
+end
+
+# Reads the GitHub API (GET only), such as repos/bigskysoftware/clank-talk/pages.
+# The output can hold text from other people, so it is untrusted.
+untrusted tool gh_api with path
+  run 'gh' with 'api', path in a sandbox with network,
+    reads of '~/.config/gh'
+end
+
+# Lists the commits that hold text that looks like a secret, in all of the history.
+# It gives commit ids only, never the secret text.
+tool secret_scan
+  run 'git' with 'log', '--all', '-p', '--no-ext-diff', '--no-textconv', '--format=commit %h'
+    in a sandbox keeping lines matching pattern /^commit |sk-ant-|ghp_|github_pat_|npm_[A-Za-z0-9]{30}|AKIA[0-9A-Z]{16}|PRIVATE KEY-----/
+  set commit to null
+  set found to []
+  for line in lines of it's output
+    if line starts with 'commit '
+      set commit to line
+    else if not (line starts with '...') and commit is not null and found does not contain commit
+      set found[length of found] to commit
+    end
+  end
+  set the result to found
+end
+
+# Searches the pi docs on this machine for a word.
+tool pi_docs with word
+  run 'grep' with '-rn', '-i', word, '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs'
+    in a sandbox with reads of '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs'
+    keeping the first 60 lines
 end
