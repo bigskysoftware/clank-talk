@@ -61,8 +61,8 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 ## Taint
 
-- **Session taint, part (b):** the `npx clank-talk taint` command line. See [taint.md](features/taint.md).
-- **Session taint, part (c):** the judge.
+- **Session taint, part (c):** the judge. See [taint.md](features/taint.md).
+- **Session taint cleanup:** the `keep audit` rules for `.talk/untrusted/`.
 - **A human-only MCP tool:** `taint_approve` with `requiresUserInteraction`, for Claude Code, after a test.
 
 ## Safety

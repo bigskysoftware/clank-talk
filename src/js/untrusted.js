@@ -29,6 +29,12 @@ export function storePath(session) {
   return STORE + "/" + folderName(session) + "/";
 }
 
+// the local date and time: 2026-11-10 17:40:41
+export function localTime(date = new Date()) {
+  const two = (value) => String(value).padStart(2, "0");
+  return date.getFullYear() + "-" + two(date.getMonth() + 1) + "-" + two(date.getDate()) + " " + two(date.getHours()) + ":" + two(date.getMinutes()) + ":" + two(date.getSeconds());
+}
+
 // the inputs of a session; a missing or broken index is empty
 export async function inputs(root, session) {
   try {
@@ -37,6 +43,24 @@ export async function inputs(root, session) {
   } catch (err) {
     return [];
   }
+}
+
+// the sessions in the store, by folder name, oldest first
+export async function sessions(root) {
+  let names;
+  try {
+    names = await fs.readdir(nodePath.join(root, STORE));
+  } catch (err) {
+    return [];
+  }
+  const found = [];
+  for (const name of names) {
+    const entries = await inputs(root, name);
+    if (entries.length > 0) {
+      found.push({ name, first: entries[0].time });
+    }
+  }
+  return found.sort((a, b) => a.first.localeCompare(b.first)).map((session) => session.name);
 }
 
 async function save(root, session, entries) {
@@ -66,12 +90,15 @@ export function pending(entries) {
 }
 
 // approve the inputs with these numbers; gives the numbers that changed
-export async function approve(root, session, numbers) {
+// by says who approved: "the question" or "the command line"
+export async function approve(root, session, numbers, by = "the question") {
   const entries = await inputs(root, session);
   const changed = [];
   for (const entry of entries) {
     if (numbers.includes(entry.n) && !entry.approved) {
       entry.approved = true;
+      entry.approvedBy = by;
+      entry.approvedAt = new Date().toISOString();
       changed.push(entry.n);
     }
   }
@@ -79,6 +106,17 @@ export async function approve(root, session, numbers) {
     await save(root, session, entries);
   }
   return changed;
+}
+
+// the text file of an input
+export async function inputText(root, session, entry) {
+  return await fs.readFile(nodePath.join(folder(root, session), entry.file), "utf8");
+}
+
+// "taint on" or "taint off" from the command line
+export async function setCommandLineMode(root, mode) {
+  await fs.mkdir(nodePath.join(root, ".talk"), { recursive: true });
+  await fs.writeFile(nodePath.join(root, STATE_FILE), JSON.stringify({ taint: mode }) + "\n");
 }
 
 // "on" or "off" from the command line, or null

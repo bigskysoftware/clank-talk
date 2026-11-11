@@ -3,7 +3,8 @@
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
 Built: session taint, part (a): the flag, the store, the questions, `taint on|off|required`, `keep untrusted inputs up to`, `require taint` in a policy, and the session checks for hooks. The value labels below are removed.
-Not built: part (b), the command line; part (c), the judge.
+Built: part (b), the command line: `bin/clank-talk.js`, `src/js/taint-cli.js`.
+Not built: part (c), the judge.
 Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
 
 Code: `src/js/untrusted.js`, with small calls in `src/js/runtime.js`.
@@ -48,9 +49,11 @@ Replaces the labels on values below. Why: labels follow values inside one script
 
 ### The command line
 
-- Approved: a new `clank-talk` command, next to `clank-talk-mcp`. Only the human runs it: the agent has no shell in ClankTalk.
-- Approved: `npx clank-talk taint` lists all inputs: number, session, time, source URL, size, status, judge verdict.
-- Approved: `taint show <n>`, `taint approve <n> ...`, `taint approve --all` (clears all taints), `taint approve --clean`, `taint judge [<n> | --all]`, `taint on`, `taint off`.
+- Approved (built): a new `clank-talk` command, next to `clank-talk-mcp`. Only the human runs it: the agent has no shell in ClankTalk. It takes `--root`, and else `CLANK_TALK_ROOT` or the current folder, as the MCP server does.
+- Approved (built): `npx clank-talk taint` shows the state and where it comes from, and lists all inputs: ref, time, status, size, judge verdict, source.
+- Approved (built): a ref is `<session>/<n>`, such as `claude-code-4f2a/3`. A bare `<n>` is in the newest session.
+- Approved (built): `taint show <ref>`, `taint approve <ref> ...`, `taint approve --all` (clears all taints), `taint approve --clean`, `taint on`, `taint off`. A bad ref approves nothing. An approval records who approved (`the question` or `the command line`) and when.
+- Not built: `taint judge [<ref> | --all]`, with part (c).
 - Limits, to document: the boundary holds only if the agent has no other shell (turn off the harness tools), each `run` is sandboxed (a program with no sandbox can change `.talk/`), and no tool in AGENTS.talk runs `clank-talk taint`.
 
 ### The judge

@@ -343,6 +343,7 @@ TODO (Carson): why the session and not the value: the agent can read an injectio
 - ClankTalk keeps a copy of each untrusted input in `.talk/untrusted/`, for you to review. Your agent cannot change it.
 - While the session is untrusted, a push, a commit, a `run` or `start` with network or with no sandbox, a fetch to a new host, and a fetch with a secret ask you first.
 - You can answer `approve them and go on`, `yes, this time only` or `no`.
+- From your terminal, `npx clank-talk taint` lists the untrusted inputs. `show <ref>` prints one, `approve <ref>` or `approve --all` approves them, and `on` or `off` turns taint on or off.
 - `taint off`, `taint on` and `taint required` in `AGENTS.talk` set the default. `keep untrusted inputs up to 5 MB` sets how much of each input is kept (1 MB by default).
 
 <h3 id="secrets">Calling the GitHub API</h3>

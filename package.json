@@ -16,6 +16,7 @@
   },
   "main": "src/js/clank-talk.js",
   "bin": {
+    "clank-talk": "bin/clank-talk.js",
     "clank-talk-mcp": "bin/clank-talk-mcp.js"
   },
   "pi": {

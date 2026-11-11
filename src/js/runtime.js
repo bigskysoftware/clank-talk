@@ -3747,7 +3747,7 @@ async function noteUntrusted(state, source, text, node = { line: 1, column: 1 })
   const where = untrusted.storePath(state.session);
   let entry;
   try {
-    entry = await untrusted.record(state.root, state.session, { source: redact(source, state), text: redact(text, state), time: clock(new Date()), keepBytes: state.keepUntrustedBytes });
+    entry = await untrusted.record(state.root, state.session, { source: redact(source, state), text: redact(text, state), time: untrusted.localTime(), keepBytes: state.keepUntrustedBytes });
   } catch (err) {
     throw new ScriptError("Could not save untrusted input in " + where + ": " + err.message, node);
   }
