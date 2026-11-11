@@ -14,3 +14,15 @@ end
 tool site_server
   start 'npm run serve-site' as 'site' in a sandbox
 end
+
+# Packs the package, installs it in an empty folder, and runs the CLI and the
+# MCP server from it. It publishes nothing.
+tool package_test
+  run 'npm run package-test' in a sandbox with writes to '~/.npm'
+    within 5 minutes
+end
+
+# Builds the docs site into _site/.
+tool build_site
+  run 'npm run build-site' in a sandbox
+end
