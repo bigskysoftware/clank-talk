@@ -264,7 +264,7 @@ git push
 #   is not approved: https://example.com/issues/42
 ```
 
-TODO (Carson): the session is tainted, not the value; you review the inputs with `npx clank-talk taint`.
+ClankTalk taints the whole session, not just the text, and keeps a copy of each untrusted input your agent read.  You can review and approve them from your terminal, with `npx clank-talk taint`, or right in your harness, with `taint review`.
 
 ## Agent & Harness Agnostic
 
