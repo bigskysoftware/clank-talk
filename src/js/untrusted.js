@@ -64,13 +64,51 @@ function broken(reason) {
   return { n: 0, time: "", source: "a broken store: " + reason, size: 0, cut: false, file: "index.json", approved: false };
 }
 
-// one change at a time to a session's index, so two scripts in one process cannot lose an input
+// one change at a time to a session's index, so two writers cannot lose an input:
+// a chain in this process, and a lock file (index.json.lock) for other processes, such as the command line
 const locks = new Map();
 async function locked(root, session, work) {
   const key = folder(root, session);
-  const done = (locks.get(key) || Promise.resolve()).then(work);
+  const done = (locks.get(key) || Promise.resolve()).then(() => withLockFile(key, work));
   locks.set(key, done.catch(() => {}));
   return await done;
+}
+
+// a lock file that is older than this is left from a crash, and is taken over
+const STALE_LOCK_MS = 10_000;
+
+async function withLockFile(dir, work) {
+  await fs.mkdir(dir, { recursive: true });
+  const lock = nodePath.join(dir, "index.json.lock");
+  const started = Date.now();
+  while (true) {
+    try {
+      await (await fs.open(lock, "wx")).close();
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") {
+        throw err;
+      }
+      let age = 0;
+      try {
+        age = Date.now() - (await fs.stat(lock)).mtimeMs;
+      } catch (statErr) {
+        continue;
+      }
+      if (age > STALE_LOCK_MS || Date.now() - started > STALE_LOCK_MS) {
+        await fs.rm(lock, { force: true });
+        continue;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  wroteOwnSync(lock, "lock");
+  try {
+    return await work();
+  } finally {
+    await fs.rm(lock, { force: true });
+    deletedOwn(lock);
+  }
 }
 
 // the sessions in the store, by folder name, oldest first
@@ -91,10 +129,19 @@ export async function sessions(root) {
   return found.sort((a, b) => a.first.localeCompare(b.first)).map((session) => session.name);
 }
 
+// write the index: a new file, then a rename, so a reader never sees half of it
+// if the index changed since ClankTalk last wrote it (a program with no sandbox), the write is not noted as our own,
+// so the check around that run still finds the change
 async function save(root, session, entries) {
   await fs.mkdir(folder(root, session), { recursive: true });
-  await fs.writeFile(nodePath.join(folder(root, session), "index.json"), JSON.stringify(entries, null, 2) + "\n");
-  await wroteOwn(nodePath.join(folder(root, session), "index.json"));
+  const index = nodePath.join(folder(root, session), "index.json");
+  const changedOutside = await changedSinceOwn(index);
+  const temporary = index + "." + process.pid + ".tmp";
+  await fs.writeFile(temporary, JSON.stringify(entries, null, 2) + "\n");
+  await fs.rename(temporary, index);
+  if (!changedOutside) {
+    await wroteOwn(index);
+  }
 }
 
 // save one input; gives its entry
@@ -113,7 +160,8 @@ async function recordNow(root, session, { source, text, time, keepBytes }) {
   const kept = cut ? bytes.subarray(0, keepBytes).toString("utf8") : text;
   const file = n + ".txt";
   await fs.mkdir(folder(root, session), { recursive: true });
-  await fs.writeFile(nodePath.join(folder(root, session), file), "source: " + source + "\ntime: " + time + (cut ? "\ncut: kept the first " + keepBytes + " of " + bytes.length + " bytes" : "") + "\n\n" + kept);
+  // the header is one line for each field: a line break in the source shows as ?
+  await fs.writeFile(nodePath.join(folder(root, session), file), "source: " + printable(source) + "\ntime: " + time + (cut ? "\ncut: kept the first " + keepBytes + " of " + bytes.length + " bytes" : "") + "\n\n" + kept);
   await wroteOwn(nodePath.join(folder(root, session), file));
   const entry = { n, time, source, size: bytes.length, cut, file, approved: false };
   entries.push(entry);
@@ -124,6 +172,18 @@ async function recordNow(root, session, { source, text, time, keepBytes }) {
 // the inputs that are not approved
 export function pending(entries) {
   return entries.filter((entry) => !entry.approved);
+}
+
+// the inputs that are not approved, in all sessions of the project: [{ session, entry }], oldest session first
+// taint is for the whole project, so a resumed conversation (a new session) is still tainted by what it read before
+export async function pendingAll(root) {
+  const found = [];
+  for (const session of await sessions(root)) {
+    for (const entry of pending(await inputs(root, session))) {
+      found.push({ session, entry });
+    }
+  }
+  return found;
 }
 
 // approve the inputs with these numbers; gives the numbers that changed
@@ -153,17 +213,24 @@ async function approveNow(root, session, numbers, by) {
 }
 
 // the "keep audit" rules: delete the sessions whose newest input is from before the oldest kept day (2026-11-08)
+// only sessions where all inputs are approved: an input that is not approved keeps the project untrusted until a human looks
 // gives the names of the deleted sessions; a broken store is kept, for the human
 export async function prune(root, oldestDay) {
   const deleted = [];
   for (const session of await sessions(root)) {
-    const entries = await inputs(root, session);
-    if (entries.some((entry) => entry.n === 0)) {
-      continue;
-    }
-    const newest = entries.reduce((latest, entry) => (entry.time > latest ? entry.time : latest), "");
-    if (newest.slice(0, 10) < oldestDay) {
-      await locked(root, session, () => fs.rm(folder(root, session), { recursive: true, force: true }));
+    const gone = await locked(root, session, async () => {
+      const entries = await inputs(root, session);
+      if (entries.length === 0 || entries.some((entry) => entry.n === 0 || !entry.approved)) {
+        return false;
+      }
+      const newest = entries.reduce((latest, entry) => (entry.time > latest ? entry.time : latest), "");
+      if (newest.slice(0, 10) >= oldestDay) {
+        return false;
+      }
+      await fs.rm(folder(root, session), { recursive: true, force: true });
+      return true;
+    });
+    if (gone) {
       deletedOwn(folder(root, session));
       deleted.push(session);
     }
@@ -189,12 +256,39 @@ function hashOf(buffer) {
 }
 
 // note a write of ClankTalk's own, after it
+// a folder that ClankTalk deleted, and then writes into again, is no longer "deleted": a later removal is a change
 export async function wroteOwn(absolute) {
+  let hash;
   try {
-    own.set(absolute, hashOf(await fs.readFile(absolute)));
+    hash = hashOf(await fs.readFile(absolute));
   } catch (err) {
-    own.set(absolute, "deleted");
+    hash = "deleted";
   }
+  wroteOwnSync(absolute, hash);
+}
+
+function wroteOwnSync(absolute, hash) {
+  for (const [path, value] of own) {
+    if (value === "deleted" && absolute.startsWith(path + nodePath.sep)) {
+      own.delete(path);
+    }
+  }
+  own.set(absolute, hash === "lock" ? hashOf(Buffer.alloc(0)) : hash);
+}
+
+// the file changed since ClankTalk last wrote it; false if ClankTalk did not write it before
+async function changedSinceOwn(absolute) {
+  const last = own.get(absolute);
+  if (last === undefined) {
+    return false;
+  }
+  let now;
+  try {
+    now = hashOf(await fs.readFile(absolute));
+  } catch (err) {
+    now = "deleted";
+  }
+  return now !== last;
 }
 
 // note a removal of ClankTalk's own: a file, or a folder and all in it
@@ -220,7 +314,7 @@ function isOwn(absolute, hash) {
 
 // the control files of session taint: small, and they decide if the session is untrusted, so they also go back
 function isControl(relative) {
-  return relative === STATE_FILE || (relative.startsWith(STORE + "/") && relative.endsWith("/index.json"));
+  return relative === STATE_FILE || relative === POLICY_FILE || (relative.startsWith(STORE + "/") && relative.endsWith("/index.json"));
 }
 
 // the last KEEP_LINES lines of a text
@@ -264,11 +358,78 @@ export async function snapshot(root) {
   return { files, audit };
 }
 
+// a link in .talk/ (or in place of it) lets a script reach the store through the link's target: remove each link
+// a .talk that is not a folder becomes a folder again; gives the removed paths
+export async function removeLinks(root) {
+  const found = [];
+  const walk = async (relative) => {
+    const absolute = nodePath.join(root, relative);
+    let stat;
+    try {
+      stat = await fs.lstat(absolute);
+    } catch (err) {
+      return;
+    }
+    if (stat.isSymbolicLink() || (relative === ".talk" && !stat.isDirectory())) {
+      found.push(relative);
+      // not noted as a removal of our own: the files behind the link must still show as changed
+      await fs.rm(absolute, { force: true });
+      if (relative === ".talk") {
+        await fs.mkdir(absolute);
+      }
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const name of await fs.readdir(absolute)) {
+        await walk(relative + "/" + name);
+      }
+    }
+  };
+  await walk(".talk");
+  return found;
+}
+
+// the command line reads this to know that a policy requires taint; the runtime writes it at each run
+export const POLICY_FILE = ".talk/taint-policy.json";
+
+export async function notePolicy(root, policyName) {
+  const file = nodePath.join(root, POLICY_FILE);
+  if (policyName === null) {
+    await fs.rm(file, { force: true });
+    deletedOwn(file);
+    return;
+  }
+  await fs.mkdir(nodePath.join(root, ".talk"), { recursive: true });
+  const text = JSON.stringify({ required: true, policy: policyName }) + "\n";
+  let now = null;
+  try {
+    now = await fs.readFile(file, "utf8");
+  } catch (err) {
+    now = null;
+  }
+  if (now !== text) {
+    await fs.writeFile(file, text);
+    await wroteOwn(file);
+  }
+}
+
+// the policy that requires taint, from the file above, or null
+export async function policyRequires(root) {
+  try {
+    const state = JSON.parse(await fs.readFile(nodePath.join(root, POLICY_FILE), "utf8"));
+    return state.required === true ? String(state.policy) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 // compare with a snapshot; gives { changed, restored }: the changed paths, and the control files that went back
+// first, links go away, so the control files go back into the real folder
 // a control file goes back to its copy (or goes away, if it was not there); other files only show as changed
 export async function check(root, before) {
+  const links = await removeLinks(root);
   const after = await snapshot(root);
-  const changed = [];
+  const changed = [...links];
   const restored = [];
   const paths = new Set([...before.files.keys(), ...after.files.keys()]);
   for (const relative of paths) {
@@ -278,7 +439,9 @@ export async function check(root, before) {
     if ((was && now && was.hash === now.hash) || isOwn(absolute, now ? now.hash : null)) {
       continue;
     }
-    changed.push(relative);
+    if (!changed.includes(relative)) {
+      changed.push(relative);
+    }
     if (!isControl(relative)) {
       continue;
     }

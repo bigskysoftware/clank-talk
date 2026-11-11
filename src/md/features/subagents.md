@@ -37,7 +37,7 @@ use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY
 
 - Approved (built): with neither, the `run` fails: `This harness (MCP) cannot lend its model to a subagent. Add a model and a key to AGENTS.talk: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY`. The error comes at the run, not at load: the same AGENTS.talk can work in pi and fail in Claude Code.
 - Approved (built): `use model ... with secret NAME` needs `allow secret NAME for subagents`, or the load fails. Only AGENTS.talk can have `use model`, once.
-- Approved (built): the model host is trusted with the prompt and the tool results: they go to it with no `Send private data` question.
+- Approved (built): the model host is trusted with the prompt and the tool results: they go to it with no question. (The `Send private data` question went away with the taint labels.)
 
 ## How it runs
 

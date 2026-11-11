@@ -318,6 +318,8 @@ async function execute(source, options, execution) {
     // session taint: "on" or "off", and the size that the store keeps of one input; see src/js/untrusted.js
     taintMode: untrusted.taintMode(agents.taint, policy.policy !== null && policy.policy.rules.some((rule) => rule.type === "requireTaint"), await untrusted.commandLineMode(root)),
     keepUntrustedBytes: agents.keepUntrustedBytes || untrusted.DEFAULT_KEEP_BYTES,
+    // the actions that ask while untrusted inputs are not approved: "taint asks before", or a light default
+    taintAsks: agents.taintAsks || DEFAULT_TAINT_ASKS,
     // the .talk file of the tool or hook now running; null for the script
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
@@ -358,6 +360,14 @@ async function execute(source, options, execution) {
     // the harness's policy: name, short hash and rules, or null
     policy: policy.policy,
   };
+  // the command line cannot see the policy, so a policy that requires taint leaves a note in .talk/
+  if (policy.policy !== null || fsSync.existsSync(nodePath.join(root, untrusted.POLICY_FILE))) {
+    try {
+      await untrusted.notePolicy(root, policy.policy !== null && policy.policy.rules.some((rule) => rule.type === "requireTaint") ? policy.policy.name : null);
+    } catch (err) {
+      execution.warnings.push({ message: "Could not write " + untrusted.POLICY_FILE + ": " + err.message, line: 1, column: 1 });
+    }
+  }
   // the smaller of the output limits in AGENTS.talk and the policy; the host has its own too
   const policyLimit = policy.policy === null ? null : policy.policy.rules.find((rule) => rule.type === "outputLimit") || null;
   execution.outputLimit = smallerLimit(agents.outputLimit, policyLimit);
@@ -1217,7 +1227,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1297,15 +1307,15 @@ async function loadAgentsTalk(root, hostTools) {
         continue;
       }
       // taint on | off | required, and keep untrusted inputs up to <n> MB; see src/md/features/taint.md
-      if (definition.type === "taint" || definition.type === "keepUntrusted") {
-        const shown = definition.type === "taint" ? "taint" : "keep untrusted inputs";
-        const field = definition.type === "taint" ? "taint" : "keepUntrustedBytes";
+      if (definition.type === "taint" || definition.type === "keepUntrusted" || definition.type === "taintAsks") {
+        const shown = { taint: "taint", keepUntrusted: "keep untrusted inputs", taintAsks: "taint asks before" }[definition.type];
+        const field = { taint: "taint", keepUntrusted: "keepUntrustedBytes", taintAsks: "taintAsks" }[definition.type];
         if (file.name !== AGENTS_TALK) {
           result.errors.push({ message: "'" + shown + "' is only allowed in " + AGENTS_TALK, ...where });
         } else if (result[field] !== null) {
           result.errors.push({ message: "Only one '" + shown + "' line is allowed", ...where });
         } else {
-          result[field] = definition.type === "taint" ? definition.mode : definition.bytes;
+          result[field] = { taint: definition.mode, keepUntrusted: definition.bytes, taintAsks: definition.asks }[definition.type];
         }
         continue;
       }
@@ -1359,7 +1369,7 @@ async function loadAgentsTalk(root, hostTools) {
           // @/ and ./ both start from the root, where AGENTS.talk is
           const rest = shown.startsWith("@/") ? shown.slice(2) : shown;
           const absolute = nodePath.resolve(root, rest);
-          // .talk/ holds the audit and the taint labels: no line can open it
+          // .talk/ holds the audit and the untrusted inputs: no line can open it
           if (isProtectedPath(nodePath.relative(root, absolute).split(nodePath.sep).join("/") + "/")) {
             result.errors.push({ message: "Cannot allow changes to " + shown + ": .talk/ and talk/ hold the audit and the tools, and no line can open them", ...where });
             continue;
@@ -1552,7 +1562,7 @@ function canHandle(err, state) {
 // gives "continue" or "stop" (the default)
 async function runHandler(err, state, tools, maxSteps) {
   const error = Object.create(null);
-  // the handler sees no secret's value, and the message keeps the labels of the failed command
+  // the handler sees no secret's value
   error.message = redact(err.message, state);
   error.line = err.line;
   error.column = err.column;
@@ -2081,10 +2091,11 @@ async function evaluateNode(node, state) {
   }
   // the session: is untrusted while an untrusted input is not approved; see src/md/features/taint.md
   if (type === "session") {
-    const entries = state.taintMode === "off" ? [] : untrusted.pending(await untrusted.inputs(state.root, state.session));
+    // taint is for the whole project: the inputs of all sessions that are not approved
+    const entries = state.taintMode === "off" ? [] : await untrusted.pendingAll(state.root);
     const session = Object.create(null);
     session.untrusted = entries.length > 0;
-    session["untrusted inputs"] = entries.map((entry) => ({ source: entry.source, time: entry.time }));
+    session["untrusted inputs"] = entries.map(({ entry }) => ({ source: entry.source, time: entry.time }));
     return session;
   }
   // the audit: this session's records, oldest first, as plain values
@@ -2236,18 +2247,27 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   // steps inside the tool are "from" the tool in the audit
   const savedFrom = state.auditFrom;
   state.auditFrom = definition.name;
+  // inside an untrusted tool, a started program has untrusted output; see processInfo
+  const savedUntrustedTool = state.untrustedTool;
+  if (definition.untrusted) {
+    state.untrustedTool = definition.name;
+  }
+  // what the tool prints goes to the agent too, so an untrusted tool's print output goes to the store with its result
+  const printedFrom = state.execution.output.length;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
     // an untrusted tool's result goes to the store, and makes the session untrusted
     if (definition.untrusted) {
       const shownArgs = args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name]))));
-      await noteUntrusted(state, "tool " + definition.name + (shownArgs.length > 0 ? " (" + shownArgs.join(", ") + ")" : ""), toText(showSecrets(state.result)));
+      const printed = state.execution.output.slice(printedFrom);
+      await noteUntrusted(state, "tool " + definition.name + (shownArgs.length > 0 ? " (" + shownArgs.join(", ") + ")" : ""), (printed.length > 0 ? printed.join("\n") + "\n" : "") + toText(showSecrets(state.result)));
     }
     return state.result;
   } catch (err) {
     // an untrusted tool's error can hold its text, and the agent sees the error, so it goes to the store too
     if (definition.untrusted && err instanceof ScriptError && !(err instanceof Cancelled) && !(err instanceof StepBudget)) {
-      await noteUntrusted(state, "tool " + definition.name + " (error)", err.message, command);
+      const printed = state.execution.output.slice(printedFrom);
+      await noteUntrusted(state, "tool " + definition.name + " (error)", (printed.length > 0 ? printed.join("\n") + "\n" : "") + err.message, command);
     }
     // an error inside the tool points into AGENTS.talk
     if (err instanceof ScriptError && !err.file) {
@@ -2261,6 +2281,7 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
     state.file = savedFile;
     state.handling = savedHandling;
     state.auditFrom = savedFrom;
+    state.untrustedTool = savedUntrustedTool;
   }
 }
 
@@ -2298,7 +2319,7 @@ async function runProgram(command, state) {
   checkSandboxRequired("run", sandbox, state, command);
   await runHooks("before", ["run"], step, state, command);
   if (sandbox === null || sandbox.network) {
-    await askUntrusted(state, "Run " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
+    await askUntrusted(state, "network runs", "Run " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
   }
 
   const env = programEnv(command, state);
@@ -2534,9 +2555,9 @@ async function runGit(command, state) {
   await runHooks("before", ["git"], step, state, command);
   // in an untrusted session, a commit and a push ask the human
   if (command.operation === "commit") {
-    await askUntrusted(state, "Commit '" + (step.message === undefined ? "" : step.message) + "'", command);
+    await askUntrusted(state, "commit", "Commit '" + (step.message === undefined ? "" : step.message) + "'", command);
   } else if (command.operation === "push") {
-    await askUntrusted(state, "Push " + args.join(" "), command);
+    await askUntrusted(state, "push", "Push " + args.join(" "), command);
   }
 
   const env = gitEnv(process.env);
@@ -3170,7 +3191,7 @@ async function startProcess(command, state) {
   checkSandboxRequired("start", sandbox, state, command);
   await runHooks("before", ["start"], step, state, command);
   if (sandbox === null || sandbox.network) {
-    await askUntrusted(state, "Start " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
+    await askUntrusted(state, "network runs", "Start " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
   }
 
   let env = programEnv(command, state);
@@ -3192,7 +3213,8 @@ async function startProcess(command, state) {
       fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
     });
   }
-  const record = { name, child, status: "running", code: null, output: "" };
+  // a program that an untrusted tool starts: its output is untrusted, see processInfo
+  const record = { name, child, status: "running", code: null, output: "", untrustedFrom: state.untrustedTool || null };
   const add = (chunk) => {
     record.output += chunk;
     if (record.output.length > PROCESS_OUTPUT_BYTES) {
@@ -3325,9 +3347,11 @@ async function processList(state) {
 // a process value for the script; the agent sees a subagent's answer, so new output of it goes to the store
 async function processInfo(record, state) {
   const info = new ProcessInfo(record, state);
-  if (record.subagent && info.output.length > (record.storedLength || 0)) {
+  // a subagent's answer, or the output of a program that an untrusted tool started
+  const source = record.subagent || (record.untrustedFrom ? "process " + record.name + " (from tool " + record.untrustedFrom + ")" : null);
+  if (source !== null && info.output.length > (record.storedLength || 0)) {
+    await noteUntrusted(state, source, info.output);
     record.storedLength = info.output.length;
-    await noteUntrusted(state, record.subagent, info.output);
   }
   return info;
 }
@@ -3406,7 +3430,7 @@ async function runFetch(command, state) {
   await runHooks("before", ["fetch"], step, state, command);
   // in an untrusted session, a fetch with a secret asks the human
   if (secrets.length > 0) {
-    await askUntrusted(state, "Send secret " + secrets.join(", ") + " to " + url.host, command);
+    await askUntrusted(state, "secrets", "Send secret " + secrets.join(", ") + " to " + url.host, command);
   }
 
   let limit = shorter(state.timeLimit, FETCH_TIME_LIMIT);
@@ -3420,6 +3444,9 @@ async function runFetch(command, state) {
   let response = null;
   // the secrets stay with the request until a redirect to another origin drops the headers
   let carriesSecrets = secrets.length > 0;
+  // after the first redirect, the server chose the URL, so an error can hold its text: that error goes to the store
+  let redirected = false;
+  try {
   for (let hops = 0; ; hops++) {
     await checkFetchHost(current, state, command);
     // a redirect on the same origin keeps the headers, so a URL pattern for a secret is checked again
@@ -3445,7 +3472,14 @@ async function runFetch(command, state) {
       throw new ScriptError("fetch stopped after " + FETCH_MAX_REDIRECTS + " redirects: " + url.href, command);
     }
     const previous = current;
-    current = parseUrl(new URL(location, current).href, command);
+    redirected = true;
+    let next;
+    try {
+      next = new URL(location, current).href;
+    } catch (err) {
+      throw new ScriptError("fetch got a redirect that is not a valid URL: " + describe(location), command);
+    }
+    current = parseUrl(next, command);
     // a redirect can send the request on to another place, so the audit records each one
     auditStep(state, "redirect", previous.href, response.status + " to " + current.href);
     // on a redirect to another origin (scheme, host or port), the script's headers stay behind,
@@ -3464,6 +3498,12 @@ async function runFetch(command, state) {
       method = "GET";
       body = undefined;
     }
+  }
+  } catch (err) {
+    if (redirected && err instanceof ScriptError && !(err instanceof Cancelled)) {
+      await noteUntrusted(state, url.href + " (an error after a redirect)", err.message, command);
+    }
+    throw err;
   }
 
   // a server can send a secret's value back, so the response text shows <secret NAME>
@@ -3582,7 +3622,7 @@ async function checkFetchHost(url, state, node) {
     return;
   }
   // in an untrusted session, one question covers the session and the new host; a yes allows the host for the session
-  if (!(await askUntrusted(state, "Fetch from " + host, node))) {
+  if (!(await askUntrusted(state, "new hosts", "Fetch from " + host, node))) {
     const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
     if (answer !== "yes") {
       throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
@@ -3770,6 +3810,9 @@ const ASK_TIME_LIMIT = 2 * 60 * 1000;
 
 // ----- session taint; see src/md/features/taint.md and src/js/untrusted.js -----
 
+// what asks by default: the actions that do harm outside the machine; more questions make people say yes without reading
+const DEFAULT_TAINT_ASKS = ["push", "secrets"];
+
 // the agent saw untrusted text: save it in the store, so the session is untrusted until the human approves it
 // node is the command, for an error; a process read has none
 async function noteUntrusted(state, source, text, node = { line: 1, column: 1 }) {
@@ -3867,31 +3910,37 @@ function sizeText(bytes) {
 }
 
 // in an untrusted session, a risky action asks the human; no answer, or no, is an error
-// gives true if it asked and the human said yes, false if the session is not untrusted
-async function askUntrusted(state, action, node) {
-  if (state.taintMode === "off") {
+// gives true if it asked and the human said yes, false if it did not ask
+// kind is one of TAINT_ASKS; only the kinds in "taint asks before" (or the default) ask
+async function askUntrusted(state, kind, action, node) {
+  if (state.taintMode === "off" || !state.taintAsks.includes(kind)) {
     return false;
   }
-  const entries = untrusted.pending(await untrusted.inputs(state.root, state.session));
+  // taint is for the whole project: the inputs of all sessions that are not approved
+  const entries = await untrusted.pendingAll(state.root);
   if (entries.length === 0) {
     return false;
   }
   const shown = action.length > 120 ? action.slice(0, 117) + "..." : action;
   // the question names at most 5 inputs, and "approve" approves only those; a source is cut, with no control characters
   const named = entries.slice(0, 5);
-  const sources = named.map((entry) => cutText(untrusted.printable(entry.source), 80)).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
+  const sources = named.map(({ entry }) => cutText(untrusted.printable(entry.source), 80)).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
   const count = entries.length === 1 ? "1 untrusted input is" : entries.length + " untrusted inputs are";
   const question = redact(shown + "? " + count + " not approved: " + sources + ". Review them with: npx clank-talk taint", state);
-  const answer = await askState(state, question, ["approve them and go on", "yes, this time only", "no"], null);
-  if (answer === "approve them and go on") {
-    const numbers = await untrusted.approve(state.root, state.session, named.map((entry) => entry.n));
-    auditStep(state, "approve", untrusted.storePath(state.session), "untrusted inputs " + numbers.join(", "));
+  const answer = await askState(state, question, ["approve and untaint", "yes, this time only", "no"], null);
+  if (answer === "approve and untaint") {
+    const refs = [];
+    for (const session of new Set(named.map((item) => item.session))) {
+      const numbers = await untrusted.approve(state.root, session, named.filter((item) => item.session === session).map((item) => item.entry.n));
+      refs.push(...numbers.map((n) => session + "/" + n));
+    }
+    auditStep(state, "approve", untrusted.STORE + "/", "untrusted inputs " + refs.join(", "));
     return true;
   }
   if (answer === "yes, this time only") {
     return true;
   }
-  throw new ScriptError("The human did not approve this in an untrusted session: " + shown + askReason(state) + ".", node);
+  throw new ScriptError("The human did not approve this while untrusted inputs are not approved: " + shown + askReason(state) + ".", node);
 }
 
 // why an approval did not come: no way to ask, or no answer in time; empty for a plain "no"
@@ -4372,7 +4421,6 @@ async function runHook(hook, step, state, node) {
 }
 
 // a deep copy of lists and plain objects; files, lines and secrets cannot change, so they stay as they are
-// the copy keeps the taint labels of the value
 function copyValue(value) {
   let copy = value;
   if (Array.isArray(value)) {
@@ -4465,7 +4513,6 @@ function scopeFor(name, state) {
 }
 
 // set a variable, a property or an index
-// the variable or object takes the labels of the command so far, which hold the value's labels
 async function assign(target, value, state) {
   if (target.type === "result") {
     state.result = value;
@@ -5123,7 +5170,7 @@ async function moveFile(from, to, state, node) {
 
 // is this file AGENTS.talk, by name (any case) or by being the same file on disk (a link to it)?
 // a protected path, relative to the root: any .talk file, anything in talk/ (extensions),
-// or anything in .talk/ (the audit and taint labels); no allow line can open these
+// or anything in .talk/ (the audit and the untrusted inputs); no allow line can open these
 // letter case does not matter, because some file systems ignore it
 function isProtectedPath(relative) {
   const lower = relative.toLowerCase();
@@ -5140,6 +5187,15 @@ async function isProtected(file, state, node) {
   const { real, relative } = await realTarget(file, state, node);
   if (isProtectedPath(relative)) {
     return true;
+  }
+  // if .talk/ is a link (a program with no sandbox can make one), its real target is protected too
+  try {
+    const talk = await fs.realpath(nodePath.join(state.root, ".talk"));
+    if (real === talk || real.startsWith(talk + nodePath.sep)) {
+      return true;
+    }
+  } catch (err) {
+    // no .talk/: nothing to add
   }
   try {
     const target = await fs.stat(real);

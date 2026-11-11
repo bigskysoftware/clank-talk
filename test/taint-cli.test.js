@@ -65,7 +65,8 @@ test("approve clears the inputs that it names, and --all clears all", async () =
   assert.deepEqual(await taint(root, "approve", "s-1/1"), { code: 0, text: "Approved 1 input." });
   assert.equal(await untrustedNow(root, "s-1"), true);
   assert.deepEqual(await taint(root, "approve", "s-1/2"), { code: 0, text: "Approved 1 input." });
-  assert.equal(await untrustedNow(root, "s-1"), false);
+  // taint is for the whole project: s-2 still has an input that is not approved
+  assert.equal(await untrustedNow(root, "s-1"), true);
   assert.equal(await untrustedNow(root, "s-2"), true);
   assert.deepEqual(await taint(root, "approve", "--all"), { code: 0, text: "Approved 1 input." });
   assert.equal(await untrustedNow(root, "s-2"), false);
@@ -96,6 +97,17 @@ test("list and show replace control characters from untrusted text", async () =>
   assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f]/.test(list + show));
   assert.match(list, /tool issue \(\?\[2Kclean\?\)/);
   assert.match(show, /\n\nissue \?\[2Kclean\?$/);
+});
+
+test("review 12: the command line knows about require taint in a policy", async () => {
+  const root = await project();
+  const policy = { name: "acme.talk", source: "policy 'safe'\nrequire taint" };
+  await run("print 1", { root, policy });
+  assert.match((await taint(root)).text, /^taint: on \(required by the policy safe\)/);
+  assert.deepEqual(await taint(root, "off"), { code: 1, text: "The policy safe has 'require taint', so taint stays on." });
+  // a run with a policy that does not require it removes the note
+  await run("print 1", { root, policy: { name: "other.talk", source: "policy 'other'\nlimit fetch to 'example.com'" } });
+  assert.match((await taint(root)).text, /^taint: on \(the default\)/);
 });
 
 test("an unknown command shows the usage", async () => {

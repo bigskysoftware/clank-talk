@@ -16,7 +16,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 ### The flag
 
 - Approved (built): after the agent sees untrusted text, the session is untrusted. Sources: fetch, an `untrusted tool`, a subagent (its answer, also from `process` and `stop`).
-- Approved (built): the session stays untrusted while at least one of its untrusted inputs is not approved.
+- Approved (built): the session stays untrusted while at least one untrusted input is not approved, in any session of the project. Why: a resumed conversation gets a new session, but the injection is still in the model's context (code review 2). The syntax stays `the session is untrusted`.
 - Approved (built): the flag comes from the store on disk, so it holds across scripts and host restarts. A run with no session name uses the folder `default`.
 - Approved (built): if the store cannot be written, the step fails. Why: an input that is not saved cannot make the session untrusted.
 
@@ -30,11 +30,12 @@ Replaces the labels on values below. Why: labels follow values inside one script
 
 ### Which actions ask
 
-- Approved (built): while the session is untrusted, these ask the human: push, `run` or `start` with network, a fetch to a new host, a fetch with a secret, a commit.
+- Approved (built): while the session is untrusted, by default only a push and a fetch with a secret ask the human. Why: each question is a decision, and after many of them people say yes without reading, or turn taint off.
+- Approved (built): `taint asks before push, secrets, commit, network runs, new hosts` in AGENTS.talk lists all that asks; the list replaces the default. `taint asks before nothing` asks nothing, and the store and the flag stay. `network runs` is a `run` or `start` with network or with no sandbox; `new hosts` is a fetch to a host not in `allow fetch from`. Earlier, all five asked.
 - Approved (built): a `run` or `start` with no sandbox asks too, because it has the network. `with local network` does not ask.
 - Approved (built): a sandboxed `run` or `start` with no network does not ask. File edits do not ask.
 - Approved (built): the question names the inputs that are not approved, at most 5: "Push origin? 2 untrusted inputs are not approved: tool issue (42), https://... Review them with: npx clank-talk taint".
-- Approved (built): the answers: `approve them and go on` (approves only the inputs that the question named), `yes, this time only` (the session stays untrusted), `no`. No answer is no.
+- Approved (built): the answers: `approve and untaint` (approves only the inputs that the question named), `yes, this time only` (the session stays untrusted), `no`. No answer is no.
 - Approved: a host in `allow fetch from` stays trusted in an untrusted session: a GET, a POST or a body to it asks nothing. Why: the human chose these hosts. Rejected: a question for a body or a method other than GET.
 - Approved (built): a fetch to a new host in an untrusted session asks one question, the session question. A yes (either form) also allows the host for the session, as the host question does.
 - Approved (built): a `run` or `start` with no sandbox asks too.
@@ -72,13 +73,28 @@ Replaces the labels on values below. Why: labels follow values inside one script
 
 - A broken `index.json` counts as an input that is not approved, so the session stays untrusted. A new input is not saved over it: the step fails, and a human must repair or remove the file.
 - One change at a time to a session's index, so two scripts in one process cannot lose an input.
-- The question names at most 5 inputs, and `approve them and go on` approves only those.
+- The question names at most 5 inputs, and `approve and untaint` approves only those.
 - A source in a question, and all untrusted text on the command line, show control characters as `?`. A source in a question is cut at 80 characters.
 - The error of an untrusted tool is an untrusted input too, as the agent sees it.
 - A session name that starts with dots stays inside the store.
 - Before a sandboxed run, `.talk/` is made, because on Linux the sandbox protects a hidden folder only if it exists when the program starts.
 - Approved (built), best effort: around a `run` with no sandbox, ClankTalk keeps a hash of each file in `.talk/`, a copy of the taint control files (`taint-state.json`, each `index.json`), and the last 1000 lines of the newest audit file. After the run, if a file changed: the error names each changed file, the control files go back (so taint cannot be turned off or approved this way), the output shows the saved audit lines, the audit notes a `restore` step, an untrusted input names the files, and the step fails. Other files are not put back. Writes of ClankTalk's own during the run (for example a background subagent that writes the audit) are noted, and are not changes; a second server process on the same project can still look like a change.
 - Limits, to document: a `start` with no sandbox keeps running, so it is not checked. A run with no sandbox can still change files outside `.talk/`. A policy with `require sandbox for run, start` closes this. Response headers from `fetch ... as response` do not go to the store. The cleanup runs only with the audit file.
+
+### Code review 2 (built)
+
+- Taint is for the whole project (see The flag).
+- A link in `.talk/`, or in place of it, is removed after a run with no sandbox, and the store comes back. The real target of a `.talk` link is protected from scripts.
+- An error after a redirect (a `data:` URL, a bad host) goes to the store, because the server chose its text.
+- A folder that ClankTalk deleted and then writes again loses its "deleted" mark, so a later removal is a change.
+- A write of ClankTalk's own on an index that changed since its last write is not noted as its own, so the check still finds the change.
+- The cleanup reads inside the lock, and never deletes a session with an input that is not approved.
+- Each index has a lock file (`index.json.lock`) for other processes, such as the command line, and is written with a rename. A lock older than 10 seconds is taken over.
+- The output of a subagent is stored before its length is noted. The print output of an untrusted tool goes to the store with its result. A program that an untrusted tool starts has untrusted output.
+- The judge gets the source inside the markers.
+- A line break in a source shows as `?` in the header of the text file.
+- A policy with `require taint` writes `.talk/taint-policy.json`, so the command line knows it.
+- Checked and correct: `keep audit` in AGENTS.talk cannot go below the policy's minimum; the load check refuses it.
 
 ### Hooks
 

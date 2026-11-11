@@ -85,10 +85,15 @@ export async function taintCommand(args, root, out, options = {}) {
   const [command = "list", ...rest] = args;
   const agentsLine = await agentsTaintLine(root);
 
+  // a policy that requires taint leaves a note in .talk/, because the command line cannot see the policy
+  const policy = await untrusted.policyRequires(root);
+
   if (command === "list") {
     const commandLine = await untrusted.commandLineMode(root);
     let state;
-    if (agentsLine === "required") {
+    if (policy !== null) {
+      state = "on (required by the policy " + untrusted.printable(policy) + ")";
+    } else if (agentsLine === "required") {
       state = "on (required by AGENTS.talk)";
     } else if (commandLine !== null) {
       state = commandLine + " (from the command line)";
@@ -200,6 +205,7 @@ export async function taintCommand(args, root, out, options = {}) {
       const text = await untrusted.inputText(root, session, entry);
       let verdict;
       try {
+        // the text starts after the header lines (source, time, cut) and one blank line
         verdict = await setup.judge(entry.source, text.slice(text.indexOf("\n\n") + 2));
       } catch (err) {
         out(session + "/" + entry.n + "  the judge failed: " + untrusted.printable(err.message));
@@ -212,6 +218,10 @@ export async function taintCommand(args, root, out, options = {}) {
   }
 
   if (command === "on" || command === "off") {
+    if (command === "off" && policy !== null) {
+      out("The policy " + untrusted.printable(policy) + " has 'require taint', so taint stays on.");
+      return 1;
+    }
     if (command === "off" && agentsLine === "required") {
       out("AGENTS.talk has 'taint required'. To turn taint off, remove that line.");
       return 1;

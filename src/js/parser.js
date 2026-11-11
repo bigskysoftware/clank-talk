@@ -2434,6 +2434,44 @@ export function parse(source, options = {}) {
     return { type: "keepAudit", days, atLeast, line: token.line, column: token.column };
   }
 
+  // the actions that ask while untrusted inputs are not approved, after "taint asks"; see src/md/features/taint.md
+  function parseTaintAsks(token) {
+    const example = "taint asks before push, secrets, commit, network runs, new hosts";
+    if (!isWord("before")) {
+      error("Expected 'before', as in: " + example);
+      return null;
+    }
+    i++;
+    if (isWord("nothing")) {
+      i++;
+      return { type: "taintAsks", asks: [], line: token.line, column: token.column };
+    }
+    const asks = [];
+    while (true) {
+      let item = null;
+      if (isWord("push") || isWord("secrets") || isWord("commit")) {
+        item = current().value;
+        i++;
+      } else if ((isWord("network") && tokens[i + 1] !== undefined && tokens[i + 1].value === "runs") || (isWord("new") && tokens[i + 1] !== undefined && tokens[i + 1].value === "hosts")) {
+        item = current().value + " " + tokens[i + 1].value;
+        i += 2;
+      } else {
+        error("Expected push, secrets, commit, network runs, new hosts or nothing, as in: " + example);
+        return null;
+      }
+      if (asks.includes(item)) {
+        error("'" + item + "' is in the list twice");
+        return null;
+      }
+      asks.push(item);
+      if (!isOp(",")) {
+        break;
+      }
+      i++;
+    }
+    return { type: "taintAsks", asks, line: token.line, column: token.column };
+  }
+
   // a judge line, after its first word (let or judge)
   function parseJudgeLine(token) {
     const at = { line: token.line, column: token.column };
@@ -2574,8 +2612,17 @@ export function parse(source, options = {}) {
       if (isWord("taint") && !options.policy) {
         const token = current();
         i++;
+        // taint asks before push, secrets, commit, network runs, new hosts | taint asks before nothing
+        if (isWord("asks")) {
+          i++;
+          const definition = parseTaintAsks(token);
+          if (definition !== null) {
+            definitions.push(definition);
+          }
+          continue;
+        }
         if (!isWord("on") && !isWord("off") && !isWord("required")) {
-          error("Expected 'on', 'off' or 'required', as in: taint required");
+          error("Expected 'on', 'off', 'required' or 'asks before', as in: taint required");
           continue;
         }
         definitions.push({ type: "taint", mode: current().value, line: token.line, column: token.column });

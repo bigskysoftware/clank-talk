@@ -343,15 +343,16 @@ export const HELP = [
   },
   {
     name: "taint", kind: "command", where: "AGENTS.talk",
-    syntax: "taint on | taint off | taint required | keep untrusted inputs up to <n> MB | let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '<text>'",
+    syntax: "taint on | taint off | taint required | taint asks before <push, secrets, commit, network runs, new hosts | nothing> | keep untrusted inputs up to <n> MB | let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '<text>'",
     description: [
       "Session taint. After text from fetch, an untrusted tool or a subagent, the session is untrusted until the human approves each input. Only at the top of AGENTS.talk.",
       "'taint on' is the default. 'taint off' turns it off. 'taint required' keeps it on, also against 'npx clank-talk taint off'.",
+      "'taint asks before' lists what asks the human while inputs are not approved. The default is push and secrets (a fetch with a secret). 'network runs' is a run or start with network or with no sandbox. 'new hosts' is a fetch to a host not in 'allow fetch from'. 'nothing' asks nothing, and still keeps the inputs.",
       "'keep untrusted inputs up to 5 MB' sets how much of each input .talk/untrusted/ keeps. The default is 1 MB.",
       "The judge is a model that reads an input and says clean, suspect or unsure. 'judge untrusted inputs automatically' runs it on each new input; else the human runs 'npx clank-talk taint judge'.",
       "'let the judge approve clean inputs' lets a clean verdict approve the input. 'judge with prompt' replaces the judge's prompt. 'use model ... for judging' sets its model.",
     ],
-    examples: ["taint required\nkeep untrusted inputs up to 5 MB", "use model 'claude-haiku-5-5' for judging with secret ANTHROPIC_API_KEY\nallow secret ANTHROPIC_API_KEY for subagents\njudge untrusted inputs automatically"],
+    examples: ["taint required\ntaint asks before push, secrets, commit\nkeep untrusted inputs up to 5 MB", "use model 'claude-haiku-5-5' for judging with secret ANTHROPIC_API_KEY\nallow secret ANTHROPIC_API_KEY for subagents\njudge untrusted inputs automatically"],
   },
   {
     name: "audit", kind: "expression",
@@ -497,8 +498,8 @@ export const HELP = [
     name: "untrusted", kind: "expression",
     syntax: "the session is untrusted | the session is not untrusted | the session's untrusted inputs",
     description: [
-      "After you see text from fetch, an untrusted tool or a subagent, the session is untrusted. The human keeps a copy of that text, and only the human can approve it.",
-      "While the session is untrusted, these ask the human first: push, commit, run or start with network or with no sandbox, a fetch to a new host, and a fetch with a secret.",
+      "After you see text from fetch, an untrusted tool or a subagent, the session is untrusted. The human keeps a copy of that text, and only the human can approve it. Taint is for the whole project: a new session starts untrusted while an input is not approved.",
+      "While the session is untrusted, a push and a fetch with a secret ask the human first. AGENTS.talk can ask before more ('taint asks before').",
       "'the session's untrusted inputs' lists the inputs that are not approved, with source and time.",
       "Values have no taint labels: 'x is untrusted' and 'x is private' are errors.",
     ],
