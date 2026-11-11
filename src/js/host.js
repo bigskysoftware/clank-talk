@@ -7,7 +7,7 @@ import { randomBytes, createHash } from "node:crypto";
 import nodePath from "node:path";
 import os from "node:os";
 import { listTools } from "./clank-talk.js";
-import { syntaxSummary } from "./help.js";
+import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
 
 // ----- the project root -----
@@ -166,7 +166,7 @@ export async function describeTool(root) {
         text += "\n  " + tool.name;
       }
       if (tool.description) {
-        text += "    " + tool.description.split("\n")[0];
+        text += "    " + toolSummary(tool.description);
       }
     }
     text += "\n  Add 'within 5 minutes' to a call to set a time limit. A tool gives back the result, often { code, output }. A call is also a value: set tests to run_tests.";

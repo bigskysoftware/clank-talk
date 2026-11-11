@@ -36,6 +36,7 @@
   ],
   "scripts": {
     "test": "node --test --test-timeout=60000 'test/**/*.test.js'",
+    "package-test": "node scripts/package-test.js",
     "build-site": "node docs/build.js",
     "serve-site": "node docs/serve.js",
     "build-coming-soon": "node docs/build.js && cp _site/coming-soon.html _site/index.html"

@@ -552,6 +552,22 @@ function descriptionText(entry, bullet) {
   return Array.isArray(entry.description) ? entry.description.map((rule) => bullet + rule).join("\n") : entry.description;
 }
 
+// the summary of a tool's comment: its lines up to the first one that ends a sentence, as one line,
+// so a sentence over two comment lines is not cut, and a note on a later line stays out
+export function toolSummary(description) {
+  if (!description) {
+    return "";
+  }
+  const kept = [];
+  for (const line of description.split("\n")) {
+    kept.push(line.trim());
+    if (/[.!?]$/.test(line.trim())) {
+      break;
+    }
+  }
+  return kept.join(" ");
+}
+
 // words that are part of another entry: help keeping shows run
 const PART_OF = { keeping: "run" };
 
@@ -625,7 +641,7 @@ export function helpIndex(tools, only) {
   if ((!only || only === "tools") && tools.length > 0) {
     lines.push("Tools:");
     for (const tool of tools) {
-      const description = tool.description ? tool.description.split("\n")[0] : "";
+      const description = toolSummary(tool.description);
       lines.push("  " + pad(toolSyntax(tool), 24) + description);
     }
     lines.push("");
