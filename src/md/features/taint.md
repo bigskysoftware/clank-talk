@@ -2,7 +2,7 @@
 
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
-Built: session taint, part (a): the flag, the store, the questions, `taint on|off|required`, `keep untrusted inputs up to`, `require taint` in a policy, and the session checks for hooks. The value labels below are removed.
+Built: session taint, part (a): the flag, the store, the questions, `taint on|off|required`, `keep untrusted inputs up to`, `taint required` in a policy (first written `require taint`), and the session checks for hooks. The value labels below are removed.
 Built: part (b), the command line: `bin/clank-talk.js`, `src/js/taint-cli.js`.
 Built: part (c), the judge: `src/js/judge.js`.
 Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
@@ -25,7 +25,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): AGENTS.talk sets the default: `taint on` (the default with no line), `taint off`, or `taint required`.
 - Approved (built in the runtime; the command is part (b)): the command line can change it: `npx clank-talk taint on`, `npx clank-talk taint off`. This choice wins over `taint on` and `taint off` in AGENTS.talk. It is kept in `.talk/taint-state.json`, which scripts cannot change.
 - Approved: `taint required` keeps it on. `taint off` on the command line then fails: "AGENTS.talk has 'taint required'. To turn taint off, remove that line." (Built in the runtime: the state file is ignored.)
-- Approved (built): a policy can hold `require taint`, with the same effect as `taint required`.
+- Approved (built): a policy can hold `taint required`, the same line as in AGENTS.talk. The old form `require taint` is an error that names the new form.
 - Approved: `npx clank-talk taint` shows the state and where it comes from: "on (from AGENTS.talk)", "off (from the command line)".
 
 ### Which actions ask
@@ -66,7 +66,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): the text goes between markers with a random name, so the text cannot close the block. The source goes before it.
 - Approved (built): a fixed default prompt in `src/js/judge.js`. `judge with prompt '...'` (or a text block) in AGENTS.talk replaces it. The answer format is always added after the prompt.
 - Approved (built): by default the verdict is advice only. A human approves.
-- Approved (built): `let the judge approve clean inputs` in AGENTS.talk: a `clean` verdict approves the input (`approvedBy: the judge`). `suspect` and `unsure` never approve. `require taint` in a policy does not block this line.
+- Approved (built): `let the judge approve clean inputs` in AGENTS.talk: a `clean` verdict approves the input (`approvedBy: the judge`). `suspect` and `unsure` never approve. `taint required` in a policy does not block this line.
 - Approved (built): `use model '<id>' for judging [with secret <NAME>]`. With no line, the judge uses the subagent model. pi lends its model. The key needs `allow secret <NAME> for subagents`.
 - Approved (built): by default the judge runs only on `npx clank-talk taint judge`. `judge untrusted inputs automatically` in AGENTS.talk runs it on each new input. A judge that fails gives a warning, and the input stays.
 
@@ -94,7 +94,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - The output of a subagent is stored before its length is noted. The print output of an untrusted tool goes to the store with its result. A program that an untrusted tool starts has untrusted output.
 - The judge gets the source inside the markers.
 - A line break in a source shows as `?` in the header of the text file.
-- A policy with `require taint` writes `.talk/taint-policy.json`, so the command line knows it.
+- A policy with `taint required` writes `.talk/taint-policy.json`, so the command line knows it.
 - Checked and correct: `keep audit` in AGENTS.talk cannot go below the policy's minimum; the load check refuses it.
 
 ### Review in the harness

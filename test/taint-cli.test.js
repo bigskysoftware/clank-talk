@@ -101,12 +101,12 @@ test("list and show replace control characters from untrusted text", async () =>
 
 test("review 12: the command line knows about require taint in a policy", async () => {
   const root = await project();
-  const policy = { name: "acme.talk", source: "policy 'safe'\nrequire taint" };
+  const policy = { name: "acme.talk", source: "policy 'safe'\ntaint required" };
   await run("print 1", { root, policy });
   assert.match((await taint(root)).text, /^taint: on \(required by the policy safe\)/);
-  assert.deepEqual(await taint(root, "off"), { code: 1, text: "The policy safe has 'require taint', so taint stays on." });
+  assert.deepEqual(await taint(root, "off"), { code: 1, text: "The policy safe has 'taint required', so taint stays on." });
   // a run with a policy that does not require it removes the note
-  await run("print 1", { root, policy: { name: "other.talk", source: "policy 'other'\nlimit fetch to 'example.com'" } });
+  await run("print 1", { root, policy: { name: "other.talk", source: "policy 'other'\nlimit fetch from 'example.com'" } });
   assert.match((await taint(root)).text, /^taint: on \(the default\)/);
 });
 

@@ -41,7 +41,7 @@ policy 'acme-secure'
 require sandbox for run, start
 
 # ceilings: AGENTS.talk may allow only a subset
-limit fetch to 'api.github.com', '*.acme.internal'
+limit fetch from 'api.github.com', '*.acme.internal'
 limit env to PATH, HOME, JAVA_HOME
 limit changes to @/.github/
 limit output keeping the first 200 and the last 200 lines or 20 KB
@@ -68,8 +68,9 @@ end
 - Approved (built): `deny writes` denies file changes (`write`, `append`, line edits, `replace` in a file, `undo`) and git changes (`switch`, `commit`, `merge`, `delete`). It does not cover programs: a program in a sandbox can write in the project. For a read-only session, also `deny run` and `deny start`.
 - Approved (built): the rules apply at load time to AGENTS.talk tools and hooks, and again at run time to each step. Thus a script cannot get around them.
 - Approved (built): under `limit fetch`, a host outside the limit is refused. The human is not asked.
-- Approved (built): `limit secrets to GITHUB_TOKEN, NPM_TOKEN`: an `allow secret` line for another name is a load error. `deny secrets`: any `allow secret` line is a load error. A host in `allow secret ... for fetch to` outside `limit fetch to` is a load error, the same as `allow fetch from`. See [secrets.md](secrets.md).
+- Approved (built): `limit secrets to GITHUB_TOKEN, NPM_TOKEN`: an `allow secret` line for another name is a load error. `deny secrets`: any `allow secret` line is a load error. A host in `allow secret ... for fetch to` outside `limit fetch from` is a load error, the same as `allow fetch from`. See [secrets.md](secrets.md).
 - Approved (built): `limit output keeping ...` chooses the print output that the agent sees, with the same forms as `run ... keeping`. AGENTS.talk cuts first, then the policy, then the host. See [host.md](../infrastructure/host.md). Replaced: `limit output to <n> lines [or <n> KB]`, which is now an error that names the new form.
+- Approved (built): a setting that both files have is written the same way in both. So a policy has `taint required`, not `require taint`, and `limit fetch from`, as in `allow fetch from`. The old forms are errors that name the new form. A policy keeps `limit`, `deny` and `require` for its ceilings, and AGENTS.talk keeps `allow`, so the first word shows which file sets the ceiling.
 
 ## Errors
 

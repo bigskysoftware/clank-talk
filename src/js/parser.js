@@ -2405,7 +2405,8 @@ export function parse(source, options = {}) {
   // one line of a policy, after its first word:
   //   policy 'name'
   //   require sandbox for run, start
-  //   limit fetch to 'host', ...    limit env to NAME, ...    limit changes to @/path, ...
+  //   taint required (in the definitions loop)
+  //   limit fetch from 'host', ...    limit env to NAME, ...    limit changes to @/path, ...
   //   deny git push | deny start | deny fetch | deny run | deny writes
   //   audit also to '/path/'
   function parsePolicyLine(token) {
@@ -2420,13 +2421,13 @@ export function parse(source, options = {}) {
       return { type: "policyName", name: name.value, ...at };
     }
     if (token.value === "require") {
-      // require taint: the session taint stays on; see src/md/features/taint.md
+      // the old form of taint required
       if (isWord("taint")) {
-        i++;
-        return { type: "requireTaint", ...at };
+        error("'require taint' is now 'taint required', the same as in AGENTS.talk");
+        return null;
       }
       if (!isWord("sandbox")) {
-        error("Expected 'sandbox for run, start' or 'taint'");
+        error("Expected 'sandbox for run, start'");
         return null;
       }
       i++;
@@ -2457,8 +2458,14 @@ export function parse(source, options = {}) {
         return null;
       }
       i++;
-      if (!isWord("to")) {
-        error("Expected 'to'");
+      // limit fetch from, as in allow fetch from; the others take to
+      const word = what.value === "fetch" ? "from" : "to";
+      if (what.value === "fetch" && isWord("to")) {
+        error("'limit fetch to' is now 'limit fetch from', the same as 'allow fetch from' in AGENTS.talk");
+        return null;
+      }
+      if (!isWord(word)) {
+        error("Expected '" + word + "'");
         return null;
       }
       i++;
@@ -2728,6 +2735,18 @@ export function parse(source, options = {}) {
         if (definition !== null) {
           definitions.push(definition);
         }
+        continue;
+      }
+      // taint required in a policy: the same words as AGENTS.talk; see src/md/features/policy.md
+      if (isWord("taint") && options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("required")) {
+          error("A policy can only have 'taint required'");
+          continue;
+        }
+        i++;
+        definitions.push({ type: "requireTaint", line: token.line, column: token.column });
         continue;
       }
       // taint on | taint off | taint required (AGENTS.talk); see src/md/features/taint.md

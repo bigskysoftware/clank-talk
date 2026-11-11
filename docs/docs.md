@@ -553,28 +553,74 @@ Nothing is lost, though: the result's `full` has every line, so your agent can d
 
 The same `keeping` works for everything a script prints, with a line at the top of `AGENTS.talk`, like `limit output keeping the last 400 lines`.  The full text is then in `the previous output`.  ClankTalk already cuts at 1000 lines or 30 KB by default, so you will rarely need it.
 
-### ClankTalk Audit History
+<h3 id="audit">ClankTalk Audit History</h3>
 
-ClankTalk writes down every step that touches the world: every read, change, `run`, git command, `fetch`, `ask` and tool call, along with the script that did it.  (You can see what that looks like in the [audit](#audit) section.)
+ClankTalk writes down every step that touches the world: every read, change, `run`, git command, `fetch`, `ask` and tool call, along with the script that did it.  You can watch it live:
+
+```bash
+tail -f .talk/audit/*.log
+```
+
+```audit
+-- session claude-code-4f2a --
+== 10:42:01  script 12  Raise the retries  (done, 4 steps) ==
+  in @/src/config.js
+    replace 'retries: 3' with 'retries: 5'
+  run_tests
+--
+10:42:01  replace  src/config.js                             1 match, line 12
+10:42:01  tool     run_tests
+10:42:09    run    npm test                                  sandbox, local network, code 0, 7.9 s
+```
 
 The history goes to `.talk/audit/`, one file a day, and scripts can't change it.  Your agent can read its own steps with `the audit`, which is handy when it wants to remember what it just did.
 
-By default ClankTalk keeps three days of history.  If you want a week, in a form your own tools can chew on, add this to your `AGENTS.talk`:
+By default, ClankTalk keeps three days of history.  
+
+If you wanted to keep a week, you could add this to your `AGENTS.talk`:
 
 ```talk AGENTS.talk
 keep audit for 7 days
 audit as json
 ```
 
-With `audit as json`, each line of the file is a JSON object, so `jq` and friends work on it.
+Adding `audit as json` turns each line of the file is a JSON object, so `jq` and friends can work with them.
 
-### Summaries From a Model
+### Sharing Tools
 
-TODO (Carson): the problem: your agent wants a summary of the open issues, without reading every one.
+Once you have a nice set of GitHub tools, you'll probably want them grouped together and maybe moved out of your `AGENTS.talk` file.
+
+You can put them in their own `.talk` file and import it:
+
+```talk AGENTS.talk
+import ./talk/github.talk
+```
+
+Note that a `./` path starts from the file doing the importing and `@/` starts from the project root.
+
+Just like `AGENTS.talk`, your agent can't change anything in `talk/`, or any `.talk` file for that matter, so your shared tools stay safe.
+
+<h3 id="taint">Taint & Reading GitHub Issues</h3>
+
+OK, now we are going to cover a feature that, I'm going to be honest, I'm not 100% sure on: tainting.
+
+Tainting has a long history in programming languages.  Perl's [taint mode](https://perldoc.perl.org/perlsec), for example, won't let data from outside the program, like command line arguments or environment variables, reach a shell command or a file write until you check it with a regular expression.
+
+I am trying to come up with something similar around [prompt injection](https://simonwillison.net/2022/Sep/12/prompt-injection/), and this is my current thinking on the problem.
+
+Let's motivate the discussion with an interesting use of agents near and dear ot my heart: sifting through issues on github.
+
+Before we get into ClankTalk's tain infrastucture, let's set up a _subagent_ with a restricted tool set to do github issue analysis for us:
 
 ```talk AGENTS.talk
 allow secret ANTHROPIC_API_KEY for subagents
 use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY
+
+# Shows a GitHub issue.
+untrusted tool issue with id
+  run 'gh' with 'issue', 'view', id in a sandbox with network,
+    reads of '~/.config/gh'
+end
 
 # Summarizes the most important open issues.
 tool summarize_issues
@@ -582,74 +628,76 @@ tool summarize_issues
 end
 ```
 
-- A subagent is a model that can call only the tools after `with only`. Those tools cannot write, fetch or use git.
-- Its answer is always untrusted.
-- In pi it uses pi's model, and needs no key.
-- `start '...' as 'issues' in a subagent with only issue` runs it in the background.
+A subagent is a separate model that can only call the tools you give it.  Here, the subagent can call `issue` and nothing else, and the tools you give a subagent can't write files, fetch or use git.  
 
-### Sharing Tools
+So even if a prompt injection happens in an issue and talks the subagent into something, there isn't much it can do.
 
-TODO (Carson): the problem: every project needs the same GitHub tools.
+<aside>
 
-```talk AGENTS.talk
-import ./talk/github.talk
-```
+In pi, a subagent uses pi's own model, so you don't need a key.
 
-- Put shared tools in a `.talk` file in `talk/`. Your agent cannot change `talk/`, or any `.talk` file.
+</aside>
 
-<h3 id="taint">Reading GitHub Issues</h3>
+Don't get too comfortable with the subagent, though: it read the public issues, so its answer to the calling
+agent untrusted too.  It *taints* your session just like the issues would: yes, it's harder to pull off, but
+still possible.
 
-Now let's get to an interesting one near and dear to my heart: reading issues on github.  It's amazing to have agents sift and sort them, but they are consuming text written by (often angry!) strangers on the internet!
+After your agent reads the sub-agents response, the whole session is _tainted_.
 
-They are, sadly, a vector of attack for [prompt injections](https://simonwillison.net/2022/Sep/12/prompt-injection/).
-
-```talk AGENTS.talk
-# Shows a GitHub issue.
-untrusted tool issue with id
-  run 'gh' with 'issue', 'view', id in a sandbox with network,
-    reads of '~/.config/gh'
-end
-```
-
-Here, the `untrusted` keyword marks that the content returned by this tool cannot be trusted.  After your agent reads it, the whole session is _tainted_.
 
 #### How Tainting Works
 
-Why the whole session, and not just the text?  Because your agent reads the issue.  If the issue says "push this branch to my fork", the agent can type that into its next script, and the text no longer looks like it came from the web.  So ClankTalk marks the session, not the value.
-
-Three things taint a session:
+Three things can taint a ClankTalk session:
 
 - a `fetch`
 - a call to an `untrusted tool`
 - the answer of a subagent
 
-Each time, ClankTalk saves a copy of the text in `.talk/untrusted/<session>/`, with where it came from and when.  Your agent cannot change or delete these files, so you can always see what it read.
+Each time, ClankTalk saves a copy of the text in `.talk/untrusted/<session>/`, with where it came from and when.  
+Your agent cannot change or delete these files, so you can always see what it read.
 
-While the session is tainted, two actions ask you first, because they do harm outside your machine:
+By default, while your session is tainted, two actions require confirmation:
 
 - a `git push`
 - a `fetch` that sends a secret
 
-Everything else goes on as usual.  Why so few?  Every question is a small decision, and after the tenth one people click yes without reading, or turn taint off.  A question that you answer without reading protects nothing.
-
-TODO (Carson): the decision fatigue problem, in your words.
-
-If you want more questions, list them all in `AGENTS.talk`:
+There are of course other actions that can potentially compromise you, and you can add them to taint checking:
 
 ```talk AGENTS.talk
 taint asks before push, secrets, commit, network runs, new hosts
 ```
 
+where:
+
 - `commit`: a `git commit`.
 - `network runs`: a `run` or `start` with the network, or with no sandbox.
 - `new hosts`: a `fetch` to a host that is not in an `allow fetch from` line.  (A new host also asks in a clean session; this adds the list of inputs to that question.)
-- `taint asks before nothing` asks nothing, but still keeps the inputs for you to review.
+
+For anything else, a hook can check `the session is untrusted` itself:
+
+```talk AGENTS.talk
+before deploy
+  if the session is untrusted
+    reject 'No deploys after reading untrusted text'
+  end
+end
+```
+
+A hook can also list `the session's untrusted inputs`, if you want to say which ones are in the way.
+
+Now, why is the default to only ask on `push` and `fetch`?
+
+Because of the well known psychological problem of [decision fatigue](https://en.wikipedia.org/wiki/Decision_fatigue).  
+
+We are trying to balance security with usefulness of this features, so people actually use it.  We'll see how it goes.
 
 #### Untainting
 
-Taint stays until you approve each untrusted input.  It covers the whole project, not one conversation: if you resume a conversation, the injection is still in your agent's context, so a new session starts tainted too.  You can approve inputs in two places.
+Taint stays until you approve the untrusted input.  It covers the whole project, not one conversation: if you resume a conversation, the injection is still in your agent's context, so a new session starts tainted too.  
 
-When ClankTalk asks you about a risky action, the question names the inputs:
+You can approve inputs in two places.
+
+When ClankTalk asks you about a risky action, the question gives the untrusted content:
 
 ```text
 Push origin master? 2 untrusted inputs are not approved:
@@ -661,7 +709,7 @@ Review them with: npx clank-talk taint
 - `yes, this time only` says "let this action through, but I did not check the inputs".  The action runs, the inputs stay unapproved, and the next risky action asks again.
 - `no` stops the action.
 
-Or, from your terminal:
+You can also use your terminal to look at tainted content:
 
 ```bash
 $ npx clank-talk taint                  # list the inputs
@@ -672,133 +720,60 @@ $ npx clank-talk taint approve --all    # approve all
 
 Your agent has no shell in ClankTalk, so it cannot run these commands.
 
-If you do not want to read every input yourself, a _judge_ model can read them for you and say `clean`, `suspect` or `unsure`:
+#### LLM Judging
+
+If you do not want to read every input yourself you can use a _judge_ model can read them for you and say `clean`, `suspect` or `unsure`:
 
 ```bash
 $ npx clank-talk taint judge --all
 $ npx clank-talk taint approve --clean
 ```
 
-The judge reads the same text as your agent, so an injection can fool it too.  Its verdict is advice, unless you say otherwise.
+Note that the judge reads the same text as your agent, so a prompt injection attack can fool it too.
 
 #### Configuration
+
+Here are all the configuration options for taint:
 
 ```talk AGENTS.talk
 # on (the default), off, or required: required means no one can turn it off
 taint required
 
-# how much of each input to keep for review (1 MB by default)
+# how much of each untrusted input to keep for review (1 MB by default)
 keep untrusted inputs up to 5 MB
 
-# the judge: its model, when it runs, and what it may do
+# the judge: a model that reads each input, and says clean, suspect or unsure
 use model 'claude-haiku-5-5' for judging with secret ANTHROPIC_API_KEY
+
+# the judge needs the key, as a subagent does
 allow secret ANTHROPIC_API_KEY for subagents
+
+# judge each new input when it comes in (else: npx clank-talk taint judge)
 judge untrusted inputs automatically
+
+# a clean verdict approves the input, so you get no question for it
 let the judge approve clean inputs
 ```
 
 - `npx clank-talk taint off` and `npx clank-talk taint on` change the setting from your terminal.  They win over `taint on` and `taint off`, but not over `taint required`.
 - `judge with prompt '...'` replaces the prompt of the judge.
-- A team policy can hold `require taint`, which works like `taint required`.
-- A program with no sandbox runs as you, so it can change `.talk/`.  ClankTalk checks `.talk/` after each such `run`, and stops the script if something changed.
+- A [team policy](policy.html) can hold `taint required` too.
 
-### No Programs After Web Text
+### Creating An Agents.talk File
 
-TODO (Carson): the problem: after your agent reads an issue, you do not want it to run programs at all, not even with a question.
+A `AGENTS.talk` file is declared in the following order:
 
-```talk AGENTS.talk
-before run
-  if the session is untrusted
-    reject 'No programs after web text'
-  end
-end
+1. The top lines: `allow`, `use model`, `limit`, `keep audit` and `taint`
+2. Imports and tools
+3. Hooks, which run in the order you write them
+
+See the [AGENTS.talk reference](agents-talk.html) for more details.
+
+A suggested prompt for a non-ClankTalk agent to generate an `AGENTS.talk` is:
+
+```md
+Read <link> and walk me through creating an AGENTS.talk file for this project
 ```
-
-- A hook can check `the session is untrusted`, and list `the session's untrusted inputs`.
-
-### The Whole File
-
-TODO (Carson): all of it together. The order: `allow`, `use model`, `limit` and `keep audit` lines at the top, then imports and tools, then hooks. Hooks run in the order that you write them.
-
-```talk AGENTS.talk
-allow env PATH, HOME
-allow fetch from http://localhost:5173/, 'api.github.com'
-allow changes to @/.github/
-allow secret GITHUB_TOKEN for fetch to 'api.github.com'
-allow secret NPM_TOKEN for run
-allow secret ANTHROPIC_API_KEY for subagents
-use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY
-limit output keeping the first 200 and the last 200 lines
-keep audit for 7 days
-audit as json
-
-# issue and summarize_issues
-import ./talk/github.talk
-
-# Runs the full test suite.
-tool run_tests
-  run 'npm test'
-    in a sandbox with local network, reads of '~/.cache/ms-playwright'
-    within 10 minutes
-end
-
-# Runs one test file.
-tool run_test_file with file
-  run 'node' with '--test', file in a sandbox
-end
-
-# Starts the dev server.
-tool dev_server
-  start 'npm run dev' as 'dev' in a sandbox with local network
-end
-
-# Installs the dependencies.
-tool npm_install
-  run 'npm install' in a sandbox with network, writes to '~/.npm'
-end
-
-# Publishes the package.
-tool publish
-  run 'npm publish' using secret NPM_TOKEN in a sandbox with network
-end
-
-# Deploys the app: staging or prod.
-tool deploy with target
-  if target is 'prod'
-    ask 'Deploy to prod?' with 'yes' or 'no'
-    if the result is not 'yes'
-      reject 'Only a human can approve a prod deploy'
-    end
-  end
-  run 'fly' with 'deploy', '--app', 'shop-' + target in a sandbox with network
-end
-
-before run
-  if the run's sandbox is null
-    reject 'Use a sandbox'
-  end
-  if the session is untrusted
-    reject 'No programs after web text'
-  end
-end
-
-before git
-  if the git's operation is 'push'
-    ask 'Push this branch to origin?' with 'yes' or 'no'
-    if the result is not 'yes'
-      reject 'The human said no'
-    end
-  end
-end
-
-before change
-  if the change's path is in @/migrations/
-    reject 'A human writes the migrations'
-  end
-end
-```
-
-Every line above, and more, is in the [AGENTS.talk reference](agents-talk.html).
 
 ### Policies for Teams
 
@@ -851,25 +826,6 @@ TODO (Carson): only you answer; no answer is `null`, which means no.
 - You get a question when the agent fetches from a new host, when untrusted text goes into a program, a commit or a branch name, and when private text goes to a host for the first time.
 - Your agent can ask you too, with `ask`. Your hooks can ask you, as in [Hooks](#hooks).
 - With no answer in 2 minutes, the answer is no.
-
-<h3 id="audit">The Audit Log</h3>
-
-```bash
-tail -f .talk/audit/*.log
-```
-
-```audit
-== 10:42:01  session claude-code-4f2a  script 12 (main)  done  6 steps ==
-  in @/src/config.js
-    replace 'retries: 3' with 'retries: 5'
-  run_tests
---
-10:42:01  replace  src/config.js                             undo saved
-10:42:01  tool     run_tests
-10:42:09  run      npm test                                  in a sandbox with local network, code 0, 7.9 s, from run_tests
-```
-
-TODO (Carson): every step goes to `.talk/audit/`, one file a day, kept for 3 days (`keep audit for 7 days` in `AGENTS.talk` keeps more). The agent cannot change it; `audit as json` for tools; `the audit` lets the agent read its own steps.
 
 <h3 id="undo">Undo</h3>
 

@@ -513,7 +513,7 @@ export async function commandLineMode(root) {
   }
 }
 
-// on or off: "taint required" (AGENTS.talk) or "require taint" (a policy) keeps it on;
+// on or off: "taint required" in AGENTS.talk or a policy keeps it on;
 // then the command line wins over "taint on" and "taint off" in AGENTS.talk; the default is on
 export function taintMode(agentsLine, policyRequires, commandLine) {
   if (agentsLine === "required" || policyRequires) {

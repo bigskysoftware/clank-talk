@@ -228,7 +228,7 @@ export async function taintCommand(args, root, out, options = {}) {
 
   if (command === "on" || command === "off") {
     if (command === "off" && policy !== null) {
-      out("The policy " + untrusted.printable(policy) + " has 'require taint', so taint stays on.");
+      out("The policy " + untrusted.printable(policy) + " has 'taint required', so taint stays on.");
       return 1;
     }
     if (command === "off" && agentsLine === "required") {

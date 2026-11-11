@@ -191,7 +191,7 @@ test("the command line wins over taint on and taint off, and taint required or a
   await setCommandLine(required, "off");
   await run("issue 1", { root: required });
   assert.equal(await untrustedNow(required), true);
-  const policy = { name: "acme.talk", source: "policy 'safe'\nrequire taint" };
+  const policy = { name: "acme.talk", source: "policy 'safe'\ntaint required" };
   const byPolicy = await project("taint off");
   await run("issue 1", { root: byPolicy, policy });
   assert.equal(await untrustedNow(byPolicy, { policy }), true);

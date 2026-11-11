@@ -131,7 +131,7 @@ test("a bad URL pattern is a load error", async () => {
 });
 
 test("a policy that limits fetch checks the host of a URL pattern", async () => {
-  const policy = { name: "acme.talk", source: "policy 'net'\nlimit fetch to 'api.github.com'" };
+  const policy = { name: "acme.talk", source: "policy 'net'\nlimit fetch from 'api.github.com'" };
   await agents("allow fetch from https://api.github.com/repos/");
   assert.equal(await firstError("print 1", { policy }), null);
   await agents("allow fetch from https://evil.example/");

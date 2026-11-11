@@ -28,7 +28,7 @@ policy 'acme-secure'
 require sandbox for run, start
 
 # ceilings: an AGENTS.talk can allow only a part of these
-limit fetch to 'api.github.com', '*.acme.internal'
+limit fetch from 'api.github.com', '*.acme.internal'
 limit env to PATH, HOME, JAVA_HOME
 limit changes to @/.github/
 limit secrets to GITHUB_TOKEN
@@ -56,11 +56,12 @@ end
 | Rule | Effect |
 |---|---|
 | `require sandbox for run, start` | A tool that runs or starts a program with no `in a sandbox` is an error. |
-| `limit fetch to '<host>', ...` | Agents reach only these hosts. A host outside the list is refused, with no question to the user. |
+| `limit fetch from '<host>', ...` | Agents reach only these hosts. A host outside the list is refused, with no question to the user. |
 | `limit env to <NAME>, ...` | Programs get only these environment variables. |
 | `limit changes to <path>, ...` | Projects can allow changes only to these hidden files and folders. |
 | `limit secrets to <NAME>, ...` | Projects can use only these secrets. |
 | `deny secrets` | Projects cannot use secrets. |
+| `taint required` | Session taint stays on: a project cannot turn it off, and neither can `npx clank-talk taint off`. |
 | `limit output keeping <lines> [or <n> KB]` | Agents see only these lines of the output of one script: the first, the last, both, or lines matching a pattern. |
 | `deny git push` | No push. |
 | `deny start` | No background programs, such as servers. |

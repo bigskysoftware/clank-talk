@@ -215,6 +215,10 @@ pre {
 .features:not(.showcase) a { text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
 .features:not(.showcase) a:hover { text-decoration-thickness: 2px; }
 .features:not(.showcase) :not(pre) > code { padding: 0; font-size: 0.88em; font-weight: 600; color: var(--code-inline); background: none; border: none; }
+/* an aside in the docs: a side note, set off from the text */
+.features aside { position: relative; margin: 1.4rem 0; padding: 0.65rem 1.1rem 0.65rem 2.9rem; background: #eef4fb; border: 1px solid #cfe0f2; border-radius: 8px; font-size: 0.93em; color: #34495e; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+.features aside::before { content: "i"; position: absolute; left: 1rem; top: 0.95rem; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: var(--accent); color: #fff; font: italic 600 0.8rem/1.2rem Georgia, serif; text-align: center; }
+.features aside p { margin: 0.3rem 0; }
 .features:not(.showcase) > pre { margin: 1.1rem 0 1.4rem; font-size: 0.88rem; line-height: 1.6; }
 /* in the docs, a window is as wide as its code, up to the width of the text, and centered */
 .features:not(.showcase) .window:not(.compare > .window) { width: fit-content; min-width: min(500px, 100%); max-width: 100%; margin: 1.1rem auto 1.4rem; }

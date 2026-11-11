@@ -37,7 +37,7 @@ The risk: a fetch can send project data to any host, in the URL or the body. A w
   - The URL parser removes `.` and `..` parts before the match. The query is not part of the match. A pattern cannot hold a user name, a password, `?` or `#`.
   - A private host needs a pattern with its exact name, as for a host in quotes.
   - Each redirect must match too. A redirect on the same origin keeps the headers, so a URL pattern for a secret is checked again.
-  - A policy's `limit fetch to` checks the host of a URL pattern. Rejected for now: URL patterns in `limit fetch to`.
+  - A policy's `limit fetch from` checks the host of a URL pattern. Rejected for now: URL patterns in `limit fetch from`.
   - Rejected: regexps (`pattern '...'`). It is easy to write one that matches too much.
   - Hosts in quotes work as before, with all ports and schemes.
 - Approved (built): the runtime also looks up the addresses of a name. If one of them is a local or private address, the fetch is refused, as for a private host. Only a line in AGENTS.talk with that exact name allows it. A name that does not resolve is not refused here: the fetch itself then fails.

@@ -1086,7 +1086,7 @@ function checkPolicy(policy, agents) {
     return "'" + shown + "' is outside the policy: " + ruleAt(rule) + " limits " + rule.what + " to " + rule.values.join(", ");
   };
   for (const { definition, where } of agents.allows) {
-    // allow secret: inside "deny secrets", "limit secrets to" and "limit fetch to"
+    // allow secret: inside "deny secrets", "limit secrets to" and "limit fetch from"
     if (definition.type === "allowSecret") {
       if (denied.secrets) {
         errors.push({ message: "This uses secrets, and " + ruleAt(denied.secrets) + " denies secrets", ...where });
@@ -1156,7 +1156,7 @@ function plainPath(shown) {
   return shown.replace(/^@\//, "").replace(/^\.\//, "").replace(/\/+$/, "");
 }
 
-// a host or a *. pattern from "allow fetch from" is inside the policy's "limit fetch to"
+// a host or a *. pattern from "allow fetch from" is inside the policy's "limit fetch from"
 function isFetchHostInside(host, limits) {
   if (host.startsWith("*.")) {
     return limits.some((limit) => limit.startsWith("*.") && host.slice(1).endsWith(limit.slice(1)));
