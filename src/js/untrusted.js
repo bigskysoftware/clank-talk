@@ -15,9 +15,9 @@ export const STATE_FILE = ".talk/taint-state.json";
 // the size that an input keeps, by default; "keep untrusted inputs up to 5 MB" changes it
 export const DEFAULT_KEEP_BYTES = 1024 * 1024;
 
-// a session name as a folder name
+// a session name as a folder name; a name of only dots would point to another folder
 function folderName(session) {
-  return String(session || "default").replace(/[^A-Za-z0-9._-]/g, "-");
+  return String(session || "default").replace(/[^A-Za-z0-9._-]/g, "-").replace(/^\.+/, "_");
 }
 
 export function folder(root, session) {
@@ -35,14 +35,41 @@ export function localTime(date = new Date()) {
   return date.getFullYear() + "-" + two(date.getMonth() + 1) + "-" + two(date.getDate()) + " " + two(date.getHours()) + ":" + two(date.getMinutes()) + ":" + two(date.getSeconds());
 }
 
-// the inputs of a session; a missing or broken index is empty
+// the inputs of a session; a missing index is empty
+// a broken index counts as one input that is not approved, so the session stays untrusted
 export async function inputs(root, session) {
+  let text;
   try {
-    const entries = JSON.parse(await fs.readFile(nodePath.join(folder(root, session), "index.json"), "utf8"));
-    return Array.isArray(entries) ? entries : [];
+    text = await fs.readFile(nodePath.join(folder(root, session), "index.json"), "utf8");
   } catch (err) {
-    return [];
+    if (err.code === "ENOENT") {
+      return [];
+    }
+    return [broken(err.message)];
   }
+  try {
+    const entries = JSON.parse(text);
+    if (Array.isArray(entries) && entries.every((entry) => entry !== null && typeof entry === "object" && Number.isInteger(entry.n) && entry.n > 0)) {
+      return entries;
+    }
+  } catch (err) {
+    // a broken index: below
+  }
+  return [broken("index.json is not a list of inputs")];
+}
+
+// a broken index is input 0; record and approve refuse to change it
+function broken(reason) {
+  return { n: 0, time: "", source: "a broken store: " + reason, size: 0, cut: false, file: "index.json", approved: false };
+}
+
+// one change at a time to a session's index, so two scripts in one process cannot lose an input
+const locks = new Map();
+async function locked(root, session, work) {
+  const key = folder(root, session);
+  const done = (locks.get(key) || Promise.resolve()).then(work);
+  locks.set(key, done.catch(() => {}));
+  return await done;
 }
 
 // the sessions in the store, by folder name, oldest first
@@ -69,8 +96,15 @@ async function save(root, session, entries) {
 }
 
 // save one input; gives its entry
-export async function record(root, session, { source, text, time, keepBytes }) {
+export async function record(root, session, input) {
+  return await locked(root, session, () => recordNow(root, session, input));
+}
+
+async function recordNow(root, session, { source, text, time, keepBytes }) {
   const entries = await inputs(root, session);
+  if (entries.some((entry) => entry.n === 0)) {
+    throw new Error("the store is broken; a human must repair or remove " + storePath(session) + "index.json");
+  }
   const n = entries.length === 0 ? 1 : entries[entries.length - 1].n + 1;
   const bytes = Buffer.from(text, "utf8");
   const cut = bytes.length > keepBytes;
@@ -92,7 +126,14 @@ export function pending(entries) {
 // approve the inputs with these numbers; gives the numbers that changed
 // by says who approved: "the question" or "the command line"
 export async function approve(root, session, numbers, by = "the question") {
+  return await locked(root, session, () => approveNow(root, session, numbers, by));
+}
+
+async function approveNow(root, session, numbers, by) {
   const entries = await inputs(root, session);
+  if (entries.some((entry) => entry.n === 0)) {
+    return [];
+  }
   const changed = [];
   for (const entry of entries) {
     if (numbers.includes(entry.n) && !entry.approved) {
@@ -106,6 +147,12 @@ export async function approve(root, session, numbers, by = "the question") {
     await save(root, session, entries);
   }
   return changed;
+}
+
+// text from an input for a terminal or a question: control characters can hide text or move the cursor
+// keepLines keeps line breaks and tabs, for the text of an input
+export function printable(text, keepLines = false) {
+  return String(text).replace(keepLines ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g : /[\u0000-\u001f\u007f-\u009f]/g, "?");
 }
 
 // the text file of an input

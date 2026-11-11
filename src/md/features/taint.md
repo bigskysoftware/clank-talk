@@ -64,6 +64,17 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved: `use model '<id>' for judging [with secret <NAME>]`. With no line, the judge uses the subagent model.
 - Approved: by default the judge runs only on `npx clank-talk taint judge`. `judge untrusted inputs automatically` in AGENTS.talk runs it on each new input.
 
+### Security review (built)
+
+- A broken `index.json` counts as an input that is not approved, so the session stays untrusted. A new input is not saved over it: the step fails, and a human must repair or remove the file.
+- One change at a time to a session's index, so two scripts in one process cannot lose an input.
+- The question names at most 5 inputs, and `approve them and go on` approves only those.
+- A source in a question, and all untrusted text on the command line, show control characters as `?`. A source in a question is cut at 80 characters.
+- The error of an untrusted tool is an untrusted input too, as the agent sees it.
+- A session name that starts with dots stays inside the store.
+- Before a sandboxed run, `.talk/` is made, because on Linux the sandbox protects a hidden folder only if it exists when the program starts.
+- Limits, to document: a run with no sandbox can change anything, `.talk/` too; it asks only in an untrusted session. Response headers from `fetch ... as response` do not go to the store. The store has no cleanup yet.
+
 ### Hooks
 
 - Approved (built): `the session is untrusted` and `the session's untrusted inputs` (source and time) replace the label checks. `is untrusted` and `is private` on values go away. The old form gives a load error that names the new one.

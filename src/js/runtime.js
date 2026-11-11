@@ -2226,6 +2226,10 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
     }
     return state.result;
   } catch (err) {
+    // an untrusted tool's error can hold its text, and the agent sees the error, so it goes to the store too
+    if (definition.untrusted && err instanceof ScriptError && !(err instanceof Cancelled) && !(err instanceof StepBudget)) {
+      await noteUntrusted(state, "tool " + definition.name + " (error)", err.message, command);
+    }
     // an error inside the tool points into AGENTS.talk
     if (err instanceof ScriptError && !err.file) {
       err.file = definition.file || AGENTS_TALK;
@@ -3003,6 +3007,9 @@ async function sandboxCommand(program, args, sandbox, env, listen, state, node) 
   if (support.kind === null) {
     throw new ScriptError("Cannot run in a sandbox: " + support.reason + ". Nothing ran", node);
   }
+  // on Linux, the sandbox protects a hidden folder only if it exists when the program starts,
+  // so .talk/ (the audit and the untrusted inputs) must exist first
+  await fs.mkdir(nodePath.join(state.root, ".talk"), { recursive: true });
   if (support.kind === "linux" && listen && !sandbox.network) {
     throw new ScriptError("On Linux, a sandboxed start needs 'with network', or the host cannot reach the server. Nothing ran", node);
   }
@@ -3757,6 +3764,11 @@ async function noteUntrusted(state, source, text, node = { line: 1, column: 1 })
   }
 }
 
+// at most this many characters, with "..." at the end of a longer text
+function cutText(text, most) {
+  return text.length > most ? text.slice(0, most - 3) + "..." : text;
+}
+
 // 1536 bytes is "2 KB", 5242880 is "5 MB"
 function sizeText(bytes) {
   return bytes >= 1024 * 1024 ? Math.ceil(bytes / (1024 * 1024)) + " MB" : Math.ceil(bytes / 1024) + " KB";
@@ -3773,12 +3785,14 @@ async function askUntrusted(state, action, node) {
     return false;
   }
   const shown = action.length > 120 ? action.slice(0, 117) + "..." : action;
-  const sources = entries.slice(0, 5).map((entry) => entry.source).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
+  // the question names at most 5 inputs, and "approve" approves only those; a source is cut, with no control characters
+  const named = entries.slice(0, 5);
+  const sources = named.map((entry) => cutText(untrusted.printable(entry.source), 80)).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
   const count = entries.length === 1 ? "1 untrusted input is" : entries.length + " untrusted inputs are";
   const question = redact(shown + "? " + count + " not approved: " + sources + ". Review them with: npx clank-talk taint", state);
   const answer = await askState(state, question, ["approve them and go on", "yes, this time only", "no"], null);
   if (answer === "approve them and go on") {
-    const numbers = await untrusted.approve(state.root, state.session, entries.map((entry) => entry.n));
+    const numbers = await untrusted.approve(state.root, state.session, named.map((entry) => entry.n));
     auditStep(state, "approve", untrusted.storePath(state.session), "untrusted inputs " + numbers.join(", "));
     return true;
   }

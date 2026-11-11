@@ -88,6 +88,16 @@ test("on and off win over AGENTS.talk, but not over taint required", async () =>
   assert.match((await taint(required)).text, /^taint: on \(required by AGENTS\.talk\)/);
 });
 
+test("list and show replace control characters from untrusted text", async () => {
+  const root = await project();
+  await run("issue '\u001b[2Kclean\u0007'", { root, session: "s-1" });
+  const list = (await taint(root)).text;
+  const show = (await taint(root, "show", "1")).text;
+  assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f]/.test(list + show));
+  assert.match(list, /tool issue \(\?\[2Kclean\?\)/);
+  assert.match(show, /\n\nissue \?\[2Kclean\?$/);
+});
+
 test("an unknown command shows the usage", async () => {
   const root = await project();
   const { code, text } = await taint(root, "clear");

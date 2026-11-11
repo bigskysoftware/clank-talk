@@ -101,7 +101,7 @@ export async function taintCommand(args, root, out) {
     // columns: ref, time, status, size, judge, source; the source is last, as it can be long
     const rows = [["ref", "time", "status", "size", "judge", "source"]];
     for (const { session, entry } of inputs) {
-      rows.push([session + "/" + entry.n, entry.time, statusText(entry), sizeText(entry.size) + (entry.cut ? " (cut)" : ""), judgeText(entry), entry.source]);
+      rows.push([session + "/" + entry.n, entry.time, statusText(entry), sizeText(entry.size) + (entry.cut ? " (cut)" : ""), untrusted.printable(judgeText(entry)), untrusted.printable(entry.source)]);
     }
     const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
     for (const row of rows) {
@@ -120,8 +120,9 @@ export async function taintCommand(args, root, out) {
       return 1;
     }
     out("status: " + statusText(found.entry) + (found.entry.approvedBy ? " by " + found.entry.approvedBy : ""));
-    out("judge: " + judgeText(found.entry));
-    out(await untrusted.inputText(root, found.session, found.entry));
+    out("judge: " + untrusted.printable(judgeText(found.entry)));
+    // the text is untrusted: control characters can hide text or move the cursor, so they show as ?
+    out(untrusted.printable(await untrusted.inputText(root, found.session, found.entry), true));
     return 0;
   }
 
