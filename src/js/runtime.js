@@ -3377,7 +3377,10 @@ async function sandboxCommand(program, args, sandbox, env, listen, state, node) 
 // ----- wait -----
 
 const WAIT_UNTIL_LIMIT = 30_000;
+// wait until with no "every": the first check after 200 ms, then twice as long each time, up to 5 seconds,
+// so a fast local check is fast, and a long wait on a web page does not send a request every 200 ms
 const WAIT_UNTIL_EVERY = 200;
+const WAIT_UNTIL_SLOWEST = 5_000;
 
 // wait for a time; cancel ends the wait at once
 const MAX_TIMER = 2 ** 31 - 1;
@@ -3421,6 +3424,8 @@ async function waitUntil(command, state) {
   limit = shorter(state.timeLimit, limit);
   const started = Date.now();
   let lastError = null;
+  const every = command.every ? await durationMs(command.every, state) : null;
+  let pause = every === null ? WAIT_UNTIL_EVERY : every;
   while (true) {
     takeStep(command, state, state.maxSteps);
     try {
@@ -3434,11 +3439,14 @@ async function waitUntil(command, state) {
       }
       lastError = err.message;
     }
-    if (Date.now() - started + WAIT_UNTIL_EVERY > limit) {
+    if (Date.now() - started + pause > limit) {
       const last = lastError === null ? "" : ". The last error: " + lastError;
       throw new ScriptError("wait until did not come true within " + limit + "ms" + last, command);
     }
-    await sleep(WAIT_UNTIL_EVERY, state, command);
+    await sleep(pause, state, command);
+    if (every === null) {
+      pause = Math.min(pause * 2, WAIT_UNTIL_SLOWEST);
+    }
   }
 }
 
@@ -4116,6 +4124,11 @@ async function noteUntrusted(state, source, text, node = { line: 1, column: 1 })
     entry = await untrusted.record(state.root, state.session, { source: redact(source, state), text: redact(text, state), time: untrusted.localTime(), keepBytes: state.keepUntrustedBytes });
   } catch (err) {
     throw new ScriptError("Could not save untrusted input in " + where + ": " + err.message, node);
+  }
+  // the same source and text as an input that is there: no new copy; an approved one does not taint again
+  if (entry.same !== undefined) {
+    auditStep(state, "untrusted", source, "the same as " + entry.session + "/" + entry.entry.n + ", " + entry.same);
+    return;
   }
   auditStep(state, "untrusted", source, "saved as " + where + entry.file);
   if (entry.cut) {

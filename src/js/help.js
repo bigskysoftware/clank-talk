@@ -256,13 +256,13 @@ export const HELP = [
   },
   {
     name: "wait", kind: "command",
-    syntax: "wait <duration> | wait until <condition> [within <duration>]",
+    syntax: "wait <duration> | wait until <condition> [every <duration>] [within <duration>]",
     description: [
       "Wait for a time, or until a condition is true.",
-      "'wait until' checks every 200 ms. An error in the condition counts as false. With no 'within', it stops after 30 seconds.",
+      "'wait until' checks first after 200 ms, then twice as long each time, up to every 5 seconds. 'every 10 seconds' sets the pause. An error in the condition counts as false. With no 'within', it stops after 30 seconds.",
       "Durations: 100ms, 2s, 5 seconds, 1 minute.",
     ],
-    examples: ["wait 2 seconds", "wait until the status of fetch http://localhost:4000/ as response is 200 within 10 seconds"],
+    examples: ["wait 2 seconds", "wait until the status of fetch http://localhost:4000/ as response is 200 within 10 seconds", "wait until the latest of the dist-tags of fetch https://registry.npmjs.org/clank-talk as json is '0.2.0' every 30 seconds within 15 minutes"],
   },
   {
     name: "start", kind: "command", where: "AGENTS.talk",

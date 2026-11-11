@@ -1758,19 +1758,31 @@ export function parse(source, options = {}) {
   function parseWait(token) {
     if (isWord("until")) {
       i++;
-      const condition = parseBefore(["within"], parseExpression);
+      const condition = parseBefore(["every", "within"], parseExpression);
       if (condition === null) {
         return null;
       }
+      // every <duration>: how often to check; with none, the checks start fast and slow down
+      let every = null;
       let within = null;
-      if (isWord("within")) {
-        i++;
-        within = parseDuration();
-        if (within === null) {
+      while (isWord("every") || isWord("within")) {
+        const word = current().value;
+        if ((word === "every" && every !== null) || (word === "within" && within !== null)) {
+          error("'" + word + "' is given twice");
           return null;
         }
+        i++;
+        const duration = parseDuration();
+        if (duration === null) {
+          return null;
+        }
+        if (word === "every") {
+          every = duration;
+        } else {
+          within = duration;
+        }
       }
-      return { type: "waitUntil", condition, within, line: token.line, column: token.column };
+      return { type: "waitUntil", condition, every, within, line: token.line, column: token.column };
     }
     const duration = parseDuration();
     if (duration === null) {

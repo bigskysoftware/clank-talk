@@ -42,6 +42,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 
 ### The store
 
+- Approved (built, 2026-11-11): an input with the same source and the same text as a stored input, in any session of the project, is not stored again. If that input is waiting, the session stays tainted by it. If it is approved, the new copy does not taint, because the human approved that exact text. The index keeps a sha256 of the text. The audit says `the same as <session>/<n>, approved` (or `waiting`). Why: a `wait until` that fetched the npm registry stored 400 copies of one page.
 - Approved (built): each untrusted input is saved in `@/.talk/untrusted/<session>/`: `index.json` (number, time, source, size, cut, approved), and `<n>.txt` with the source, the time, and the text. Secrets show as `<secret NAME>`. Scripts cannot change `.talk/`.
 - Approved (built): the source: the final URL after redirects for a fetch; the name and arguments for a tool; the tool and prompt for a subagent.
 - Approved (built): at most 1 MB for each input by default. A larger input keeps its first 1 MB, and gives a warning in the script output: "warning: untrusted input 3 is 5 MB; the store kept the first 1 MB". The list (part b) shows it too.

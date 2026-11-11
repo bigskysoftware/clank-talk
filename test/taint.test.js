@@ -235,11 +235,25 @@ test("a broken index keeps the session untrusted, and no new input is saved over
 
 test("approve in a question approves only the 5 inputs that it names", async () => {
   const root = await project();
-  await run("repeat 6 times\n  issue 'x'\nend", { root });
+  await run("for n in [1, 2, 3, 4, 5, 6]\n  issue n\nend", { root });
   const approve = answers("approve and untaint");
   assert.deepEqual((await run("say 'hi'", { root, ask: approve.ask })).errors, []);
   assert.match(approve.asked[0].question, /6 untrusted inputs are not approved: .+, and 1 more\./);
   assert.deepEqual((await index(root)).map((entry) => entry.approved), [true, true, true, true, true, false]);
+  assert.equal(await untrustedNow(root), true);
+});
+
+test("the same source and text is stored once; after it is approved, it does not taint again", async () => {
+  const root = await project();
+  await run("issue 'x'\nissue 'x'", { root, session: "s-1" });
+  await run("issue 'x'", { root, session: "s-2" });
+  assert.equal((await index(root, "s-1")).length, 1);
+  assert.equal((await untrusted.pendingAll(root)).length, 1);
+  await untrusted.approve(root, "s-1", [1]);
+  await run("issue 'x'", { root, session: "s-3" });
+  assert.equal(await untrustedNow(root), false);
+  // other text from the same source is a new input
+  await run("issue 'y'", { root, session: "s-3" });
   assert.equal(await untrustedNow(root), true);
 });
 
@@ -280,7 +294,7 @@ test("inputs saved at the same time are all kept", async () => {
 
 test("the keep audit rules delete old sessions from the store, but not a broken one", async () => {
   const root = await project("keep audit for 2 days");
-  const old = (session, time) => untrusted.record(root, session, { source: "x", text: "t", time, keepBytes: 100 });
+  const old = (session, time) => untrusted.record(root, session, { source: "x", text: "t " + session, time, keepBytes: 100 });
   await old("old", "2020-01-01 10:00:00");
   await untrusted.approve(root, "old", [1]);
   // an old session with an input that is not approved stays: it keeps the project untrusted

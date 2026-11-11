@@ -145,11 +145,20 @@ async function save(root, session, entries) {
 }
 
 // save one input; gives its entry
+// the same source with the same text, in any session of the project, is not saved again: the result is
+// { same: "approved" | "waiting", session, entry } for the input that is there; see src/md/features/taint.md
 export async function record(root, session, input) {
-  return await locked(root, session, () => recordNow(root, session, input));
+  const hash = hashOf(Buffer.from(input.text, "utf8"));
+  for (const other of await sessions(root)) {
+    const found = (await inputs(root, other)).find((entry) => entry.hash === hash && entry.source === input.source);
+    if (found !== undefined) {
+      return { same: found.approved ? "approved" : "waiting", session: other, entry: found };
+    }
+  }
+  return await locked(root, session, () => recordNow(root, session, { ...input, hash }));
 }
 
-async function recordNow(root, session, { source, text, time, keepBytes }) {
+async function recordNow(root, session, { source, text, time, keepBytes, hash }) {
   const entries = await inputs(root, session);
   if (entries.some((entry) => entry.n === 0)) {
     throw new Error("the store is broken; a human must repair or remove " + storePath(session) + "index.json");
@@ -163,7 +172,7 @@ async function recordNow(root, session, { source, text, time, keepBytes }) {
   // the header is one line for each field: a line break in the source shows as ?
   await fs.writeFile(nodePath.join(folder(root, session), file), "source: " + printable(source) + "\ntime: " + time + (cut ? "\ncut: kept the first " + keepBytes + " of " + bytes.length + " bytes" : "") + "\n\n" + kept);
   await wroteOwn(nodePath.join(folder(root, session), file));
-  const entry = { n, time, source, size: bytes.length, cut, file, approved: false };
+  const entry = { n, time, source, size: bytes.length, cut, file, approved: false, hash };
   entries.push(entry);
   await save(root, session, entries);
   return entry;

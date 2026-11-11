@@ -286,3 +286,17 @@ test("check gives the parse errors of a script or of AGENTS.talk text, and runs 
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test("wait until slows down with no every, and every sets the pause", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  // each check is a step; with back-off, 1.5 s holds 4 checks (after 0, 200, 600 and 1400 ms); 200 ms each would be 8
+  const slow = await run("wait until false within 1500ms", { root: os.tmpdir() });
+  assert.match(slow.errors[0].message, /^wait until did not come true within 1500ms/);
+  assert.ok(slow.steps <= 6, "steps: " + slow.steps);
+  // every 1 second: checks after 0, 1000 and 2000 ms
+  const every = await run("wait until false every 1 second within 2500ms", { root: os.tmpdir() });
+  assert.match(every.errors[0].message, /^wait until did not come true within 2500ms/);
+  assert.ok(every.steps <= 4, "steps: " + every.steps);
+  assert.match((await run("wait until true every 1 second every 2 seconds", { root: os.tmpdir() })).errors[0].message, /'every' is given twice/);
+});
