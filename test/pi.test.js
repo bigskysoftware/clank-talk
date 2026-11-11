@@ -96,6 +96,32 @@ test("ask goes to a pi dialog, and with no UI the answer is null", async () => {
   assert.equal((await call("ask 'Is this a test?' with 'yes' or 'no'\nprint it", ctx)).content[0].text, "null");
 });
 
+test("taint review shows one yes or no dialog for each input", async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-review-"));
+  await fs.writeFile(path.join(project, "AGENTS.talk"), "untrusted tool issue with id\n  set the result to 'issue ' + id\nend\n");
+  try {
+    const other = fakePi();
+    clankTalkExtension(other, Type);
+    await other.handlers.session_start({}, { cwd: project });
+    const asked = [];
+    const ui = {
+      confirm: async (title, message) => {
+        asked.push([title, message]);
+        return asked.length === 2;
+      },
+    };
+    const ctx = { cwd: project, hasUI: true, ui };
+    await other.tools.clank_talk.execute("id-3", { script: "issue 1\nissue 2" }, undefined, undefined, ctx);
+    const result = await other.tools.clank_talk.execute("id-4", { script: "taint review\nprint it" }, undefined, undefined, ctx);
+    assert.equal(result.content[0].text, "1");
+    assert.deepEqual(asked.map(([title]) => title.replace(/pi-[^/]+/, "S")), ["approve S/1?", "approve S/2?"]);
+    assert.match(asked[0][1], /^Approve the untrusted inputs that you trust\.\n\nref +time/);
+    await other.handlers.session_shutdown({}, {});
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
+});
+
 test("a bad agent name is an error", async () => {
   const result = await pi.tools.clank_talk.execute("id-2", { script: "print 1", agent: "a b" }, undefined, undefined, { cwd: root });
   assert.equal(result.isError, true);

@@ -175,7 +175,16 @@ function askFor(ctx) {
   if (!ctx || !ctx.hasUI) {
     return null;
   }
-  return async ({ question, choices, signal }) => {
+  return async ({ question, choices, fields, signal }) => {
+    // a form of yes or no boxes, such as taint review: pi has no form, so one yes or no dialog for each box
+    // each dialog shows the question; a dialog that the human closes is no
+    if (fields) {
+      const content = {};
+      for (const field of fields) {
+        content[field.name] = (await ctx.ui.confirm(field.title + "?", question, { signal })) === true;
+      }
+      return content;
+    }
     let answer;
     if (choices.length > 0) {
       answer = await ctx.ui.select(question, choices, { signal });

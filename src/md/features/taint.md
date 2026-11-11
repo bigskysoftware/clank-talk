@@ -106,7 +106,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): the agent runs `taint review` only when the human asks for it. After a refusal, a form would be jarring. The tool description says this.
 - Approved (built): only the human answers the form. The result is the number of inputs approved. The approvals record `the review` as who approved.
 - Approved (built): with no inputs, the result is 0 and no form shows. With no way to show a form, or no answer to the first form, it is an error, and nothing is approved.
-- Not done: the pi harness does not show forms yet, so `taint review` there gives no answer.
+- Approved (built): pi has no form with boxes, so in pi `taint review` shows one yes or no dialog (`ctx.ui.confirm`) for each input. Each dialog shows the table. A closed dialog is no.
 
 ### Hooks
 
