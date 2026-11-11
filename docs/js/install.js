@@ -19,7 +19,7 @@ function highlight(text) {
     // strings, then a [table] header in TOML, then the command at the start of a shell line
     html = html.replace(/"[^"]*"/g, (s) => '<span class="tok-string">' + s + "</span>");
     html = html.replace(/^\[[^\]]+\]$/, (s) => '<span class="tok-keyword">' + s + "</span>");
-    html = html.replace(/^(claude|npx|node)\b/, '<span class="tok-keyword">$1</span>');
+    html = html.replace(/^(claude|npx|node|pi)\b/, '<span class="tok-keyword">$1</span>');
     lines.push(html);
   }
   return lines.join("\n");

@@ -2,49 +2,55 @@
 
 # Clank*Talk*
 
-A sandboxed scripting language for AI agents. You give your agent ClankTalk, in place of a shell.
+ClankTalk is a scripting language for agents to write and humans to read.  It replaces shell.
 
-It reads like English, because the agent writes the script but *you* have to read it. And there is no shell: if ClankTalk can't do it, your agent can't do it.
+It's an [xTalk](https://en.wikipedia.org/wiki/HyperTalk) language, so it reads like English.  You might not want to *write* code that way, but then your agent is the one writing it, not you.  
 
-- File access stays inside your project. Hidden files (`.env`, `.git/`) and your tool definitions are off limits.
-- Programs your tools run can go in an OS sandbox (macOS, Linux).
-- Git is built in, with hooks and other ways to run code turned off. Push never uses force.
-- Fetch asks you before it talks to a new host.
-- Every step is written to an audit log your agent can't change, and file changes can be undone.
+You just have to read it.
+
+With no shell and the ClankTalk runtime, you get a lot more control: file access stays inside your project, programs run only through tools you define (in an OS sandbox, if you like), and your agent can use secrets without seeing them.  
+
+The runtime supports hooks, taint tracking, an audit log and an undo stack.
 
 ## Install
 
-ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server. It needs Node 22 or later.
+ClankTalk runs as an [MCP](https://modelcontextprotocol.io) server and requires Node 22 or higher.
 
-With Claude Code:
+Claude Code:
 
 ```bash
-claude mcp add clank-talk -- npx -y -p clank-talk@0.2 clank-talk-mcp
+claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
 claude --tools "" --allowedTools mcp__clank-talk
 ```
 
-Any other MCP client:
+pi:
+
+```bash
+# install for this project only (without -l, every pi session on your machine gets it)
+# removes all other tools besides clank-talk!
+pi install -l git:github.com/bigskysoftware/clank-talk
+
+# run pi once without any extensions, ClankTalk included
+pi -ne
+
+# turn ClankTalk on or off for this project
+pi config --local
+
+# remove it from this project
+pi remove -l git:github.com/bigskysoftware/clank-talk
+```
+
+Other MCP clients, such as Cursor (`.cursor/mcp.json` in your project), take a config like this.  Codex takes the same values in `~/.codex/config.toml`, and the [install docs](https://clank.talk/docs.html#install) show each one.
 
 ```json
 {
   "mcpServers": {
     "clank-talk": {
       "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
+      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
     }
   }
 }
-```
-
-ClankTalk keeps its audit log and the untrusted inputs of each session in `.talk/` in your project. Add `.talk/` to your `.gitignore`.
-
-Then give your agent tools in an `AGENTS.talk` at the root of your project:
-
-```applescript
-# Runs the tests.
-tool run_tests
-  run 'npm test' in a sandbox with local network
-end
 ```
 
 ## Docs
@@ -52,11 +58,17 @@ end
 - [Docs for humans](https://clank.talk/docs.html)
 - [Docs for agents](https://clank.talk/reference.html)
 
-ClankTalk is under construction. Expect things to change.
+## Contributing
+
+Pull requests are open to collaborators only for now. 
+
+Please open an [issue](https://github.com/bigskysoftware/clank-talk/issues) for bugs and ideas.
 
 ## Sponsor
 
-ClankTalk is made by [Big Sky Software](https://github.com/bigskysoftware). To support the work, [sponsor us on GitHub](https://github.com/sponsors/bigskysoftware).
+ClankTalk is made by [Big Sky Software](https://github.com/bigskysoftware). 
+
+To support the work, [sponsor us on GitHub](https://github.com/sponsors/bigskysoftware).
 
 ## License
 

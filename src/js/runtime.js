@@ -1075,6 +1075,10 @@ function checkPolicy(policy, agents) {
   let sandboxRule = null;
   for (const rule of policy.rules) {
     if (rule.type === "limit") {
+      // two lines for one limit would mean one thing at load and another at run: one line only
+      if (limits[rule.what] !== undefined) {
+        errors.push({ message: "Only one 'limit " + rule.what + "' line is allowed in a policy: " + ruleAt(rule) + " is a second one. Put all the values on one line", line: 1, column: 1 });
+      }
       limits[rule.what] = rule;
     } else if (rule.type === "deny") {
       denied[rule.what] = rule;
@@ -1461,18 +1465,28 @@ async function loadTalkFile(absolute, root, chain, files, errors) {
 
 // limit output keeping ...: the print output that the agent sees; the previous output keeps all of it
 // a pattern that runs too long is a warning, and the host's own cut still applies
+const LIMIT_OUTPUT_TEXT = 5 * 1024 * 1024;
+
 async function limitOutput(execution, state) {
   if (execution.outputLimits.length === 0 || execution.output.length === 0) {
     return;
   }
   let text = execution.output.join("\n");
+  // the cut works on at most the last 5 MB, as the previous output keeps; more would cost too much memory
+  if (text.length > LIMIT_OUTPUT_TEXT) {
+    text = text.slice(text.length - LIMIT_OUTPUT_TEXT);
+  }
   const total = text.split("\n").length;
   const note = (n) => "... " + n + " lines cut. All " + total + " lines are in: the previous output";
+  const keeps = execution.outputLimits.map((limit) => ({ keep: { first: limit.first, last: limit.last, bytes: limit.bytes }, pattern: limit.pattern }));
   try {
-    const keeps = execution.outputLimits.map((limit) => ({ keep: { first: limit.first, last: limit.last, bytes: limit.bytes }, pattern: limit.pattern }));
     execution.shown = (await keepText(text, keeps, state, execution.outputLimits[0], note)).text;
   } catch (err) {
-    execution.warnings.push({ message: "'limit output' failed: " + err.message, line: 1, column: 1 });
+    // a pattern that fails still cuts: the first, the last and the KB of each line, and the last 400 lines for a
+    // pattern alone; the limit never fails open
+    const plain = keeps.map(({ keep }) => ({ keep: { ...keep, last: keep.first === null && keep.last === null ? 400 : keep.last }, pattern: null }));
+    execution.shown = (await keepText(text, plain, state, execution.outputLimits[0], note)).text;
+    execution.warnings.push({ message: "'limit output' could not use its pattern (" + err.message + "), so it kept the last lines", line: 1, column: 1 });
   } finally {
     execution.patterns.stop();
   }
@@ -1878,7 +1892,8 @@ async function runCommand(command, state, tools, maxSteps) {
     const definition = state.definitions[command.name];
     const step = toolStep(definition, args, named);
     await runHooks("before", [command.name], step, state, command);
-    auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).join(", "));
+    // the audit shows the arguments by position, then by name
+    auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name])))).join(", "));
 
     if (definition !== undefined) {
       // "within" on the call limits every run inside the tool; the shorter limit wins
@@ -2213,9 +2228,15 @@ async function evaluateNode(node, state) {
       return answer.matches;
     }
     // is in a folder: a path check, so it reads no file
-    if ((node.operator === "is in" || node.operator === "is not in") && right instanceof FileRef && (await isFolder(right))) {
-      const inside = await inFolder(left, { absolute: right.absolute, root: state.root }, node);
-      return node.operator === "is in" ? inside : !inside;
+    if ((node.operator === "is in" || node.operator === "is not in") && right instanceof FileRef) {
+      if (await isFolder(right)) {
+        const inside = await inFolder(left, { absolute: right.absolute, root: state.root }, node);
+        return node.operator === "is in" ? inside : !inside;
+      }
+      // with no / at the end and nothing there, the script most likely meant a folder
+      if (!(await fs.stat(right.absolute).then(() => true, () => false))) {
+        throw new ScriptError("There is no folder " + right.path + ". To check a folder, write it with a / at the end, such as @/" + right.path + "/", node.right);
+      }
     }
     // + joins a file as its path, and a line as its text; 'text of' gives a file's text
     if (node.operator === "+") {
@@ -2673,6 +2694,17 @@ async function runGit(command, state) {
     args.push(current);
     pulledFrom = await gitCheck(["rev-parse", "HEAD"], state, env, command);
   }
+  // pull: fetch first, so the change hooks can see what the pull will change; then merge without the network
+  let runArgs = args;
+  if (command.operation === "pull") {
+    const fetched = await spawnProgram("git", [...guardArgs(true), "fetch", "--no-recurse-submodules", "origin", step.branch], state.root, gitEnv(process.env, true), state.timeLimit, state, command);
+    if (fetched.code !== 0) {
+      throw new ScriptError("git pull failed: " + fetched.output.trim(), command);
+    }
+    runArgs = ["merge", "--ff-only", "FETCH_HEAD"];
+  }
+  // a git write that changes files runs the change hooks for each of them first, so a rule for a folder covers git too
+  await gitChangeHooks(command, step, state, env);
   // restore: the change hooks, and the text before, for undo
   const restored = [];
   if (command.operation === "restore") {
@@ -2710,8 +2742,8 @@ async function runGit(command, state) {
     }
   }
 
-  const forPush = command.operation === "push" || command.operation === "pull";
-  const result = await spawnProgram("git", [...guardArgs(forPush), ...args], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
+  const forPush = command.operation === "push";
+  const result = await spawnProgram("git", [...guardArgs(forPush), ...runArgs], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
   if (result.code !== 0 && command.operation === "rebase") {
     await stopRebase(state, env, command);
   }
@@ -2787,6 +2819,44 @@ function gitExample(command, name) {
     return "git rebase onto " + name;
   }
   return "git merge " + name;
+}
+
+// the files that a git write will change, before it runs: the change hooks run for each of them, and a reject
+// stops git before it changes anything; see src/md/features/git.md
+async function gitChangeHooks(command, step, state, env) {
+  const op = command.operation;
+  // paths relative to the root, with no renames, so a rename shows both the old and the new path
+  const paths = async (args) => {
+    const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
+    if (result.code !== 0) {
+      throw new ScriptError("git " + op + " failed: " + result.output.trim(), command);
+    }
+    return result.output.split("\n").filter((line) => line !== "");
+  };
+  const diff = (...range) => paths(["diff", "--name-only", "--no-renames", "--relative", ...range, "--"]);
+  let changed = [];
+  if (op === "move") {
+    changed = [step.from, step.to];
+  } else if (op === "switch" && !command.create) {
+    // a branch that is only on origin: git switch makes it from origin/<name>
+    const local = await spawnProgram("git", [...guardArgs(), "rev-parse", "--verify", "--quiet", "refs/heads/" + step.branch], state.root, env, state.timeLimit, state, command);
+    changed = await diff("HEAD", local.code === 0 ? step.branch : "origin/" + step.branch);
+  } else if (op === "merge") {
+    changed = await diff("HEAD", step.branch);
+  } else if (op === "rebase") {
+    changed = await diff("HEAD..." + step.branch);
+  } else if (op === "pull") {
+    changed = await diff("HEAD", "FETCH_HEAD");
+  } else if (op === "stash" && command.pop) {
+    changed = await paths(["stash", "show", "--name-only", "--no-renames", "--relative"]);
+  } else if (op === "stash") {
+    changed = await diff("HEAD");
+  }
+  for (const path of changed) {
+    const file = new FileRef(nodePath.resolve(state.root, path), state.root);
+    const fields = op === "move" ? { from: step.from, to: step.to } : {};
+    await changeHooks("before", changeStep(op === "move" ? "move" : "git " + op, file, fields), state, command);
+  }
 }
 
 // git with the hardened arguments, for the checks around an operation
@@ -4165,7 +4235,8 @@ async function taintReview(command, state) {
   const refs = shown.map(({ session, entry }) => session + "/" + entry.n);
   const rows = [["ref", "time", "size", "judge", "source"]];
   shown.forEach(({ entry }, k) => {
-    rows.push([refs[k], entry.time, sizeText(entry.size), entry.verdict ? entry.verdict.result : "-", cutText(untrusted.printable(entry.source), 80)]);
+    // the source can hold text that the agent chose, so it is in quotes: it cannot pass for a column or a row
+    rows.push([refs[k], entry.time, sizeText(entry.size), entry.verdict ? entry.verdict.result : "-", '"' + cutText(untrusted.printable(entry.source), 80) + '"']);
   });
   // short lines: the client cuts a long line
   const more = entries.length > shown.length ? "\nAnd " + (entries.length - shown.length) + " more: run taint review again." : "";
@@ -5192,6 +5263,7 @@ async function resolvePath(text, state, node) {
 
 // <path or file> is in <folder>: true if the path is inside the folder, at any depth
 // a text path is from the project root, as in the change's path; see src/md/features/language.md
+// both paths are compared as real paths, so a link or a change of letter case cannot get past a hook
 async function inFolder(left, folder, node) {
   if (left === null) {
     return false;
@@ -5204,7 +5276,35 @@ async function inFolder(left, folder, node) {
   } else {
     throw new ScriptError("'is in' a folder needs a path or a file, found " + describe(left), node.left);
   }
-  return absolute !== folder.absolute && isInside(absolute, folder.absolute);
+  const path = await canonicalPath(absolute);
+  const inside = await canonicalPath(folder.absolute);
+  return path !== inside && isInside(path, inside);
+}
+
+// macOS and Windows file systems ignore letter case by default, so paths there are compared in lower case
+const FOLD_CASE = process.platform === "darwin" || process.platform === "win32";
+
+// a path to compare: links followed for the part that exists, Unicode in one form (NFC), and lower case where
+// the file system ignores case
+async function canonicalPath(absolute) {
+  let existing = absolute;
+  const rest = [];
+  let real = null;
+  while (real === null) {
+    try {
+      real = nodePath.join(await fs.realpath(existing), ...rest);
+    } catch (err) {
+      const parent = nodePath.dirname(existing);
+      if (parent === existing) {
+        real = absolute;
+      } else {
+        rest.unshift(nodePath.basename(existing));
+        existing = parent;
+      }
+    }
+  }
+  const normal = real.normalize("NFC");
+  return FOLD_CASE ? normal.toLowerCase() : normal;
 }
 
 // a path written with a / at the end, or a folder that exists
@@ -5558,6 +5658,9 @@ async function moveFile(from, to, state, node) {
   }
   const step = changeStep("move", from, { to: to.path });
   await changeHooks("before", step, state, node);
+  // the target is a change too, so a hook for a folder also sees a move into it
+  const target = changeStep("move", to, { from: from.path, to: to.path });
+  await runHooks("before", ["move", "change"], target, state, node);
   const text = await fs.readFile(real, "utf8");
   await makeParentFolders(to, state, node);
   await fs.rename(real, to.absolute);
@@ -5567,6 +5670,7 @@ async function moveFile(from, to, state, node) {
   state.execution.changes.push({ path: from.path, before: text, after: null });
   state.execution.changes.push({ path: to.path, before: null, after: text });
   await changeHooks("after", step, state, node);
+  await runHooks("after", ["move", "change"], target, state, node);
 }
 
 // is this file AGENTS.talk, by name (any case) or by being the same file on disk (a link to it)?

@@ -466,8 +466,12 @@ export async function check(root, before) {
 
 // text from an input for a terminal or a question: control characters can hide text or move the cursor
 // keepLines keeps line breaks and tabs, for the text of an input
+// also the Unicode format characters that hide text or change its direction: zero width, bidi marks and overrides,
+// line and paragraph separators, and the byte order mark
 export function printable(text, keepLines = false) {
-  return String(text).replace(keepLines ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g : /[\u0000-\u001f\u007f-\u009f]/g, "?");
+  return String(text)
+    .replace(keepLines ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g : /[\u0000-\u001f\u007f-\u009f]/g, "?")
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2028\u2029\u2066-\u2069\ufeff]/g, "?");
 }
 
 // keep the verdict of the judge; with approves, a "clean" verdict approves the input; gives true if it approved

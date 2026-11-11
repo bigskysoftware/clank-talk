@@ -132,7 +132,7 @@ test("taint review shows a table in a form, and approves only the boxes the huma
   assert.deepEqual(errors, []);
   assert.deepEqual(output, ["1"]);
   assert.deepEqual(asked.fields.map((field) => field.title), ["approve s-1/1", "approve s-1/2"]);
-  assert.match(asked.question, /\n\nref +time +size +judge +source\ns-1\/1 +.+ +1 KB +- +tool issue \(1\)\n/);
+  assert.match(asked.question, /\n\nref +time +size +judge +source\ns-1\/1 +.+ +1 KB +- +"tool issue \(1\)"\n/);
   assert.equal((await taint(root, "--line")).text, "tainted 1");
   assert.match((await taint(root, "show", "s-1/2")).text, /^status: approved by the review/);
 });

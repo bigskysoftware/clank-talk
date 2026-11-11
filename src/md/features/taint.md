@@ -99,6 +99,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 
 ### Review in the harness
 
+- Approved (built, security review 2026-11-10): the source in the review table is in quotes, and `printable` also removes zero width, bidi and line separator characters, so the agent cannot make a source look like another row.
 - Approved (built): `taint review` in a script. It shows the human a form (MCP elicitation): a table of the inputs that are not approved (ref, time, size, judge, source), and one approve box for each input. The form shows at most 20 inputs.
 - Rejected: a `view` choice that showed the text in pages in the form. Claude Code shows only the first line of a long form message, and collapses the rest. The human reads an input with `npx clank-talk taint show <ref>`.
 - Not tested: Claude Code can also collapse a long table, so with many inputs the human can see only part of it.

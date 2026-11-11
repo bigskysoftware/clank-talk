@@ -88,37 +88,79 @@ will start using it.
 <button class="install-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="agent-icon claude">C</span><span class="install-name">Claude Code</span><span class="install-chevron"></span></button>
 <ul class="install-menu" role="listbox" hidden>
 <li role="option" tabindex="0" data-agent="claude"><span class="agent-icon claude">C</span>Claude Code</li>
+<li role="option" tabindex="0" data-agent="cursor"><span class="agent-icon cursor">C</span>Cursor</li>
+<li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
 <li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
 <li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
 </ul>
 </div>
 </div>
 
-/cc these instructions are different than the landing page  
 <div class="harness" data-agent="claude">
 
 ### Claude Code
 
-Save this as `.mcp.json` at the root of your project:
+Add the server:
+
+```bash
+$ claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
+```
+
+Then start Claude Code with ClankTalk as its only tool:
+
+```bash
+$ claude --tools "" --allowedTools mcp__clank-talk
+```
+
+<aside>
+
+To share the server with your team, put it in a `.mcp.json` at the root of your project instead:
 
 ```json
 {
   "mcpServers": {
     "clank-talk": {
       "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
+      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
     }
   }
 }
 ```
 
-Then take away the agent's other tools:
+</aside>
 
-```bash
-$ claude --tools "" --allowedTools mcp__clank-talk
+</div>
+
+<div class="harness" data-agent="cursor" hidden>
+
+### Cursor
+
+Save this as `.cursor/mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "clank-talk": {
+      "command": "npx",
+      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
+    }
+  }
+}
 ```
 
+</div>
 
+<div class="harness" data-agent="codex" hidden>
+
+### Codex
+
+Add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.clank-talk]
+command = "npx"
+args = ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
+```
 
 </div>
 
@@ -143,7 +185,20 @@ TODO (Carson): pi notes.
 
 ### Other agents
 
-TODO (Carson): Codex, Cursor and other MCP clients use the same server; see the install box on the [home page](./).
+Most MCP clients take a config like this:
+
+```json
+{
+  "mcpServers": {
+    "clank-talk": {
+      "command": "npx",
+      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
+    }
+  }
+}
+```
+
+If your client lets you, turn off its other tools, so the agent uses ClankTalk for everything.
 
 </div>
 </div>
@@ -490,7 +545,7 @@ before change
 end
 ```
 
-Note that `change` covers every sort file change: write, append, replace, line edits, move, delete and undo.
+Note that `change` covers every sort file change: write, append, replace, line edits, move, delete and undo.  It also covers git commands that change files, like `git merge` or `git stash`, and a move into the folder, not just out of it.
 
 ### Deploys
 
