@@ -168,7 +168,19 @@ function askFor(session) {
   if (!session.canAsk || !session.send) {
     return null;
   }
-  return async ({ question, choices, signal }) => {
+  return async ({ question, choices, fields, signal }) => {
+    // a form of yes or no boxes, such as taint review: gives { name: true or false }
+    if (fields) {
+      const properties = {};
+      for (const field of fields) {
+        properties[field.name] = { type: "boolean", title: field.title, default: false };
+      }
+      const response = await requestClient(session, "elicitation/create", { message: question, requestedSchema: { type: "object", properties } }, signal);
+      if (response === null || !response.result || response.result.action !== "accept") {
+        return null;
+      }
+      return response.result.content || {};
+    }
     const answer = { type: "string", title: "Answer" };
     if (choices.length > 0) {
       answer.enum = choices;

@@ -17,6 +17,7 @@ export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
   clank-talk taint judge <ref> ...     the judge reads inputs, and gives clean, suspect or unsure
   clank-talk taint judge --all         the judge reads the inputs that it did not read and that are not approved
   clank-talk taint on | off            turn session taint on or off for this project
+  clank-talk taint --line              one short line for a status bar: taint off, untainted, or tainted <n> (inputs to review)
 
 A <ref> is <session>/<n>, such as claude-code-4f2a/3, or <n> for the newest session.`;
 
@@ -88,19 +89,28 @@ export async function taintCommand(args, root, out, options = {}) {
   // a policy that requires taint leaves a note in .talk/, because the command line cannot see the policy
   const policy = await untrusted.policyRequires(root);
 
+  const commandLine = await untrusted.commandLineMode(root);
+  // the state and where it comes from: ["on", "the default"]
+  let state;
+  if (policy !== null) {
+    state = ["required", "required by the policy " + untrusted.printable(policy)];
+  } else if (agentsLine === "required") {
+    state = ["required", "required by AGENTS.talk"];
+  } else if (commandLine !== null) {
+    state = [commandLine, "from the command line"];
+  } else {
+    state = [agentsLine || "on", agentsLine === null ? "the default" : "from AGENTS.talk"];
+  }
+
+  // for a status bar: taint off, untainted, or tainted <n> with n inputs to review
+  if (command === "--line") {
+    const waiting = (await allInputs(root)).filter(({ entry }) => !entry.approved).length;
+    out(state[0] === "off" ? "taint off" : waiting === 0 ? "untainted" : "tainted " + waiting);
+    return 0;
+  }
+
   if (command === "list") {
-    const commandLine = await untrusted.commandLineMode(root);
-    let state;
-    if (policy !== null) {
-      state = "on (required by the policy " + untrusted.printable(policy) + ")";
-    } else if (agentsLine === "required") {
-      state = "on (required by AGENTS.talk)";
-    } else if (commandLine !== null) {
-      state = commandLine + " (from the command line)";
-    } else {
-      state = (agentsLine || "on") + (agentsLine === null ? " (the default)" : " (from AGENTS.talk)");
-    }
-    out("taint: " + state);
+    out("taint: " + (state[0] === "required" ? "on" : state[0]) + " (" + state[1] + ")");
     const inputs = await allInputs(root);
     if (inputs.length === 0) {
       out("No untrusted inputs.");
@@ -112,9 +122,8 @@ export async function taintCommand(args, root, out, options = {}) {
     for (const { session, entry } of inputs) {
       rows.push([session + "/" + entry.n, entry.time, statusText(entry), sizeText(entry.size) + (entry.cut ? " (cut)" : ""), untrusted.printable(judgeText(entry)), untrusted.printable(entry.source)]);
     }
-    const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
-    for (const row of rows) {
-      out(row.map((cell, column) => (column === row.length - 1 ? cell : cell.padEnd(widths[column]))).join("  "));
+    for (const line of untrusted.table(rows)) {
+      out(line);
     }
     const waiting = inputs.filter(({ entry }) => !entry.approved).length;
     out("");

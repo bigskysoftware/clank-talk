@@ -1023,6 +1023,16 @@ export function parse(source, options = {}) {
     return { type: "help", word, line: token.line, column: token.column };
   }
 
+  // taint review: a form shows the human the inputs that are not approved; see src/md/features/taint.md
+  function parseTaint(token) {
+    if (!isWord("review")) {
+      error("Expected 'review', as in: taint review. 'taint on', 'taint off' and 'taint required' go at the top of AGENTS.talk");
+      return null;
+    }
+    i++;
+    return { type: "taintReview", line: token.line, column: token.column };
+  }
+
   // ask <question> [with <choice> or <choice> ...] [within <duration>]
   // only the human answers; see src/md/features/ask.md
   function parseAsk(token) {
@@ -1539,6 +1549,7 @@ export function parse(source, options = {}) {
     git: parseGit,
     undo: parseUndo,
     ask: parseAsk,
+    taint: parseTaint,
     fetch: parseFetch,
     start: parseStart,
     wait: parseWait,

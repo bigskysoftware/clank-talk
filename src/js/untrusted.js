@@ -174,6 +174,12 @@ export function pending(entries) {
   return entries.filter((entry) => !entry.approved);
 }
 
+// rows of cells as lines, with the columns lined up; the last column is not padded, as it can be long
+export function table(rows) {
+  const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
+  return rows.map((row) => row.map((cell, column) => (column === row.length - 1 ? cell : cell.padEnd(widths[column]))).join("  "));
+}
+
 // the inputs that are not approved, in all sessions of the project: [{ session, entry }], oldest session first
 // taint is for the whole project, so a resumed conversation (a new session) is still tainted by what it read before
 export async function pendingAll(root) {

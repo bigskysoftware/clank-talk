@@ -55,6 +55,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): `npx clank-talk taint` shows the state and where it comes from, and lists all inputs: ref, time, status, size, judge verdict, source.
 - Approved (built): a ref is `<session>/<n>`, such as `claude-code-4f2a/3`. A bare `<n>` is in the newest session.
 - Approved (built): `taint show <ref>`, `taint approve <ref> ...`, `taint approve --all` (clears all taints), `taint approve --clean`, `taint on`, `taint off`. A bad ref approves nothing. An approval records who approved (`the question` or `the command line`) and when.
+- Approved (built): `taint --line` prints one short line for a status bar: `taint off` (taint is off), `untainted` (taint is on, and all inputs are approved) or `tainted <n>` (n inputs to review). Claude Code shows it with a `statusLine` command in `.claude/settings.local.json`.
 - Approved (built): `taint judge <ref> ...` reads those inputs again; `taint judge --all` reads the inputs that have no verdict and are not approved.
 - Limits, to document: the boundary holds only if the agent has no other shell (turn off the harness tools), each `run` is sandboxed (a program with no sandbox can change `.talk/`), and no tool in AGENTS.talk runs `clank-talk taint`.
 
@@ -95,6 +96,17 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - A line break in a source shows as `?` in the header of the text file.
 - A policy with `require taint` writes `.talk/taint-policy.json`, so the command line knows it.
 - Checked and correct: `keep audit` in AGENTS.talk cannot go below the policy's minimum; the load check refuses it.
+
+### Review in the harness
+
+- Approved (built): `taint review` in a script. It shows the human a form (MCP elicitation): a table of the inputs that are not approved (ref, time, size, judge, source), and one approve box for each input. The form shows at most 20 inputs.
+- Rejected: a `view` choice that showed the text in pages in the form. Claude Code shows only the first line of a long form message, and collapses the rest. The human reads an input with `npx clank-talk taint show <ref>`.
+- Not tested: Claude Code can also collapse a long table, so with many inputs the human can see only part of it.
+- Approved (built): the syntax is `taint review`. The human picked it because it does not read as English.
+- Approved (built): the agent runs `taint review` only when the human asks for it. After a refusal, a form would be jarring. The tool description says this.
+- Approved (built): only the human answers the form. The result is the number of inputs approved. The approvals record `the review` as who approved.
+- Approved (built): with no inputs, the result is 0 and no form shows. With no way to show a form, or no answer to the first form, it is an error, and nothing is approved.
+- Not done: the pi harness does not show forms yet, so `taint review` there gives no answer.
 
 ### Hooks
 

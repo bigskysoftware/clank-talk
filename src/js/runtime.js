@@ -1701,6 +1701,10 @@ async function runCommand(command, state, tools, maxSteps) {
     state.result = await askHuman(command, state);
     return null;
   }
+  if (command.type === "taintReview") {
+    state.result = await taintReview(command, state);
+    return null;
+  }
   if (command.type === "undo") {
     state.result = await runUndo(command, state);
     return null;
@@ -4068,6 +4072,46 @@ async function askUntrusted(state, kind, action, node) {
   throw new ScriptError("The human did not approve this while untrusted inputs are not approved: " + shown + askReason(state) + ".", node);
 }
 
+// a form shows at most this many inputs; the human can run taint review again for the rest
+const REVIEW_INPUTS = 20;
+
+// taint review: a form with a table of the inputs that are not approved, and a box to approve each one
+// only the human answers the form; gives the number of inputs approved; see src/md/features/taint.md
+async function taintReview(command, state) {
+  const entries = await untrusted.pendingAll(state.root);
+  if (entries.length === 0) {
+    return 0;
+  }
+  if (state.ask === null) {
+    throw new ScriptError("taint review failed: there is no way to show a form to the human here. Ask them to run: npx clank-talk taint", command);
+  }
+  const shown = entries.slice(0, REVIEW_INPUTS);
+  const refs = shown.map(({ session, entry }) => session + "/" + entry.n);
+  const rows = [["ref", "time", "size", "judge", "source"]];
+  shown.forEach(({ entry }, k) => {
+    rows.push([refs[k], entry.time, sizeText(entry.size), entry.verdict ? entry.verdict.result : "-", cutText(untrusted.printable(entry.source), 80)]);
+  });
+  // short lines: the client cuts a long line
+  const more = entries.length > shown.length ? "\nAnd " + (entries.length - shown.length) + " more: run taint review again." : "";
+  const question = redact("Approve the untrusted inputs that you trust.\n\n" + untrusted.table(rows).join("\n") + "\n\nRead one with: npx clank-talk taint show <ref>" + more, state);
+  const fields = refs.map((ref, k) => ({ name: "input" + k, title: "approve " + ref }));
+  const answer = await askState(state, question, [], null, fields);
+  if (answer === null) {
+    throw new ScriptError("taint review got no answer" + askReason(state) + ". Nothing was approved.", command);
+  }
+  const refsApproved = [];
+  for (const session of new Set(shown.map((item) => item.session))) {
+    const numbers = shown.filter((item, k) => item.session === session && answer["input" + k]).map((item) => item.entry.n);
+    if (numbers.length > 0) {
+      refsApproved.push(...(await untrusted.approve(state.root, session, numbers, "the review")).map((n) => session + "/" + n));
+    }
+  }
+  if (refsApproved.length > 0) {
+    auditStep(state, "approve", untrusted.STORE + "/", "untrusted inputs " + refsApproved.join(", "));
+  }
+  return refsApproved.length;
+}
+
 // why an approval did not come: no way to ask, or no answer in time; empty for a plain "no"
 function askReason(state) {
   if (state.ask === null) {
@@ -4080,8 +4124,9 @@ function askReason(state) {
 }
 
 // ask through the host, with a time limit in ms (null: the default); used by ask, git push and fetch
+// with fields ([{ name, title }]), the host shows a form of yes or no boxes and gives { name: true or false }
 // state.askTimedOut tells the caller that nobody answered in time
-async function askState(state, question, choices, limit) {
+async function askState(state, question, choices, limit, fields = null) {
   state.askTimedOut = false;
   if (state.ask === null) {
     return null;
@@ -4092,7 +4137,7 @@ async function askState(state, question, choices, limit) {
   let timer = null;
   let answer = null;
   try {
-    const asking = state.ask({ question, choices, signal: state.execution.signal });
+    const asking = state.ask(fields === null ? { question, choices, signal: state.execution.signal } : { question, choices, fields, signal: state.execution.signal });
     if (limit === null) {
       answer = await asking;
     } else {
@@ -4111,10 +4156,13 @@ async function askState(state, question, choices, limit) {
     clearTimeout(timer);
   }
 
-  if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
+  if (fields !== null) {
+    // a form: only the true boxes count
+    answer = answer !== null && typeof answer === "object" ? Object.fromEntries(fields.map((field) => [field.name, answer[field.name] === true])) : null;
+  } else if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
     answer = null;
   }
-  let answerText = "answer: " + answer;
+  let answerText = "answer: " + (fields !== null && answer !== null ? fields.filter((field) => answer[field.name]).map((field) => field.title).join(", ") || "none" : answer);
   if (answer === null) {
     answerText = state.askTimedOut ? "no answer within " + Math.round(limit / 1000) + " s" : "no answer";
   }

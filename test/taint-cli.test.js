@@ -110,6 +110,43 @@ test("review 12: the command line knows about require taint in a policy", async 
   assert.match((await taint(root)).text, /^taint: on \(the default\)/);
 });
 
+test("--line gives one short line for a status bar", async () => {
+  const root = await project();
+  assert.deepEqual(await taint(root, "--line"), { code: 0, text: "untainted" });
+  await run("issue 1\nissue 2", { root, session: "s-1" });
+  assert.equal((await taint(root, "--line")).text, "tainted 2");
+  await taint(root, "off");
+  assert.equal((await taint(root, "--line")).text, "taint off");
+  assert.equal((await taint(await project("taint required"), "--line")).text, "untainted");
+});
+
+test("taint review shows a table in a form, and approves only the boxes the human picks", async () => {
+  const root = await project();
+  await run("issue 1\nissue 2", { root, session: "s-1" });
+  let asked = null;
+  const ask = async (request) => {
+    asked = request;
+    return { input0: false, input1: true };
+  };
+  const { output, errors } = await run("taint review\nprint it", { root, session: "s-1", ask });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(output, ["1"]);
+  assert.deepEqual(asked.fields.map((field) => field.title), ["approve s-1/1", "approve s-1/2"]);
+  assert.match(asked.question, /\n\nref +time +size +judge +source\ns-1\/1 +.+ +1 KB +- +tool issue \(1\)\n/);
+  assert.equal((await taint(root, "--line")).text, "tainted 1");
+  assert.match((await taint(root, "show", "s-1/2")).text, /^status: approved by the review/);
+});
+
+test("taint review: no inputs gives 0; no answer or no form is an error that approves nothing", async () => {
+  const root = await project();
+  assert.deepEqual((await run("taint review\nprint it", { root, session: "s-1" })).output, ["0"]);
+  await run("issue 1", { root, session: "s-1" });
+  assert.match((await run("taint review", { root, session: "s-1" })).errors[0].message, /^taint review failed: there is no way to show a form/);
+  assert.match((await run("taint review", { root, session: "s-1", ask: async () => null })).errors[0].message, /^taint review got no answer\. Nothing was approved\.$/);
+  assert.match((await run("taint", { root })).errors[0].message, /^Expected 'review', as in: taint review/);
+  assert.equal((await taint(root, "--line")).text, "tainted 1");
+});
+
 test("an unknown command shows the usage", async () => {
   const root = await project();
   const { code, text } = await taint(root, "clear");
