@@ -254,7 +254,7 @@ git push
 
 ## Taint Tracking
 
-Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agents environment, and to control how things work
+Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agent's environment, and to control how things work
 after that happens.
 
 ```talk triage.talk

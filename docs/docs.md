@@ -383,9 +383,9 @@ stop process 'dev'
 
 ### Installing Packages
 
-OK, let's add another tool to, *sigh*, install NPM pacakges.
+OK, let's add another tool to, *sigh*, install NPM packages.
 
-`npm install` needs the wider network obviously, and also needs access to npms cache directory.
+`npm install` needs the wider network obviously, and also needs access to npm's cache directory.
 
 To give it access to that we would write:
 
@@ -452,7 +452,7 @@ The `using secret NPM_TOKEN` bit hands the token to `npm` as an environment vari
 
 Now, a word of warning: a program with a secret and the network can send that secret anywhere it likes.  And `npm publish` runs scripts from `package.json`, a file your agent can happily edit.  So be careful about handing secrets to programs whose code your agent can change!
 
-ClankTalk is here to help, but it's not omnicient!
+ClankTalk is here to help, but it's not omniscient!
 
 ### Hooks {#hooks}
 
@@ -553,7 +553,7 @@ before change
 end
 ```
 
-Note that `change` covers every sort file change: write, append, replace, line edits, move, delete and undo.  It also covers git commands that change files, like `git merge` or `git stash`, and a move into the folder, not just out of it.
+Note that `change` covers every sort of file change: write, append, replace, line edits, move, delete and undo.  It also covers git commands that change files, like `git merge` or `git stash`, and a move into the folder, not just out of it.
 
 ### Deploys
 
@@ -647,7 +647,7 @@ keep audit for 7 days
 audit as json
 ```
 
-Adding `audit as json` turns each line of the file is a JSON object, so `jq` and friends can work with them.
+Adding `audit as json` makes each line of the file a JSON object, so `jq` and friends can work with them.
 
 ### Sharing Tools
 
@@ -671,9 +671,9 @@ Tainting has a long history in programming languages.  Perl's [taint mode](https
 
 We are trying to come up with something similar around [prompt injection](https://simonwillison.net/2022/Sep/12/prompt-injection/), and this is our current thinking on the problem.
 
-Let's motivate the discussion with an interesting use of agents near and dear to our hearts: sifting through issues on github.
+Let's motivate the discussion with an interesting use of agents near and dear to our hearts: sifting through issues on GitHub.
 
-Before we get into ClankTalk's tain infrastucture, let's set up a _subagent_ with a restricted tool set to do github issue analysis for us:
+Before we get into ClankTalk's taint infrastructure, let's set up a _subagent_ with a restricted tool set to do GitHub issue analysis for us:
 
 ```talk AGENTS.talk
 allow secret ANTHROPIC_API_KEY for subagents
