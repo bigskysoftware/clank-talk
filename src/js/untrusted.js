@@ -149,10 +149,49 @@ async function approveNow(root, session, numbers, by) {
   return changed;
 }
 
+// the "keep audit" rules: delete the sessions whose newest input is from before the oldest kept day (2026-11-08)
+// gives the names of the deleted sessions; a broken store is kept, for the human
+export async function prune(root, oldestDay) {
+  const deleted = [];
+  for (const session of await sessions(root)) {
+    const entries = await inputs(root, session);
+    if (entries.some((entry) => entry.n === 0)) {
+      continue;
+    }
+    const newest = entries.reduce((latest, entry) => (entry.time > latest ? entry.time : latest), "");
+    if (newest.slice(0, 10) < oldestDay) {
+      await locked(root, session, () => fs.rm(folder(root, session), { recursive: true, force: true }));
+      deleted.push(session);
+    }
+  }
+  return deleted;
+}
+
 // text from an input for a terminal or a question: control characters can hide text or move the cursor
 // keepLines keeps line breaks and tabs, for the text of an input
 export function printable(text, keepLines = false) {
   return String(text).replace(keepLines ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g : /[\u0000-\u001f\u007f-\u009f]/g, "?");
+}
+
+// keep the verdict of the judge; with approves, a "clean" verdict approves the input; gives true if it approved
+export async function setVerdict(root, session, n, verdict, approves) {
+  return await locked(root, session, async () => {
+    const entries = await inputs(root, session);
+    const entry = entries.find((item) => item.n === n && n > 0);
+    if (entry === undefined) {
+      return false;
+    }
+    entry.verdict = { result: verdict.result, reason: verdict.reason, time: localTime() };
+    let approved = false;
+    if (approves && verdict.result === "clean" && !entry.approved) {
+      entry.approved = true;
+      entry.approvedBy = "the judge";
+      entry.approvedAt = new Date().toISOString();
+      approved = true;
+    }
+    await save(root, session, entries);
+    return approved;
+  });
 }
 
 // the text file of an input

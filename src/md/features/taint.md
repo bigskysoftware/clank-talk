@@ -4,7 +4,7 @@ Values carry labels that say where they came from. The runtime moves the labels 
 
 Built: session taint, part (a): the flag, the store, the questions, `taint on|off|required`, `keep untrusted inputs up to`, `require taint` in a policy, and the session checks for hooks. The value labels below are removed.
 Built: part (b), the command line: `bin/clank-talk.js`, `src/js/taint-cli.js`.
-Not built: part (c), the judge.
+Built: part (c), the judge: `src/js/judge.js`.
 Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
 
 Code: `src/js/untrusted.js`, with small calls in `src/js/runtime.js`.
@@ -44,7 +44,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): the source: the final URL after redirects for a fetch; the name and arguments for a tool; the tool and prompt for a subagent.
 - Approved (built): at most 1 MB for each input by default. A larger input keeps its first 1 MB, and gives a warning in the script output: "warning: untrusted input 3 is 5 MB; the store kept the first 1 MB". The list (part b) shows it too.
 - Approved (built): `keep untrusted inputs up to 5 MB` (or `KB`) in AGENTS.talk sets the size.
-- Approved (not built): the `keep audit` rules apply to the store. When an audit goes, its inputs go too.
+- Approved (built): the `keep audit` rules apply to the store. Once a day, with the audit rotation, a session whose newest input is older than the kept days is deleted, and the audit notes it. A broken store is kept for the human. The cleanup runs only when the audit is written to `.talk/audit/`.
 - Approved (built): the audit records each input (`untrusted`, with the file), and each approval (`approve`, with the input numbers).
 
 ### The command line
@@ -53,16 +53,19 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - Approved (built): `npx clank-talk taint` shows the state and where it comes from, and lists all inputs: ref, time, status, size, judge verdict, source.
 - Approved (built): a ref is `<session>/<n>`, such as `claude-code-4f2a/3`. A bare `<n>` is in the newest session.
 - Approved (built): `taint show <ref>`, `taint approve <ref> ...`, `taint approve --all` (clears all taints), `taint approve --clean`, `taint on`, `taint off`. A bad ref approves nothing. An approval records who approved (`the question` or `the command line`) and when.
-- Not built: `taint judge [<ref> | --all]`, with part (c).
+- Approved (built): `taint judge <ref> ...` reads those inputs again; `taint judge --all` reads the inputs that have no verdict and are not approved.
 - Limits, to document: the boundary holds only if the agent has no other shell (turn off the harness tools), each `run` is sandboxed (a program with no sandbox can change `.talk/`), and no tool in AGENTS.talk runs `clank-talk taint`.
 
 ### The judge
 
-- Approved: a model call with no tools reads one input, and gives `clean` or `suspect` with a short reason. The verdict is saved next to the input.
-- Approved: by default the verdict is advice only. A human approves.
-- Approved: `let the judge approve clean inputs` in AGENTS.talk: a `clean` verdict approves the input. `require taint` in a policy does not block this line.
-- Approved: `use model '<id>' for judging [with secret <NAME>]`. With no line, the judge uses the subagent model.
-- Approved: by default the judge runs only on `npx clank-talk taint judge`. `judge untrusted inputs automatically` in AGENTS.talk runs it on each new input.
+- Approved (built): a model call with no tools reads one input, and gives `clean`, `suspect` or `unsure`, with a reason of at most 200 characters. The verdict is saved in the index, next to the input.
+- Approved (built): the answer is one line of JSON: `{"verdict": ..., "reason": ...}`. An answer that is not valid, a refusal or a cut answer is `suspect`, so a broken answer cannot approve.
+- Approved (built): the text goes between markers with a random name, so the text cannot close the block. The source goes before it.
+- Approved (built): a fixed default prompt in `src/js/judge.js`. `judge with prompt '...'` (or a text block) in AGENTS.talk replaces it. The answer format is always added after the prompt.
+- Approved (built): by default the verdict is advice only. A human approves.
+- Approved (built): `let the judge approve clean inputs` in AGENTS.talk: a `clean` verdict approves the input (`approvedBy: the judge`). `suspect` and `unsure` never approve. `require taint` in a policy does not block this line.
+- Approved (built): `use model '<id>' for judging [with secret <NAME>]`. With no line, the judge uses the subagent model. pi lends its model. The key needs `allow secret <NAME> for subagents`.
+- Approved (built): by default the judge runs only on `npx clank-talk taint judge`. `judge untrusted inputs automatically` in AGENTS.talk runs it on each new input. A judge that fails gives a warning, and the input stays.
 
 ### Security review (built)
 
@@ -73,7 +76,7 @@ Replaces the labels on values below. Why: labels follow values inside one script
 - The error of an untrusted tool is an untrusted input too, as the agent sees it.
 - A session name that starts with dots stays inside the store.
 - Before a sandboxed run, `.talk/` is made, because on Linux the sandbox protects a hidden folder only if it exists when the program starts.
-- Limits, to document: a run with no sandbox can change anything, `.talk/` too; it asks only in an untrusted session. Response headers from `fetch ... as response` do not go to the store. The store has no cleanup yet.
+- Limits, to document: a run with no sandbox can change anything, `.talk/` too; it asks only in an untrusted session. Response headers from `fetch ... as response` do not go to the store. The cleanup runs only with the audit file.
 
 ### Hooks
 

@@ -11,6 +11,7 @@ import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } f
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
 import * as untrusted from "./untrusted.js";
+import { judgeText } from "./judge.js";
 import { runSubagent, anthropicModel, SubagentError, API_URL } from "./subagent.js";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -333,6 +334,8 @@ async function execute(source, options, execution) {
     lendModel: options.lendModel || null,
     subagentUrl: options.subagentUrl || API_URL,
     useModel: agents.useModel,
+    // the judge: its model (null: the subagent model), and its lines in AGENTS.talk; see src/js/judge.js
+    judge: agents.judge,
     // how long a question waits when it has no "within"; a host can change it
     askTimeLimit: options.askTimeLimit || ASK_TIME_LIMIT,
     askTimedOut: false,
@@ -475,9 +478,10 @@ const SUBAGENT_UNSAFE = ["write", "append", "put", "remove", "replaceLines", "re
 // load errors: the model's key must be allowed for subagents, and each "with only" tool must exist and be safe
 function checkSubagents(agents) {
   const errors = [];
-  const model = agents.useModel;
-  if (model !== null && model.secret !== null && !agents.allowedSecrets.some((allowed) => allowed.name === model.secret && allowed.subagents)) {
-    errors.push({ message: "'use model' needs its key allowed for subagents. Add: allow secret " + model.secret + " for subagents", ...model.where });
+  for (const model of [agents.useModel, agents.judge.model]) {
+    if (model !== null && model.secret !== null && !agents.allowedSecrets.some((allowed) => allowed.name === model.secret && allowed.subagents)) {
+      errors.push({ message: "'use model' needs its key allowed for subagents. Add: allow secret " + model.secret + " for subagents", ...model.where });
+    }
   }
   for (const definition of Object.values(agents.definitions)) {
     for (const node of findNodes(definition, [])) {
@@ -1213,7 +1217,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, keepAudit: null, taint: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1306,12 +1310,27 @@ async function loadAgentsTalk(root, hostTools) {
         continue;
       }
       if (definition.type === "useModel") {
+        const judging = definition.purpose === "judging";
         if (file.name !== AGENTS_TALK) {
           result.errors.push({ message: "'use model' is only allowed in " + AGENTS_TALK, ...where });
-        } else if (result.useModel !== null) {
-          result.errors.push({ message: "Only one 'use model' line is allowed", ...where });
+        } else if ((judging ? result.judge.model : result.useModel) !== null) {
+          result.errors.push({ message: "Only one 'use model ... for " + definition.purpose + "' line is allowed", ...where });
+        } else if (judging) {
+          result.judge.model = { model: definition.model, secret: definition.secret, where };
         } else {
           result.useModel = { model: definition.model, secret: definition.secret, where };
+        }
+        continue;
+      }
+      // the judge lines; see src/md/features/taint.md
+      if (["judgeApproves", "judgeAutomatically", "judgePrompt"].includes(definition.type)) {
+        const field = { judgeApproves: "approves", judgeAutomatically: "automatically", judgePrompt: "prompt" }[definition.type];
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "The judge lines are only allowed in " + AGENTS_TALK, ...where });
+        } else if (result.judge[field] !== false && result.judge[field] !== null) {
+          result.errors.push({ message: "Only one line of each kind is allowed for the judge", ...where });
+        } else {
+          result.judge[field] = definition.type === "judgePrompt" ? definition.prompt : true;
         }
         continue;
       }
@@ -3762,6 +3781,55 @@ async function noteUntrusted(state, source, text, node = { line: 1, column: 1 })
   if (entry.cut) {
     state.execution.warnings.push({ message: "warning: untrusted input " + entry.n + " is " + sizeText(entry.size) + "; the store kept the first " + sizeText(state.keepUntrustedBytes), line: 1, column: 1 });
   }
+  if (state.judge.automatically) {
+    await judgeNow(state, entry, redact(text, state));
+  }
+}
+
+// "judge untrusted inputs automatically": the judge reads the new input; a failure is a warning, and the input stays
+async function judgeNow(state, entry, text) {
+  let verdict;
+  try {
+    const ask = judgeModel(state.judge.model || state.useModel, state.lendModel, state.secrets, state.subagentUrl);
+    verdict = await judgeText({ ask, prompt: state.judge.prompt, source: entry.source, text, signal: state.execution.signal });
+  } catch (err) {
+    state.execution.warnings.push({ message: "warning: the judge could not read untrusted input " + entry.n + ": " + redact(err.message, state), line: 1, column: 1 });
+    return;
+  }
+  const approved = await untrusted.setVerdict(state.root, state.session, entry.n, verdict, state.judge.approves);
+  auditStep(state, "judge", entry.source, verdict.result + (verdict.reason ? ": " + verdict.reason : "") + (approved ? ", approved" : ""));
+}
+
+// the model of the judge: lent by the harness, or from "use model" with a key; throws a plain Error
+function judgeModel(use, lendModel, secrets, url) {
+  if (lendModel) {
+    return lendModel(use === null ? null : use.model);
+  }
+  if (use === null || use.secret === null) {
+    throw new Error("the judge needs a model and a key in AGENTS.talk: use model 'claude-haiku-5-5' for judging with secret ANTHROPIC_API_KEY");
+  }
+  const entry = secrets.get(use.secret);
+  if (entry === undefined || entry.value === null) {
+    throw new Error("no value for secret " + use.secret + ". Put it in the environment, in .env.local or in .env");
+  }
+  return anthropicModel({ url, key: entry.value, model: use.model });
+}
+
+// for "npx clank-talk taint judge": the judge of the project, from AGENTS.talk and the secrets
+// gives { judge(source, text), approves } or { error }
+export async function projectJudge(root, options = {}) {
+  const agents = await loadAgentsTalk(nodePath.resolve(root), {});
+  if (agents.errors.length > 0) {
+    return { error: "AGENTS.talk has errors: " + agents.errors.map((error) => error.message).join("; ") };
+  }
+  const secrets = await loadSecrets(nodePath.resolve(root), agents.allowedSecrets);
+  let ask;
+  try {
+    ask = judgeModel(agents.judge.model || agents.useModel, options.lendModel || null, secrets.secrets, options.url || API_URL);
+  } catch (err) {
+    return { error: "The judge cannot run: " + err.message };
+  }
+  return { approves: agents.judge.approves, judge: (source, text) => judgeText({ ask, prompt: agents.judge.prompt, source, text }) };
 }
 
 // at most this many characters, with "..." at the end of a longer text
@@ -3946,6 +4014,11 @@ async function rotateAudit(state, folder, now) {
   }
   if (deleted > 0) {
     auditStep(state, "audit", ".talk/audit/", "deleted " + deleted + (deleted === 1 ? " file" : " files") + " older than " + state.auditKeepDays + (state.auditKeepDays === 1 ? " day" : " days"));
+  }
+  // the untrusted inputs go with the audit; see src/md/features/taint.md
+  const sessions = await untrusted.prune(state.root, oldest);
+  if (sessions.length > 0) {
+    auditStep(state, "audit", untrusted.STORE + "/", "deleted " + sessions.length + (sessions.length === 1 ? " session" : " sessions") + " older than " + state.auditKeepDays + (state.auditKeepDays === 1 ? " day" : " days") + ": " + sessions.join(", "));
   }
 }
 

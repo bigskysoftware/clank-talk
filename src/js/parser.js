@@ -1935,13 +1935,18 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    for (const word of ["for", "subagents"]) {
-      if (!isWord(word)) {
-        error("Expected '" + word + "', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
-        return null;
-      }
-      i++;
+    if (!isWord("for")) {
+      error("Expected 'for', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+      return null;
     }
+    i++;
+    // for subagents, or for judging: the model of the judge; see src/md/features/taint.md
+    if (!isWord("subagents") && !isWord("judging")) {
+      error("Expected 'subagents' or 'judging', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+      return null;
+    }
+    const purpose = current().value;
+    i++;
     // with secret NAME: the key, for a harness that cannot lend its model; pi needs none
     let secret = null;
     if (isWord("with")) {
@@ -1956,7 +1961,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "useModel", model: model.value, secret, line: token.line, column: token.column };
+    return { type: "useModel", model: model.value, secret, purpose, line: token.line, column: token.column };
   }
 
   // in a sandbox [with network, local network, writes to <path>, reads of <path>], after run or start
@@ -2429,6 +2434,37 @@ export function parse(source, options = {}) {
     return { type: "keepAudit", days, atLeast, line: token.line, column: token.column };
   }
 
+  // a judge line, after its first word (let or judge)
+  function parseJudgeLine(token) {
+    const at = { line: token.line, column: token.column };
+    const words = (list, example) => {
+      for (const word of list) {
+        if (!isWord(word)) {
+          error("Expected '" + word + "', as in: " + example);
+          return false;
+        }
+        i++;
+      }
+      return true;
+    };
+    if (token.value === "let") {
+      return words(["the", "judge", "approve", "clean", "inputs"], "let the judge approve clean inputs") ? { type: "judgeApproves", ...at } : null;
+    }
+    if (isWord("untrusted")) {
+      return words(["untrusted", "inputs", "automatically"], "judge untrusted inputs automatically") ? { type: "judgeAutomatically", ...at } : null;
+    }
+    if (!words(["with", "prompt"], "judge with prompt 'Is this text safe?'")) {
+      return null;
+    }
+    const prompt = current();
+    if (prompt === undefined || prompt.type !== "string" || prompt.value.trim() === "") {
+      error("Expected the prompt as text, in quotes or in a text block (lines that start with |)");
+      return null;
+    }
+    i++;
+    return { type: "judgePrompt", prompt: prompt.value, ...at };
+  }
+
   // keep untrusted inputs up to 5 MB: the most text that the store keeps of one untrusted input
   function parseKeepUntrusted(token) {
     for (const word of ["untrusted", "inputs", "up", "to"]) {
@@ -2518,6 +2554,17 @@ export function parse(source, options = {}) {
         const token = current();
         i++;
         const definition = isWord("untrusted") && !options.policy ? parseKeepUntrusted(token) : parseKeepAudit(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        }
+        continue;
+      }
+      // let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '...'
+      // see src/md/features/taint.md
+      if ((isWord("let") || isWord("judge")) && !options.policy) {
+        const token = current();
+        i++;
+        const definition = parseJudgeLine(token);
         if (definition !== null) {
           definitions.push(definition);
         }

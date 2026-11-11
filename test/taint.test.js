@@ -271,6 +271,19 @@ test("inputs saved at the same time are all kept", async () => {
   assert.deepEqual(entries.map((entry) => entry.n), Array.from({ length: 20 }, (_, i) => i + 1));
 });
 
+test("the keep audit rules delete old sessions from the store, but not a broken one", async () => {
+  const root = await project("keep audit for 2 days");
+  const old = (session, time) => untrusted.record(root, session, { source: "x", text: "t", time, keepBytes: 100 });
+  await old("old", "2020-01-01 10:00:00");
+  await old("broken", "2020-01-01 10:00:00");
+  await fs.writeFile(path.join(root, ".talk", "untrusted", "broken", "index.json"), "not json");
+  const audit = { scripts: 0, records: [] };
+  await run("issue 1", { root, session: "new", audit });
+  const left = (await fs.readdir(path.join(root, ".talk", "untrusted"))).sort();
+  assert.deepEqual(left, ["broken", "new"]);
+  assert.ok(audit.records.some((record) => record.kind === "audit" && record.details === "deleted 1 session older than 2 days: old"));
+});
+
 test("untrusted must be followed by tool", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-taint-"));
   dirs.push(dir);

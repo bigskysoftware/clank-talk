@@ -80,6 +80,10 @@ export function anthropicModel({ url, key, model }) {
       tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: schemaFor(tool) })),
       messages: history.map(anthropicMessage),
     };
+    // the judge has no tools: send none
+    if (tools.length === 0) {
+      delete body.tools;
+    }
     const response = await post(url, key, body, signal);
     const text = response.content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
     const calls = response.content.filter((block) => block.type === "tool_use").map((block) => ({ id: block.id, name: block.name, input: block.input }));

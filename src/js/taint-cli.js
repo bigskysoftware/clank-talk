@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import nodePath from "node:path";
 import { parse } from "./parser.js";
 import * as untrusted from "./untrusted.js";
+import { projectJudge } from "./runtime.js";
 
 export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
 
@@ -13,6 +14,8 @@ export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
   clank-talk taint approve <ref> ...   approve inputs
   clank-talk taint approve --all       approve all inputs: clears all taints
   clank-talk taint approve --clean     approve the inputs that the judge found clean
+  clank-talk taint judge <ref> ...     the judge reads inputs, and gives clean, suspect or unsure
+  clank-talk taint judge --all         the judge reads the inputs that it did not read and that are not approved
   clank-talk taint on | off            turn session taint on or off for this project
 
 A <ref> is <session>/<n>, such as claude-code-4f2a/3, or <n> for the newest session.`;
@@ -77,7 +80,8 @@ async function findRef(root, ref) {
 }
 
 // runs one taint command; out takes lines of text; gives the exit code
-export async function taintCommand(args, root, out) {
+// options.lendModel: for tests, a model in place of the one in AGENTS.talk
+export async function taintCommand(args, root, out, options = {}) {
   const [command = "list", ...rest] = args;
   const agentsLine = await agentsTaintLine(root);
 
@@ -158,6 +162,52 @@ export async function taintCommand(args, root, out) {
       count += (await untrusted.approve(root, session, numbers, "the command line")).length;
     }
     out("Approved " + count + (count === 1 ? " input." : " inputs."));
+    return 0;
+  }
+
+  if (command === "judge") {
+    if (rest.length === 0) {
+      out("Name the inputs to judge, or use --all.\n\n" + USAGE);
+      return 1;
+    }
+    const picked = [];
+    if (rest.includes("--all")) {
+      for (const item of await allInputs(root)) {
+        if (!item.entry.verdict && !item.entry.approved) {
+          picked.push(item);
+        }
+      }
+    } else {
+      for (const ref of rest) {
+        const found = await findRef(root, ref);
+        if (found === null) {
+          out("No untrusted input " + ref + ". Nothing was judged.");
+          return 1;
+        }
+        picked.push(found);
+      }
+    }
+    if (picked.length === 0) {
+      out("No inputs to judge.");
+      return 0;
+    }
+    const setup = await projectJudge(root, options);
+    if (setup.error) {
+      out(setup.error);
+      return 1;
+    }
+    for (const { session, entry } of picked) {
+      const text = await untrusted.inputText(root, session, entry);
+      let verdict;
+      try {
+        verdict = await setup.judge(entry.source, text.slice(text.indexOf("\n\n") + 2));
+      } catch (err) {
+        out(session + "/" + entry.n + "  the judge failed: " + untrusted.printable(err.message));
+        continue;
+      }
+      const approved = await untrusted.setVerdict(root, session, entry.n, verdict, setup.approves);
+      out(session + "/" + entry.n + "  " + verdict.result + (verdict.reason ? ": " + untrusted.printable(verdict.reason) : "") + (approved ? "  (approved by the judge)" : ""));
+    }
     return 0;
   }
 
