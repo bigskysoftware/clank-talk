@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -23,6 +25,21 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+      # a copy of the site at clanktalk.github.io, for networks that filter clank.talk
+      - name: Mirror the site to clanktalk.github.io
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+        run: |
+          if [ -z "$MIRROR_TOKEN" ]; then
+            echo "No MIRROR_TOKEN secret, so no mirror"
+            exit 0
+          fi
+          cd _site
+          touch .nojekyll
+          git init -q -b main
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "Site from bigskysoftware/clank-talk@${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${MIRROR_TOKEN}@github.com/clanktalk/clanktalk.github.io.git" main
 
   deploy:
     needs: build

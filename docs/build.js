@@ -91,6 +91,8 @@ function page(md, outName) {
   }
   // split/join so that "$" in content is not treated as a replace pattern
   let html = template.split("{{title}}").join(title);
+  // the canonical URL, so that search engines treat the clanktalk.github.io mirror as a copy
+  html = html.split("{{path}}").join(outName === "index.html" ? "" : outName);
   if (md.includes('class="features showcase"')) {
     content = showcase(content);
   }
