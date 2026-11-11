@@ -1,6 +1,6 @@
 {
   "name": "clank-talk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A sandboxed, readable scripting language for AI agents, used in place of a shell. Runs as an MCP server.",
   "keywords": ["mcp", "agents", "sandbox", "scripting", "hyperscript", "claude", "pi-package"],
   "homepage": "https://clank.talk",
