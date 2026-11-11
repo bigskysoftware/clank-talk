@@ -3549,11 +3549,12 @@ async function checkFetchHost(url, state, node) {
   if (state.allowedFetch.some((rule) => fetchRuleAllows(rule, url, host)) || state.fetchHosts.has(host)) {
     return;
   }
-  // in an untrusted session, a new host asks about the session first
-  await askUntrusted(state, "Fetch from " + host, node);
-  const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
-  if (answer !== "yes") {
-    throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
+  // in an untrusted session, one question covers the session and the new host; a yes allows the host for the session
+  if (!(await askUntrusted(state, "Fetch from " + host, node))) {
+    const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
+    if (answer !== "yes") {
+      throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
+    }
   }
   state.fetchHosts.add(host);
 }
@@ -3762,13 +3763,14 @@ function sizeText(bytes) {
 }
 
 // in an untrusted session, a risky action asks the human; no answer, or no, is an error
+// gives true if it asked and the human said yes, false if the session is not untrusted
 async function askUntrusted(state, action, node) {
   if (state.taintMode === "off") {
-    return;
+    return false;
   }
   const entries = untrusted.pending(await untrusted.inputs(state.root, state.session));
   if (entries.length === 0) {
-    return;
+    return false;
   }
   const shown = action.length > 120 ? action.slice(0, 117) + "..." : action;
   const sources = entries.slice(0, 5).map((entry) => entry.source).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
@@ -3778,10 +3780,10 @@ async function askUntrusted(state, action, node) {
   if (answer === "approve them and go on") {
     const numbers = await untrusted.approve(state.root, state.session, entries.map((entry) => entry.n));
     auditStep(state, "approve", untrusted.storePath(state.session), "untrusted inputs " + numbers.join(", "));
-    return;
+    return true;
   }
   if (answer === "yes, this time only") {
-    return;
+    return true;
   }
   throw new ScriptError("The human did not approve this in an untrusted session: " + shown + askReason(state) + ".", node);
 }

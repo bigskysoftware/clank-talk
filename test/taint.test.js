@@ -124,6 +124,18 @@ test("a trusted session asks nothing", async () => {
   assert.deepEqual((await run("say 'hi'", { root })).errors, []);
 });
 
+test("in an untrusted session, a fetch to a new host asks one question, and a yes allows the host for the session", async () => {
+  const root = await project();
+  await run("issue 5", { root });
+  const fetchHosts = new Set();
+  const yes = answers("yes, this time only");
+  // .invalid does not resolve: the question comes first, and then the fetch fails on its own
+  const result = await run("fetch 'http://api.example.invalid/'", { root, ask: yes.ask, fetchHosts, lookup: async () => [] });
+  assert.match(result.errors[0].message, /^fetch failed/);
+  assert.deepEqual(yes.asked.map((request) => request.question), ["Fetch from api.example.invalid? 1 untrusted input is not approved: tool issue (5). Review them with: npx clank-talk taint"]);
+  assert.ok(fetchHosts.has("api.example.invalid"));
+});
+
 test("in an untrusted session, a commit asks", async () => {
   const root = await project();
   const git = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: { PATH: process.env.PATH, HOME: root } });
