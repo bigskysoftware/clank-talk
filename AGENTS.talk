@@ -39,7 +39,7 @@ end
 # It gives commit ids only, never the secret text.
 tool secret_scan
   run 'git' with 'log', '--all', '-p', '--no-ext-diff', '--no-textconv', '--format=commit %h'
-    in a sandbox keeping lines matching pattern /^commit |sk-ant-|ghp_|github_pat_|npm_[A-Za-z0-9]{30}|AKIA[0-9A-Z]{16}|PRIVATE KEY-----/
+    in a sandbox keeping lines matching pattern /^commit |sk-ant-[A-Za-z0-9_-]{20}|ghp_[A-Za-z0-9]{30}|github_pat_[A-Za-z0-9_]{30}|npm_[A-Za-z0-9]{30}|AKIA[0-9A-Z]{16}|BEGIN [A-Z ]*PRIVATE KEY-----/
   set commit to null
   set found to []
   for line in lines of it's output
