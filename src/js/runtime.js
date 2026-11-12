@@ -815,20 +815,18 @@ function secretValue(node, state) {
 function secretUseMessage(secret, where, state) {
   const names = secret.names();
   const hosts = [];
-  for (const name of names) {
-    const entry = state.secrets.get(name);
-    if (entry !== undefined) {
-      for (const host of entry.hosts) {
-        if (!hosts.includes(host)) {
-          hosts.push(host);
-        }
-      }
-    }
-  }
   let run = false;
   for (const name of names) {
     const entry = state.secrets.get(name);
-    if (entry !== undefined && entry.run) {
+    if (entry === undefined) {
+      continue;
+    }
+    for (const host of entry.hosts) {
+      if (!hosts.includes(host)) {
+        hosts.push(host);
+      }
+    }
+    if (entry.run) {
       run = true;
     }
   }
@@ -856,23 +854,28 @@ function redact(text, state) {
   return text;
 }
 
-// a copy of a value with each secret as <secret NAME>, for print and error messages
+// a copy of a value with each secret as change(secret) gives it
 // lists and plain objects are copied only when they hold a secret
-function showSecrets(value) {
+function mapSecrets(value, change) {
   if (value instanceof Secret) {
-    return value.shown();
+    return change(value);
   }
   if (!hasSecret(value)) {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map(showSecrets);
+    return value.map((item) => mapSecrets(item, change));
   }
   const copy = Object.create(null);
   for (const key of Object.keys(value)) {
-    copy[key] = showSecrets(value[key]);
+    copy[key] = mapSecrets(value[key], change);
   }
   return copy;
+}
+
+// a copy of a value with each secret as <secret NAME>, for print and error messages
+function showSecrets(value) {
+  return mapSecrets(value, (secret) => secret.shown());
 }
 
 // does a value, or a list or plain object in it, hold a secret?
@@ -899,25 +902,14 @@ function isPlainObject(value) {
 
 // a copy of a value with each secret as its real text, for a fetch; the names go into used
 function revealSecrets(value, used) {
-  if (value instanceof Secret) {
-    for (const name of value.names()) {
+  return mapSecrets(value, (secret) => {
+    for (const name of secret.names()) {
       if (!used.includes(name)) {
         used.push(name);
       }
     }
-    return value.reveal();
-  }
-  if (!hasSecret(value)) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => revealSecrets(item, used));
-  }
-  const copy = Object.create(null);
-  for (const key of Object.keys(value)) {
-    copy[key] = revealSecrets(value[key], used);
-  }
-  return copy;
+    return secret.reveal();
+  });
 }
 
 // the words for file errors from the system; the code goes in the message too
