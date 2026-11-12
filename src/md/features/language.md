@@ -62,6 +62,8 @@ Approved from [examples.md](examples.md). Each rule has an example there.
 - `increment x by n` and `decrement x by n`. With no `by`, the amount is 1, as in hyperscript.
 - Possessive and dot access are the same: `line's number` and `line.number`.
 - Approved: `<name> of <value>` is the same as `<value>'s <name>`, as in hyperscript: `lines of the result's output`, `the name of the file`.
+- Approved (2026-11-12): agents do not group values with parentheses. They use `of`, which reads from the right (`the length of find 'x' in f`, not `(find 'x' in f)'s length`), or put a value in a variable first. Parentheses are for math. The rule is in the `clank_talk` tool description (`RULES` in `src/js/host.js`). Why: `of` reads as English, and parentheses make the agent's scripts harder for the human to read in the audit.
+- Approved (built, 2026-11-12): `lines of` a list of lines (from `find`, or `lines a to b of`) gives the same lines, with their numbers and files. Before, it gave `null`, because a list has no `lines` property.
 - Approved: the value after `of` is a value with access, so `name of the file's parent` is the name of `the file's parent`, and `a of b of c` is `a of (b of c)`. A `$` global is never a property name.
 - Approved: a command claims the words that come after its expressions, so `lines a to b of f` and `put x after line n of f` work. Inside `( )`, `of` is a property again. See the follows set in [../infrastructure/parser.md](../infrastructure/parser.md).
 - Approved: text has `lines`, as a file does.

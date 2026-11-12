@@ -84,6 +84,7 @@ A plugin adds tools, syntax, or both, so a team can share what it built. See `fe
 
 ## Runtime and hosts
 
+- **Host tools, later (tau, 2026-11-12; see `infrastructure/host.md`):** a host tool in a subagent's `with only` list when it has no `changes`, no `sends` and no `untrusted` (a host flag such as `subagentSafe`); undo for a binary file that a host tool changes (today: a warning, no undo); types for host tool params in `help`; a policy line that denies a host tool by name (today: a `before <tool>` hook can reject it); `taint asks before sends`, if an AGENTS.talk tool ever gets `sends`.
 - **Progress for long scripts.** MCP progress notifications with the current line, step and time. Proposed in `infrastructure/host.md`.
 - **Pause and resume a run:** `execution.running`, `pause()` and `resume()`, so the agent can look at a program's output so far.
 - **A memory limit** for scripts. An in-process runtime cannot enforce one well. See `features/sandbox.md`.

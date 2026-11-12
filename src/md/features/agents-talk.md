@@ -57,6 +57,7 @@ Approved:
 - Approved: `import` works in AGENTS.talk and in the files it imports. Scripts cannot import.
 - Approved: `./` and `../` start from the importing file. `@/` starts from the project root.
 - Approved: `allow env` is only allowed in AGENTS.talk, so the list of environment variables stays in one file.
+- Approved (built, 2026-11-12): every line that only AGENTS.talk can have gives the same error in an imported file, with its own words: `'<words>' is only allowed in AGENTS.talk`. The list is `AGENTS_TALK_ONLY` in `src/js/runtime.js`. Changed: the three judge lines each name themselves (before: `The judge lines are only allowed in AGENTS.talk`), and `allow secret ... '*'` in an imported file gives this error first.
 - Approved: `allow changes to <path>, ...` at the top level of AGENTS.talk lists hidden files and folders that scripts can change. Only AGENTS.talk can have it. See [../infrastructure/security.md](../infrastructure/security.md).
 - An import loop is an error. A file imported two times loads once. Errors in an imported file name that file. Tools from all files can call each other.
 - Approved: `.talk` files only. `.js` plugins would run with the user's full rights, an injection risk.

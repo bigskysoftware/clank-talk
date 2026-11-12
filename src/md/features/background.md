@@ -24,4 +24,4 @@ Approved. A tool can start a program that keeps running, such as a dev server. S
 
 - Approved (built): `wait 2 seconds` waits. One step.
 - Approved (built): `wait until <condition> within <duration>` checks the condition again every 200 ms. Each check is one step. An error in the condition counts as false, so `wait until (fetch ...)'s status is 200` works while a server starts. At the time limit, it is an error with the last error message. With no `within`, the limit is 30 seconds.
-- Approved (built): `fetch` is also a value, as `read` is, so `set page to fetch url` works too. In a condition, use parentheses: `(fetch url as response)'s status`.
+- Approved (built): `fetch` is also a value, as `read` is, so `set page to fetch url` works too. In a condition, use `of`: `the status of fetch url as response`. Changed 2026-11-12: before, this record said to use parentheses: `(fetch url as response)'s status`.
