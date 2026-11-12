@@ -551,7 +551,7 @@ export const HELP = [
   {
     name: "as", kind: "expression",
     syntax: "<value> as json | as pretty json | as number | as text",
-    description: "Convert a value. 'as json' parses text, and formats other values as compact JSON. On a file, it parses the file's text.",
+    description: "Convert a value. 'as json' parses text, and formats other values as compact JSON. On a file, it parses the file's text. A line from find or lines becomes only its text in JSON. To keep the numbers, print the lines, or use each line's number.",
     examples: ["set config to the file's text as json"],
   },
   {
