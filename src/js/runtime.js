@@ -20,6 +20,7 @@ import nodePath from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { parseEnv } from "node:util";
 import dns from "node:dns/promises";
 
 const DEFAULT_MAX_STEPS = 10_000;
@@ -762,7 +763,8 @@ function secretNote(names) {
   return names.length === 0 ? "" : "  (secret " + names.join(", ") + ")";
 }
 
-// KEY=value lines, as dotenv reads them: # comments, "export ", quotes; a missing file is empty
+// KEY=value lines, with the dotenv rules (node:util parseEnv): # comments, "export ", quotes, backticks,
+// and double-quoted values on more than one line; a missing file is empty
 async function readEnvFile(absolute) {
   let text;
   try {
@@ -770,43 +772,7 @@ async function readEnvFile(absolute) {
   } catch (err) {
     return Object.create(null);
   }
-  return parseEnvFile(text);
-}
-
-function parseEnvFile(text) {
-  const values = Object.create(null);
-  for (const raw of text.split("\n")) {
-    let line = raw.trim();
-    if (line === "" || line.startsWith("#")) {
-      continue;
-    }
-    if (line.startsWith("export ")) {
-      line = line.slice(7).trim();
-    }
-    const equals = line.indexOf("=");
-    if (equals < 1) {
-      continue;
-    }
-    const key = line.slice(0, equals).trim();
-    let value = line.slice(equals + 1).trim();
-    const quote = value[0];
-    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
-    if (close > 0) {
-      value = value.slice(1, close);
-      // in double quotes, \n is a line break
-      if (quote === '"') {
-        value = value.replaceAll("\\n", "\n");
-      }
-    } else {
-      // with no quotes, " #" starts a comment
-      const hash = value.indexOf(" #");
-      if (hash !== -1) {
-        value = value.slice(0, hash).trim();
-      }
-    }
-    values[key] = value;
-  }
-  return values;
+  return Object.assign(Object.create(null), parseEnv(text));
 }
 
 // secret NAME: an error if AGENTS.talk does not allow it, or if it has no value

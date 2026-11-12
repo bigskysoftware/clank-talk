@@ -185,6 +185,26 @@ test("the environment wins, then .env.local, then .env", async () => {
   }
 });
 
+test(".env follows the dotenv rules: # starts a comment, backticks quote, double quotes span lines", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clank-secrets-"));
+  try {
+    await fs.writeFile(path.join(dir, "AGENTS.talk"), "taint off\nallow secret ENV_A for fetch to '127.0.0.1'\nallow secret ENV_B for fetch to '127.0.0.1'\nallow secret ENV_C for fetch to '127.0.0.1'\nallow fetch from '127.0.0.1'");
+    await fs.writeFile(path.join(dir, ".env"), "ENV_A=value-1234#comment\nENV_B=`value 5678`\nENV_C=\"line-one\nline-two\"\n");
+    const sent = async (name) => {
+      const result = await run(`fetch '${base}/' with headers: { Authorization: secret ${name} }`, { root: dir });
+      assert.deepEqual(result.errors, []);
+      return seen.auth;
+    };
+    assert.equal(await sent("ENV_A"), "value-1234");
+    assert.equal(await sent("ENV_B"), "value 5678");
+    // a header cannot hold a line break, so the body carries the two-line value
+    const result = await run(`fetch '${base}/' with method: 'POST', body: secret ENV_C`, { root: dir });
+    assert.deepEqual(result.errors, []);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("fetch sends the real value in headers and the body, to the allowed host", async () => {
   await output(`fetch '${base}/' with headers: { Authorization: 'Bearer ' + secret TOKEN }`);
   assert.equal(seen.auth, "Bearer " + TOKEN);
