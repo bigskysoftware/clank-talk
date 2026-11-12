@@ -7,6 +7,7 @@ import { run } from "../src/js/clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../src/js/runtime.js";
 import * as untrusted from "../src/js/untrusted.js";
 import { harnessToolAllowed } from "../src/js/host.js";
+import { execFileSync } from "node:child_process";
 import { clankTalkExtension } from "../src/js/harnesses/pi-host.js";
 
 // require clank-talk and allow harness tools; see src/md/features/harness-tools.md
@@ -155,4 +156,22 @@ test("pi: an allowed tool's run goes in the audit, and an untrusted one taints",
   assert.match(log, /harness tool read /);
   assert.doesNotMatch(log, /harness tool clank_talk/);
   await pi.handlers.session_shutdown({}, {});
+});
+
+test("clank-talk status-line: on or off from the session's file, else the default; then the taint", async () => {
+  const bin = path.resolve("bin/clank-talk.js");
+  const line = (root, info) => execFileSync(process.execPath, [bin, "status-line"], { input: JSON.stringify({ workspace: { current_dir: root }, ...info }), env: { ...process.env, CLANK_TALK_ROOT: "" } }).toString().trim();
+  const root = await project("");
+  assert.equal(line(root, { session_id: "s1" }), "clank-talk: on, untainted");
+  await fs.mkdir(path.join(root, ".talk", "harness"), { recursive: true });
+  await fs.writeFile(path.join(root, ".talk", "harness", "claude-code-s1.json"), JSON.stringify({ on: false }));
+  assert.equal(line(root, { session_id: "s1" }), "clank-talk: off, untainted");
+  // a session id that is not a plain name is not a path
+  assert.equal(line(root, { session_id: "../s1" }), "clank-talk: on, untainted");
+  assert.equal(line(await project(null), {}), "clank-talk: off, untainted");
+  // require clank-talk wins over the file
+  const required = await project("require clank-talk");
+  await fs.mkdir(path.join(required, ".talk", "harness"), { recursive: true });
+  await fs.writeFile(path.join(required, ".talk", "harness", "claude-code-s1.json"), JSON.stringify({ on: false }));
+  assert.equal(line(required, { session_id: "s1" }), "clank-talk: on, untainted");
 });

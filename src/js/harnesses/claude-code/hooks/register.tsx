@@ -34,13 +34,20 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'taint', description: 'Review and approve the untrusted inputs of this ClankTalk project' })
     await $.command.register({ name: 'clank-talk', description: 'ClankTalk only: on, off, or show which tools are allowed', argumentHint: '[on | off]' })
+    // the status line: this session's on or off state, for npx clank-talk status-line
+    void showStatus($)
+    // the line under the prompt from an earlier version: gone, as the status line shows the state now
+    $.ui.status(undefined)
     return next(e)
   })
 
   // ClankTalk only: while it is on, the agent can use clank_talk and the allowed tools, and nothing else
   // see src/md/features/harness-tools.md
   on('tool.call', async ($, e, next) => {
-    if (CLANK_TALK_TOOL.test(e.tool) || BUILT_IN.includes(e.tool)) {
+    if (CLANK_TALK_TOOL.test(e.tool)) {
+      return next(e)
+    }
+    if (BUILT_IN.includes(e.tool)) {
       return next(e)
     }
     const root = await $.session.root()
@@ -72,6 +79,7 @@ export const register: Register = on => {
         return { text: 'AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.' }
       }
       switched = arg
+      void showStatus($)
       return { text: 'ClankTalk is ' + arg + ' for this session.' + (arg === 'on' ? ' Other tools are blocked; /clank-talk shows which.' : '') }
     }
     if (arg !== '') {
@@ -417,6 +425,18 @@ async function load($: EngineInterface, selected: string | null): Promise<void> 
   const text = pick === null ? '' : (await cli($, ['show', state.page ? '--page' : '--body', pick])).text.replace(/\n$/, '')
   // another input, or another view of it, starts at the top
   await update($, view, old => ({ ...old, taint: data.taint, warnings: data.warnings, inputs: data.inputs, selected: pick, text, top: pick === old.selected && text === old.text ? old.top : 0 }))
+}
+
+// the on/off state of this session, for the status line: .talk/harness/claude-code-<session id>.json
+// npx clank-talk status-line reads it, with the session id that Claude Code gives the statusLine command
+async function showStatus($: EngineInterface): Promise<void> {
+  try {
+    const root = await $.session.root()
+    const state = await mode($, root, await projectHarness($, root))
+    await $.fs.write(root + '/.talk/harness/claude-code-' + (await $.session.id()) + '.json', JSON.stringify({ on: state.on, why: state.why }) + '\n')
+  } catch {
+    // no status file: the status line shows the default from AGENTS.talk
+  }
 }
 
 // approve or unapprove, then read the inputs again
