@@ -108,12 +108,13 @@ export const HELP = [
   },
   {
     name: "replace", kind: "command",
-    syntax: "replace <old> with <new> in <file, files, glob or variable> | replace lines <a> to <b> of <file> with <text>",
+    syntax: "replace [every] <old> with <new> in <file, files, glob or variable> | replace lines <a> to <b> of <file> with <text>",
     description: [
       "Replace every match of the old text, or of a pattern (help pattern).",
       "The result lists each replacement. 'if the result is empty' means no match. No match also gives a warning.",
       "In a list of files or a glob, the runtime checks every file first. If one file cannot change, no file changes.",
       "A replace that gives the same text writes nothing.",
+      "An old text in a text block (| lines) must match one place, or replace is an error and changes nothing. In a list of files, at most one place in each file. 'replace every' with a text block changes all the places.",
       "For code, write the old and new text in text blocks (| lines). A quoted string on more than one line loses the indent its lines share, so replace warns.",
       "'replace lines' replaces lines by number. Read the file first. The result is the old lines.",
       "A line edit keeps the CRLF line breaks of a file.",

@@ -711,9 +711,12 @@ export function parse(source, options = {}) {
     if (token.type === "string" || token.type === "template") {
       i++;
       const value = token.type === "string" ? node("string", token, { value: token.value }) : parseTemplate(token);
-      // a string on more than one line that lost its shared indent; see the tokenizer
+      // a string on more than one line that lost its shared indent, and a text block; see the tokenizer
       if (value !== null && token.dedented) {
         value.dedented = true;
+      }
+      if (value !== null && token.block) {
+        value.block = true;
       }
       return value;
     }
@@ -1343,6 +1346,8 @@ export function parse(source, options = {}) {
 
   // replace <expression> with <expression> in <file, variable or property>
   function parseReplace(token) {
+    // replace every: all the matches of a text block; see src/md/features/language.md
+    const every = takeEvery();
     const old = parseBefore(["with"], parseExpression);
     if (old === null) {
       return null;
@@ -1365,11 +1370,15 @@ export function parse(source, options = {}) {
         error("replace lines ... of <file> names the file after 'of', so it takes no 'in'. Remove the 'in' part");
         return null;
       }
+      if (every) {
+        error("replace every is for text, not for 'lines ... of'. Remove 'every'");
+        return null;
+      }
       return { type: "replaceLines", range: old, text: replacement, line: token.line, column: token.column };
     }
     // in an "in <target> do ... end" block, the block names the target, and an "in" here starts a new command
     if (inTarget !== null && old.type !== "lines") {
-      return { type: "replace", old, replacement, target: inTarget, line: token.line, column: token.column };
+      return replaceNode(old, replacement, inTarget, every, token);
     }
     if (!isWord("in")) {
       error("Expected 'in'");
@@ -1377,7 +1386,24 @@ export function parse(source, options = {}) {
     }
     i++;
     const target = parseExpression();
-    return { type: "replace", old, replacement, target, line: token.line, column: token.column };
+    return replaceNode(old, replacement, target, every, token);
+  }
+
+  function replaceNode(old, replacement, target, every, token) {
+    const command = { type: "replace", old, replacement, target, line: token.line, column: token.column };
+    if (every) {
+      command.every = true;
+    }
+    return command;
+  }
+
+  // the word every after replace, on the same line
+  function takeEvery() {
+    if (isWord("every") && current().line === tokens[i - 1].line) {
+      i++;
+      return true;
+    }
+    return false;
   }
 
   // in <target> replace <old> with <new>, in <target> find <text>:
@@ -1399,6 +1425,7 @@ export function parse(source, options = {}) {
     if (isWord("replace")) {
       const replaceToken = current();
       i++;
+      const every = takeEvery();
       const old = parseBefore(["with"], parseExpression);
       if (old === null) {
         return null;
@@ -1417,7 +1444,7 @@ export function parse(source, options = {}) {
       if (replacement === null) {
         return null;
       }
-      return { type: "replace", old, replacement, target, line: replaceToken.line, column: replaceToken.column };
+      return replaceNode(old, replacement, target, every, replaceToken);
     }
     if (isWord("find")) {
       const findToken = current();

@@ -303,6 +303,8 @@ export function tokenize(source) {
         }
       }
       push("string", lines.join("\n"), startLine, startColumn);
+      // replace uses a text block for one code edit, so it must match one place
+      tokens[tokens.length - 1].block = true;
       continue;
     }
 

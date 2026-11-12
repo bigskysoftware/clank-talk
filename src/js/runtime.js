@@ -1818,9 +1818,11 @@ async function runCommand(command, state) {
       }
       state.execution.warnings.push(warning);
     }
+    // a text block is one code edit: it must match one place; replace every changes all of them
+    const once = command.old.block === true && command.every !== true;
     const target = await evaluate(command.target, state);
     if (target instanceof FileRef) {
-      const replacements = await replaceInFile(target, old, replacement, state, command);
+      const replacements = await replaceInFile(target, old, replacement, state, command, once);
       state.result = replacements;
       warnIfNoMatch(replacements, old, target.path, state, command);
       return null;
@@ -1834,6 +1836,20 @@ async function runCommand(command, state) {
       for (const file of files) {
         await checkWritable(file, state, command);
       }
+      // a text block: at most one place in each file, and one in all, before any file changes
+      if (once) {
+        let total = 0;
+        for (const file of files) {
+          const found = (await replaceIn(await readText(file, state, command), old, replacement, state, command)).replacements;
+          if (found.length > 1) {
+            checkOnce(found, file.path, command);
+          }
+          total += found.length;
+        }
+        if (total === 0) {
+          checkOnce([], files.length + " files", command);
+        }
+      }
       const all = [];
       for (const file of files) {
         all.push(...(await replaceInFile(file, old, replacement, state, command)));
@@ -1845,6 +1861,9 @@ async function runCommand(command, state) {
     const isAssignable = command.target.type === "variable" || command.target.type === "property" || command.target.type === "index";
     if (typeof target === "string" && isAssignable) {
       const { text, replacements } = await replaceIn(target, old, replacement, state, command);
+      if (once) {
+        checkOnce(replacements, "the variable", command);
+      }
       await assign(command.target, text, state);
       state.result = replacements;
       warnIfNoMatch(replacements, old, "the variable", state, command);
@@ -6098,12 +6117,15 @@ async function realTarget(file, state, node) {
 }
 
 // replace in one file, with the change hooks; gives the replacements
-async function replaceInFile(file, old, replacement, state, command) {
+async function replaceInFile(file, old, replacement, state, command, once = false) {
   // hooks see the pattern's text as old
   const step = changeStep("replace", file, { old: old instanceof Pattern ? old.source : old, new: replacement });
   await changeHooks("before", step, state, command);
   const before = await readText(file, state, command);
   const { text, replacements } = await replaceIn(before, old, replacement, state, command);
+  if (once) {
+    checkOnce(replacements, file.path, command);
+  }
   // a replace that gives the same text writes nothing, so undo does not get a step that changes nothing
   if (replacements.length > 0 && text !== before) {
     await writeText(file, text, false, state, command);
@@ -6112,6 +6134,18 @@ async function replaceInFile(file, old, replacement, state, command) {
   const where = changedRange(before, text);
   await changeHooks("after", step, state, command, replacements.length === 0 ? "no match" : count + (where === "" ? "" : ", " + where));
   return replacements;
+}
+
+// a text block in replace is one code edit, so it must match one place; see src/md/features/language.md
+function checkOnce(replacements, where, node) {
+  if (replacements.length === 1) {
+    return;
+  }
+  if (replacements.length === 0) {
+    throw new ScriptError("The text block matches no place in " + where + ". The old text must be exactly as it is there, with its spaces. Read it again", node);
+  }
+  const lines = replacements.map((found) => found.line).join(", ");
+  throw new ScriptError("The text block matches " + replacements.length + " places in " + where + " (lines " + lines + "). It must match one place. Make the old text longer, or write replace every", node);
 }
 
 // a replace that finds nothing is often a mistake, such as a wrong line break or indent
