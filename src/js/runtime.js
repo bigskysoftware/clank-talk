@@ -372,6 +372,10 @@ async function execute(source, options, execution) {
       execution.warnings.push({ message: "Could not write " + untrusted.POLICY_FILE + ": " + err.message, line: 1, column: 1 });
     }
   }
+  // '*' in allow or trust is a wide door, so each run says so; the audit has each fetch
+  for (const warning of wideFetchWarnings(agents)) {
+    execution.warnings.push({ message: warning, line: 1, column: 1 });
+  }
   // limit output keeping ...: AGENTS.talk, then the policy; each cuts what the one before it kept, and the host cuts last
   const policyLimit = policy.policy === null ? null : policy.policy.rules.find((rule) => rule.type === "outputLimit") || null;
   execution.outputLimits = [agents.outputLimit, policyLimit].filter((limit) => limit !== null);
@@ -1356,7 +1360,9 @@ async function loadAgentsTalk(root, hostTools) {
         continue;
       }
       if (definition.type === "allowSecret") {
-        if (file.name === AGENTS_TALK) {
+        if (definition.hosts.includes("*")) {
+          result.errors.push({ message: "'allow secret' cannot send a secret to every host ('*'). Name the hosts.", ...where });
+        } else if (file.name === AGENTS_TALK) {
           result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, subagents: definition.subagents, where });
         } else {
           result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
@@ -3921,23 +3927,25 @@ async function checkFetchHost(url, state, node) {
     throw new ScriptError("fetch refused: " + host + " is outside the policy '" + state.policy.name + "' (" + ruleAt(limit) + ")", node);
   }
   const allowLine = "To allow it, a human can add this line to AGENTS.talk:\n  allow fetch from '" + host + "'";
+  // a trusted URL is allowed too: a source that the human trusts must not ask; see src/md/features/taint.md
+  const rules = state.allowedFetch.concat(state.trustedFetch);
   // a private host needs its own line in AGENTS.talk; a *. pattern is not enough
   if (isPrivateHost(host)) {
-    if (state.allowedFetch.some((rule) => ruleHost(rule) === host && fetchRuleAllows(rule, url, host))) {
+    if (rules.some((rule) => ruleHost(rule) === host && fetchRuleAllows(rule, url, host))) {
       return;
     }
     throw new ScriptError("fetch refused: " + host + " is a local or private address.\n" + allowLine, node);
   }
   // a public name can point to a private address, so look at the addresses too
   // limit: the connection does its own lookup, so a name that changes its answer in between is not caught
-  if (!state.allowedFetch.some((rule) => ruleHost(rule) === host)) {
+  if (!rules.some((rule) => ruleHost(rule) === host)) {
     for (const address of await state.lookup(host)) {
       if (isPrivateHost(address)) {
         throw new ScriptError("fetch refused: " + host + " points to a local or private address (" + address + ").\n" + allowLine, node);
       }
     }
   }
-  if (state.allowedFetch.some((rule) => fetchRuleAllows(rule, url, host)) || state.fetchHosts.has(host)) {
+  if (rules.some((rule) => fetchRuleAllows(rule, url, host)) || state.fetchHosts.has(host)) {
     return;
   }
   // in an untrusted session, one question covers the session and the new host; a yes allows the host for the session
@@ -3952,6 +3960,18 @@ async function checkFetchHost(url, state, node) {
     }
   }
   state.fetchHosts.add(host);
+}
+
+// the warnings for '*' in "allow fetch from" and "trust fetch from"; the taint command shows them too
+export function wideFetchWarnings(agents) {
+  const warnings = [];
+  if (agents.trustedFetch.includes("*")) {
+    warnings.push("AGENTS.talk trusts text from all public hosts (trust fetch from '*'): fetched text does not taint the session.");
+  }
+  if (agents.allowedFetch.includes("*")) {
+    warnings.push("AGENTS.talk allows fetch from all public hosts (allow fetch from '*').");
+  }
+  return warnings;
 }
 
 // the addresses of a name, in the URL parser's form, so isPrivateHost can read them
@@ -4000,6 +4020,10 @@ function shownRule(rule) {
 // the rule allows the URL; host is the URL's host in lower case, with no dot at the end
 // a URL pattern must have the same scheme and port; in its host, *. is one more part
 function fetchRuleAllows(rule, url, host) {
+  // '*' is every public host; a private host needs its own line, so a trusted page cannot reach it
+  if (rule === "*") {
+    return !isPrivateHost(host);
+  }
   if (!isUrlRule(rule)) {
     return isAllowedFetchHost(host, [rule]);
   }
@@ -4190,6 +4214,11 @@ function judgeModel(use, lendModel, secrets, url) {
     throw new Error("no value for secret " + use.secret + ". Put it in the environment, in .env.local or in .env");
   }
   return anthropicModel({ url, key: entry.value, model: use.model });
+}
+
+// the '*' warnings for the taint command, which reads AGENTS.talk on its own
+export async function projectFetchWarnings(root) {
+  return wideFetchWarnings(await loadAgentsTalk(nodePath.resolve(root), {}));
 }
 
 // for "npx clank-talk taint judge": the judge of the project, from AGENTS.talk and the secrets

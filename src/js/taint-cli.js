@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import nodePath from "node:path";
 import { parse } from "./parser.js";
 import * as untrusted from "./untrusted.js";
-import { projectJudge } from "./runtime.js";
+import { projectFetchWarnings, projectJudge } from "./runtime.js";
 import { runTui } from "./taint-tui.js";
 
 export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
@@ -119,6 +119,9 @@ export async function taintCommand(args, root, out, options = {}) {
 
   if (command === "list") {
     out("taint: " + (state[0] === "required" ? "on" : state[0]) + " (" + state[1] + ")");
+    for (const warning of await projectFetchWarnings(root)) {
+      out("warning: " + warning);
+    }
     const inputs = await allInputs(root);
     if (inputs.length === 0) {
       out("No untrusted inputs.");

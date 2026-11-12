@@ -5,7 +5,7 @@
 
 import readline from "node:readline";
 import * as untrusted from "./untrusted.js";
-import { projectJudge } from "./runtime.js";
+import { projectFetchWarnings, projectJudge } from "./runtime.js";
 import { displayLines, kind, lineText, styleRuns, viewText, wrapRuns } from "./taint-view.js";
 
 export const FOOTER_KEYS = [["?", "keys"], ["j/k", "move"], ["space", "mark"], ["V", "select"], ["a", "approve"], ["u", "undo"], ["J", "judge"], ["m", "view"], ["/", "search"], ["tab", "pane"], ["q", "quit"]];
@@ -55,7 +55,7 @@ export function createView(items) {
   return {
     items, cursor: 0, marks: new Set(), anchor: null, focus: "list", scroll: 0,
     showApproved: false, prompt: null, search: { list: "", text: "" }, pending: null, help: false,
-    texts: new Map(), message: "", size: layout(80, 24), page: false, numbers: true, cache: null, flags: new Map(), undo: [],
+    texts: new Map(), message: "", size: layout(80, 24), page: false, numbers: true, cache: null, flags: new Map(), undo: [], warnings: [],
   };
 }
 
@@ -552,6 +552,10 @@ export function render(view, width, height) {
   if (view.showApproved) {
     title.push([[], "   "], [["dim"], "approved shown"]);
   }
+  // '*' in AGENTS.talk: the line in short, such as trust fetch from '*'
+  for (const warning of view.warnings) {
+    title.push([[], "   "], [["bold", "red"], (warning.match(/\(([^)]*)\)/) || [null, warning])[1]]);
+  }
   const low = view.anchor === null ? -1 : Math.min(view.anchor, view.cursor);
   const high = view.anchor === null ? -1 : Math.max(view.anchor, view.cursor);
   const start = Math.max(0, Math.min(view.cursor - Math.floor(body / 2), list.length - body));
@@ -685,6 +689,7 @@ export async function runTui(root, input, output, out, options = {}) {
     return 1;
   }
   const view = createView(await loadItems(root));
+  view.warnings = await projectFetchWarnings(root);
   // one step at a time: keys, reloads, approvals and the judge do not overlap
   let chain = Promise.resolve();
   let closed = false;
