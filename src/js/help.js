@@ -390,7 +390,7 @@ export const HELP = [
   },
   {
     name: "allow", kind: "command", where: "AGENTS.talk",
-    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>' or <url pattern>, ... | allow secret <NAME> for fetch to '<host>' or <url pattern>, ... | allow secret <NAME> for run | allow secret <NAME> for subagents | allow harness tools <name> or '<pattern>', ... | require clank-talk | use model '<id>' for subagents [with secret <NAME>] | use model '<id>' for judging [with secret <NAME>]",
+    syntax: "allow env <NAME>, ... | allow changes to <path>, ... | allow fetch from '<host>' or <url pattern>, ... | allow secret <NAME> for fetch to '<host>' or <url pattern>, ... | allow secret <NAME> for run | allow secret <NAME> for subagents | allow [untrusted] harness tools <name> or '<pattern>', ... | require clank-talk | use model '<id>' for subagents [with secret <NAME>] | use model '<id>' for judging [with secret <NAME>]",
     description: [
       "Allow environment variables, changes to hidden files, fetch hosts and secrets. Only at the top of AGENTS.talk.",
       "'allow env' lists the environment variables that run passes on.",
@@ -402,7 +402,8 @@ export const HELP = [
       "'allow secret ... for run' gives the secret to a run or start in a tool, with 'using secret'.",
       "A name cannot be in both 'allow env' and 'allow secret'. A secret cannot go to '*'.",
       "'require clank-talk' keeps ClankTalk on in the harness: the agent can use only clank_talk, and /clank-talk off is refused. With no line, ClankTalk is on in a project that has an AGENTS.talk.",
-      "'allow harness tools Read, Grep' lets the agent use these other harness tools while ClankTalk is on. In a name in quotes, * is any text: 'mcp__github__*'.",
+      "'allow harness tools Read, Grep' lets the agent use these other harness tools while ClankTalk is on. In a name in quotes, * is any text: 'mcp__github__*'. Each call of an allowed tool goes in the audit.",
+      "'allow untrusted harness tools WebFetch' also makes their results untrusted inputs, which taint the session. WebFetch and WebSearch are always untrusted.",
       "'use model' sets the model for subagents. pi lends its own model. Other harnesses need a key from 'allow secret ... for subagents'.",
       "'use model ... for judging' sets the model of the judge, which reads untrusted inputs. With no line, the judge uses the subagent model.",
     ],

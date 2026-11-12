@@ -2326,6 +2326,12 @@ export function parse(source, options = {}) {
   //   allow fetch from 'api.github.com', '*.npmjs.org'
   function parseAllow(token) {
     // allow harness tools Read, Grep, 'mcp__github__*': other tools that the harness lets the agent use; see src/md/features/harness-tools.md
+    // allow untrusted harness tools WebFetch: their results are untrusted inputs, and taint the session
+    let untrustedTools = false;
+    if (isWord("untrusted") && tokens[i + 1] !== undefined && tokens[i + 1].value === "harness") {
+      untrustedTools = true;
+      i++;
+    }
     if (isWord("harness")) {
       i++;
       if (!isWord("tools")) {
@@ -2347,7 +2353,7 @@ export function parse(source, options = {}) {
         }
         i++;
       }
-      return { type: "allowHarnessTools", names, line: token.line, column: token.column };
+      return { type: "allowHarnessTools", names, untrusted: untrustedTools, line: token.line, column: token.column };
     }
     if (isWord("fetch")) {
       i++;

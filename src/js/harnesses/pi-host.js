@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { run, stopAllProcesses } from "../clank-talk.js";
-import { projectHarness } from "../runtime.js";
+import { projectHarness, recordHarnessTool } from "../runtime.js";
 import * as untrusted from "../untrusted.js";
 import { SubagentError, schemaFor } from "../subagent.js";
 import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, harnessToolAllowed } from "../host.js";
@@ -89,9 +89,27 @@ export function clankTalkExtension(pi, Type, options = {}) {
 
   // the count in the footer changes when a script reads web text, and when the human approves
   pi.on("tool_execution_end", async (event, ctx) => {
-    if (event.toolName === TOOL_NAME && session !== null) {
+    if (session !== null) {
       await showTaint(ctx, session.root);
     }
+  });
+
+  // an allowed harness tool goes in the ClankTalk audit; an untrusted one's result taints; see src/md/features/harness-tools.md
+  // tool_result has the input and the content (pi docs, Events); it changes nothing in the result
+  pi.on("tool_result", async (event, ctx) => {
+    if (session === null || !mode().on || event.toolName === TOOL_NAME || !harnessToolAllowed(event.toolName, harness.allowed)) {
+      return undefined;
+    }
+    const blocks = Array.isArray(event.content) ? event.content : [];
+    const text = blocks.map((block) => (block && block.type === "text" ? block.text : "[" + (block && block.type) + "]")).join("\n");
+    try {
+      await recordHarnessTool(session.root, { session: session.name, tool: event.toolName, input: event.input ?? null, output: text, untrusted: harnessToolAllowed(event.toolName, harness.untrusted || []) });
+    } catch (err) {
+      if (ctx && ctx.hasUI) {
+        ctx.ui.notify("ClankTalk could not record " + event.toolName + ": " + err.message, "warning");
+      }
+    }
+    return undefined;
   });
   pi.on("agent_end", async (_event, ctx) => {
     if (session !== null) {

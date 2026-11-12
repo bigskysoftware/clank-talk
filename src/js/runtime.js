@@ -1242,7 +1242,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], trustedFetch: [], trustWhere: null, allowedSecrets: [], harnessTools: [], requireClankTalk: false, useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], trustedFetch: [], trustWhere: null, allowedSecrets: [], harnessTools: [], untrustedHarnessTools: [], requireClankTalk: false, useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1293,6 +1293,9 @@ async function loadAgentsTalk(root, hostTools) {
           result.requireClankTalk = true;
         } else {
           result.harnessTools.push(...definition.names);
+          if (definition.untrusted) {
+            result.untrustedHarnessTools.push(...definition.names);
+          }
         }
         continue;
       }
@@ -4244,7 +4247,37 @@ export async function projectHarness(root) {
   const resolved = nodePath.resolve(root);
   const exists = fsSync.existsSync(nodePath.join(resolved, AGENTS_TALK));
   const agents = await loadAgentsTalk(resolved, {});
-  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: agents.harnessTools, errors: agents.errors.map((error) => error.message) };
+  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: agents.harnessTools, untrusted: agents.untrustedHarnessTools, errors: agents.errors.map((error) => error.message) };
+}
+
+// an allowed harness tool ran while ClankTalk was on: an audit record, and for an untrusted tool, an untrusted input
+// the harness decides "untrusted" from projectHarness's list; see src/md/features/harness-tools.md
+// gives the ref of the stored input, such as claude-code-4f2a/3, or null
+export async function recordHarnessTool(root, { session, tool, input, output, untrusted: isUntrusted }) {
+  const resolved = nodePath.resolve(root);
+  const agents = await loadAgentsTalk(resolved, {});
+  const text = typeof output === "string" ? output : JSON.stringify(output) ?? "";
+  const shownInput = oneLine(JSON.stringify(input) ?? "").slice(0, 300);
+  let ref = null;
+  const mode = untrusted.taintMode(agents.taint, false, await untrusted.commandLineMode(resolved));
+  if (isUntrusted && mode !== "off") {
+    const found = await untrusted.record(resolved, session, { source: tool + " " + shownInput, text, time: untrusted.localTime(), keepBytes: agents.keepUntrustedBytes || untrusted.DEFAULT_KEEP_BYTES });
+    ref = found.same ? found.session + "/" + found.entry.n : session + "/" + found.n;
+  }
+  const now = new Date();
+  const folder = nodePath.join(resolved, ".talk", "audit");
+  await fs.mkdir(folder, { recursive: true });
+  let name = localDate(now) + ".log";
+  let block;
+  if (agents.auditFormat === "json") {
+    name = localDate(now) + ".jsonl";
+    block = JSON.stringify({ type: "harnessTool", time: now.toISOString(), session, tool, input, size: text.length, untrusted: ref }) + "\n";
+  } else {
+    block = "== " + clock(now) + "  harness tool " + oneLine(tool) + "  (session " + oneLine(session) + ") ==\n  " + shownInput + "\n--\n  result: " + text.length + " characters" + (ref === null ? "" : "; untrusted input " + ref) + "\n\n";
+  }
+  await fs.appendFile(nodePath.join(folder, name), block);
+  await untrusted.wroteOwn(nodePath.join(folder, name));
+  return ref;
 }
 
 // the '*' warnings for the taint command, which reads AGENTS.talk on its own

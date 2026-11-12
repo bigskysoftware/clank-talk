@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "clank-talk",
-      "source": "./claude-code"
+      "source": "./src/js/harnesses/claude-code"
     }
   ],
   "description": "ClankTalk for Claude Code: its questions in Claude Code's own question dialog"

@@ -45,8 +45,14 @@ export const register: Register = on => {
     }
     const root = await $.session.root()
     const harness = await projectHarness($, root)
-    if (!(await mode($, root, harness)).on || toolAllowed(e.tool, harness.allowed)) {
+    if (!(await mode($, root, harness)).on) {
       return next(e)
+    }
+    // an allowed tool runs, then goes in the ClankTalk audit; a web or untrusted tool's result taints the session
+    if (toolAllowed(e.tool, harness.allowed)) {
+      const ran = await next(e)
+      await recordCall($, root, e.tool, e, ran, WEB_TOOLS.includes(e.tool) || toolAllowed(e.tool, harness.untrusted ?? []))
+      return ran
     }
     return { deny: 'ClankTalk is on in this project, so ' + e.tool + ' is blocked. Do the work in a ClankTalk script with the clank_talk tool. To allow the tool, the human can add a line to AGENTS.talk: allow harness tools ' + e.tool }
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'clank-talk: the ClankTalk guard failed, so ' + e.tool + ' is blocked' }))
@@ -308,7 +314,23 @@ const CLANK_TALK_TOOL = /^mcp__.+__clank_talk$/
 // tools that only talk to the person or plan: always allowed
 const BUILT_IN = ['AskUserQuestion', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TodoWrite', 'ToolSearch', 'EnterPlanMode', 'ExitPlanMode']
 
-type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; errors: string[] }
+type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; untrusted?: string[]; errors: string[] }
+// tools that always bring web text: their results are untrusted inputs
+const WEB_TOOLS = ['WebFetch', 'WebSearch']
+
+// one allowed tool call, to the ClankTalk audit through the command line; a failure is a transcript line, never a failed call
+async function recordCall($: EngineInterface, root: string, tool: string, input: unknown, result: unknown, isUntrusted: boolean): Promise<void> {
+  try {
+    const text = typeof (result as { text?: unknown })?.text === 'string' ? (result as { text: string }).text : JSON.stringify(result ?? null)
+    const session = 'claude-code-' + String(await $.session.id()).slice(0, 4)
+    const ran = await $.process.run([...(await command($, root)), 'harness', 'record'], { cwd: root, stdin: JSON.stringify({ session, tool, input, output: text, untrusted: isUntrusted }) })
+    if (ran.exitCode !== 0) {
+      $.ui.log('clank-talk: could not record ' + tool + ': ' + (ran.stderr || ran.stdout).trim().slice(0, 200))
+    }
+  } catch (err) {
+    $.ui.log('clank-talk: could not record ' + tool + ': ' + String(err).slice(0, 200))
+  }
+}
 // the project's settings, read again when AGENTS.talk changes
 let cached: { root: string; stamp: number; harness: Harness } | null = null
 
@@ -325,7 +347,7 @@ async function projectHarness($: EngineInterface, root: string): Promise<Harness
   try {
     harness = JSON.parse(ran.stdout) as Harness
   } catch {
-    harness = { agentsTalk: stamp !== 0, required: false, allowed: [], errors: ['clank-talk harness failed: ' + (ran.stderr || ran.stdout).trim().slice(0, 200)] }
+    harness = { agentsTalk: stamp !== 0, required: false, allowed: [], untrusted: [], errors: ['clank-talk harness failed: ' + (ran.stderr || ran.stdout).trim().slice(0, 200)] }
   }
   cached = { root, stamp, harness }
   return harness

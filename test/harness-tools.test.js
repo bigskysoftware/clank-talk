@@ -4,7 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { run } from "../src/js/clank-talk.js";
-import { projectHarness } from "../src/js/runtime.js";
+import { projectHarness, recordHarnessTool } from "../src/js/runtime.js";
+import * as untrusted from "../src/js/untrusted.js";
 import { harnessToolAllowed } from "../src/js/host.js";
 import { clankTalkExtension } from "../src/js/harnesses/pi-host.js";
 
@@ -28,10 +29,10 @@ async function project(text) {
 }
 
 test("projectHarness reads require clank-talk and allow harness tools from AGENTS.talk", async () => {
-  assert.deepEqual(await projectHarness(await project(null)), { agentsTalk: false, required: false, allowed: [], errors: [] });
-  assert.deepEqual(await projectHarness(await project("")), { agentsTalk: true, required: false, allowed: [], errors: [] });
-  const root = await project("require clank-talk\nallow harness tools Read, Grep\nallow harness tools 'mcp__github__*'");
-  assert.deepEqual(await projectHarness(root), { agentsTalk: true, required: true, allowed: ["Read", "Grep", "mcp__github__*"], errors: [] });
+  assert.deepEqual(await projectHarness(await project(null)), { agentsTalk: false, required: false, allowed: [], untrusted: [], errors: [] });
+  assert.deepEqual(await projectHarness(await project("")), { agentsTalk: true, required: false, allowed: [], untrusted: [], errors: [] });
+  const root = await project("require clank-talk\nallow harness tools Read, Grep\nallow untrusted harness tools 'mcp__github__*'");
+  assert.deepEqual(await projectHarness(root), { agentsTalk: true, required: true, allowed: ["Read", "Grep", "mcp__github__*"], untrusted: ["mcp__github__*"], errors: [] });
   // a script still runs: the lines are for the harness
   assert.deepEqual((await run("print 1", { root })).errors, []);
 });
@@ -119,4 +120,39 @@ test("pi: /clank-talk off and on for the session; with no AGENTS.talk it is off;
   assert.deepEqual(required.active, ["clank_talk"]);
   await required.commands["clank-talk"].handler("maybe", ctx(plain));
   assert.equal(said.at(-1), "Usage: /clank-talk [on | off]");
+});
+
+test("recordHarnessTool writes an audit block, and an untrusted tool's result is an untrusted input", async () => {
+  const root = await project("allow untrusted harness tools WebFetch");
+  assert.equal(await recordHarnessTool(root, { session: "cc-1", tool: "Read", input: { file_path: "a.txt" }, output: "hello", untrusted: false }), null);
+  const ref = await recordHarnessTool(root, { session: "cc-1", tool: "WebFetch", input: { url: "https://example.com/" }, output: "web text", untrusted: true });
+  assert.equal(ref, "cc-1/1");
+  const [entry] = await untrusted.inputs(root, "cc-1");
+  assert.equal(entry.source, 'WebFetch {"url":"https://example.com/"}');
+  assert.equal(entry.approved, false);
+  const day = (await fs.readdir(path.join(root, ".talk", "audit"))).find((name) => name.endsWith(".log"));
+  const log = await fs.readFile(path.join(root, ".talk", "audit", day), "utf8");
+  assert.match(log, /== \d\d:\d\d:\d\d  harness tool Read  \(session cc-1\) ==\n  \{"file_path":"a.txt"\}\n--\n  result: 5 characters\n/);
+  assert.match(log, /harness tool WebFetch .*\n.*\n--\n  result: 8 characters; untrusted input cc-1\/1\n/);
+  // the session is untrusted until the human approves
+  assert.deepEqual((await run("print the session is untrusted", { root })).output, ["true"]);
+});
+
+test("pi: an allowed tool's run goes in the audit, and an untrusted one taints", async () => {
+  const root = await project("allow harness tools read\nallow untrusted harness tools 'mcp_*'");
+  const pi = fakePi();
+  const ctx = { cwd: root, hasUI: true, ui: { notify: () => {}, setStatus: () => {} } };
+  await pi.handlers.session_start({}, ctx);
+  await pi.handlers.tool_result({ toolName: "read", input: { path: "a.txt" }, content: [{ type: "text", text: "local text" }] }, ctx);
+  assert.equal(await pi.handlers.tool_result({ toolName: "mcp_search", input: { q: "x" }, content: [{ type: "text", text: "found text" }] }, ctx), undefined);
+  await pi.handlers.tool_result({ toolName: "clank_talk", input: {}, content: [] }, ctx);
+  const sessions = await untrusted.sessions(root);
+  assert.equal(sessions.length, 1);
+  const entries = await untrusted.inputs(root, sessions[0]);
+  assert.deepEqual(entries.map((entry) => entry.source), ['mcp_search {"q":"x"}']);
+  const day = (await fs.readdir(path.join(root, ".talk", "audit"))).find((name) => name.endsWith(".log"));
+  const log = await fs.readFile(path.join(root, ".talk", "audit", day), "utf8");
+  assert.match(log, /harness tool read /);
+  assert.doesNotMatch(log, /harness tool clank_talk/);
+  await pi.handlers.session_shutdown({}, {});
 });
