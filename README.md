@@ -55,7 +55,14 @@ npm install --save-dev clank-talk
 { "plugins": ["./node_modules/clank-talk/src/js/harnesses/opencode"] }
 ```
 
-Other MCP clients, such as Cursor (`.cursor/mcp.json` in your project), take a config like this.  Codex takes the same values in `~/.codex/config.toml`, and the [install docs](https://clank.talk/docs.html#install) show each one.
+Codex:
+
+```bash
+codex mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
+codex mcp list
+```
+
+Other MCP clients, such as Cursor (`.cursor/mcp.json` in your project), take a config like this.  The [install docs](https://clank.talk/docs.html#install) show more.
 
 ```json
 {
