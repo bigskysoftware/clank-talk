@@ -10,7 +10,7 @@ import os from "node:os";
 import { listTools, run } from "./clank-talk.js";
 import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
-import { isProtectedPath } from "./runtime.js";
+import { isProtectedPath, wildcardMatch } from "./runtime.js";
 import { taintCommand } from "./taint-cli.js";
 
 // ----- the project root -----
@@ -405,13 +405,7 @@ export function staleCodeWarning(dir = CODE_DIR, since = STARTED, baseline = STA
 // a tool name matches a name from "allow harness tools": the same name, or a pattern where * is any text
 // see src/md/features/harness-tools.md
 export function harnessToolAllowed(name, patterns) {
-  return patterns.some((pattern) => {
-    if (!pattern.includes("*")) {
-      return pattern === name;
-    }
-    const parts = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"));
-    return new RegExp("^" + parts.join(".*") + "$").test(name);
-  });
+  return patterns.some((pattern) => wildcardMatch(pattern, name));
 }
 
 // ----- ClankTalk on or off in a harness; see src/md/features/harness-tools.md -----

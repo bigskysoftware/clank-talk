@@ -4087,18 +4087,20 @@ function pathPartsMatch(wanted, given) {
     }
     return false;
   }
-  if (given.length === 0 || !pathPartMatches(wanted[0], given[0])) {
+  if (given.length === 0 || !wildcardMatch(wanted[0], given[0])) {
     return false;
   }
   return pathPartsMatch(wanted.slice(1), given.slice(1));
 }
 
-function pathPartMatches(wanted, part) {
-  if (!wanted.includes("*")) {
-    return wanted === part;
+// text matches a pattern where * is any text and each other character is itself
+// fetch URL paths and "allow harness tools" names use it
+export function wildcardMatch(pattern, text) {
+  if (!pattern.includes("*")) {
+    return pattern === text;
   }
-  const source = wanted.split("*").map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
-  return new RegExp("^" + source + "$", "u").test(part);
+  const source = pattern.split("*").map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  return new RegExp("^" + source + "$", "u").test(text);
 }
 
 // localhost, and IP addresses that are not plain public ones: loopback, private, link-local,
