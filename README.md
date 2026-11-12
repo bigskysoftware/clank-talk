@@ -20,14 +20,19 @@ Claude Code:
 
 ```bash
 claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
-claude --tools "" --allowedTools mcp__clank-talk
+```
+
+Then, in Claude Code, add the plugin. It gives you `/taint`, `/clank-talk on|off`, and ClankTalk's questions in Claude Code's own dialog. In a project with an `AGENTS.talk`, it blocks the other tools:
+
+```
+/plugin install clank-talk --marketplace bigskysoftware/clank-talk
 ```
 
 pi:
 
 ```bash
 # install for this project only (without -l, every pi session on your machine gets it)
-# removes all other tools besides clank-talk!
+# in a project with an AGENTS.talk, clank-talk is the only tool; /clank-talk off turns that off
 pi install -l git:github.com/bigskysoftware/clank-talk
 
 # run pi once without any extensions, ClankTalk included
@@ -38,6 +43,16 @@ pi config --local
 
 # remove it from this project
 pi remove -l git:github.com/bigskysoftware/clank-talk
+```
+
+opencode (experimental, V2 only): install the package in your project, then load its plugin in `opencode.jsonc`:
+
+```bash
+npm install --save-dev clank-talk
+```
+
+```json
+{ "plugins": ["./node_modules/clank-talk/src/js/harnesses/opencode"] }
 ```
 
 Other MCP clients, such as Cursor (`.cursor/mcp.json` in your project), take a config like this.  Codex takes the same values in `~/.codex/config.toml`, and the [install docs](https://clank.talk/docs.html#install) show each one.

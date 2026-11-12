@@ -3,7 +3,7 @@
 // V2 reads the default export's id and setup(); no @opencode/plugin import is needed (opencode docs, Plugins, Support V1)
 
 import { run, stopAllProcesses } from "../../clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, projectRoot, harnessToolAllowed } from "../../host.js";
+import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../../host.js";
 import { projectHarness, recordHarnessTool } from "../../runtime.js";
 import { sessionMode } from "./state.js";
 import { ClankTalkChannel, SEEN_WITHIN_MS } from "./channel.js";
@@ -134,6 +134,12 @@ export async function setup(ctx) {
   await ctx.permission.hook("evaluate", async (event) => {
     if (event.action === ASK_ACTION) {
       event.effect = "ask";
+      return;
+    }
+    // an allowed edit never changes .talk/ or a .talk file, as a script cannot
+    if (event.action === "edit" && (event.resources || []).some((resource) => protectedHarnessPath(root, resource)) && (await mode(event.sessionID)).on) {
+      event.effect = "deny";
+      event.message = "ClankTalk protects .talk/ and .talk files. Only the human changes them.";
       return;
     }
     if (!allowed(event.action) && (await mode(event.sessionID)).on) {

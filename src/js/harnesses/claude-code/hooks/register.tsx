@@ -57,6 +57,11 @@ export const register: Register = on => {
     }
     // an allowed tool runs, then goes in the ClankTalk audit; a web or untrusted tool's result taints the session
     if (toolAllowed(e.tool, harness.allowed)) {
+      // an allowed write or edit never changes .talk/ or a .talk file, as a script cannot
+      const target = (e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path
+      if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(e.tool) && protectedPath(root, target)) {
+        return { deny: 'ClankTalk protects .talk/ and .talk files: ' + String(target) + '. Only the human changes them.' }
+      }
       const ran = await next(e)
       await recordCall($, root, e.tool, e, ran, WEB_TOOLS.includes(e.tool) || toolAllowed(e.tool, harness.untrusted ?? []))
       return ran
@@ -403,6 +408,25 @@ function grouped(names: string[]): string {
   }
   const mcp = [...servers].map(([server, count]) => (count === 1 ? names.find(name => name.startsWith('mcp__' + server + '__')) ?? '' : 'mcp__' + server + '__* (' + count + ')'))
   return [...plain, ...mcp].join(', ')
+}
+
+// .talk/ and .talk files: an allowed tool must not change them; see protectedHarnessPath in src/js/host.js
+function protectedPath(root: string, path: unknown): boolean {
+  if (typeof path !== 'string' || path === '') {
+    return false
+  }
+  // the plugin has no path module: make the path absolute, then drop . and .. parts
+  const parts: string[] = []
+  for (const part of (path.startsWith('/') ? path : root + '/' + path).split('/')) {
+    if (part === '..') {
+      parts.pop()
+    } else if (part !== '' && part !== '.') {
+      parts.push(part)
+    }
+  }
+  const full = '/' + parts.join('/')
+  const talk = root.replace(/\/+$/, '') + '/.talk'
+  return full === talk || full.startsWith(talk + '/') || full.endsWith('.talk')
 }
 
 // a name from allow harness tools: the same name, or a pattern where * is any text

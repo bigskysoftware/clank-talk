@@ -6,7 +6,7 @@ import path from "node:path";
 import { run } from "../src/js/clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../src/js/runtime.js";
 import * as untrusted from "../src/js/untrusted.js";
-import { harnessToolAllowed } from "../src/js/host.js";
+import { harnessToolAllowed, protectedHarnessPath } from "../src/js/host.js";
 import { execFileSync } from "node:child_process";
 import { clankTalkExtension } from "../src/js/harnesses/pi-host.js";
 
@@ -174,4 +174,21 @@ test("clank-talk status-line: on or off from the session's file, else the defaul
   await fs.mkdir(path.join(required, ".talk", "harness"), { recursive: true });
   await fs.writeFile(path.join(required, ".talk", "harness", "claude-code-s1.json"), JSON.stringify({ on: false }));
   assert.equal(line(required, { session_id: "s1" }), "clank-talk: on, untainted");
+});
+
+test("an allowed write or edit never changes .talk/ or a .talk file", async () => {
+  assert.equal(protectedHarnessPath("/p", ".talk/untrusted/s/index.json"), true);
+  assert.equal(protectedHarnessPath("/p", "/p/.talk"), true);
+  assert.equal(protectedHarnessPath("/p", "AGENTS.talk"), true);
+  assert.equal(protectedHarnessPath("/p", "src/../.talk/audit/x.log"), true);
+  assert.equal(protectedHarnessPath("/p", "src/app.js"), false);
+  assert.equal(protectedHarnessPath("/p", ".talkative/x"), false);
+  // pi: an allowed write to the store is blocked
+  const root = await project("allow harness tools write");
+  const pi = fakePi();
+  await pi.handlers.session_start({}, { cwd: root });
+  assert.equal(await pi.handlers.tool_call({ toolName: "write", input: { path: "src/a.js" } }), undefined);
+  assert.equal((await pi.handlers.tool_call({ toolName: "write", input: { path: ".talk/untrusted/x/index.json" } })).block, true);
+  assert.equal((await pi.handlers.tool_call({ toolName: "write", input: { path: "AGENTS.talk" } })).block, true);
+  await pi.handlers.session_shutdown({}, {});
 });

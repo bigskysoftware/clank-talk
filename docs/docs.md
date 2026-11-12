@@ -91,6 +91,7 @@ will start using it.
 <li role="option" tabindex="0" data-agent="cursor"><span class="agent-icon cursor">C</span>Cursor</li>
 <li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
 <li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
+<li role="option" tabindex="0" data-agent="opencode"><span class="agent-icon other">O</span>opencode (experimental)</li>
 <li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
 </ul>
 </div>
@@ -106,11 +107,13 @@ Add the server:
 $ claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
 ```
 
-Then start Claude Code with ClankTalk as its only tool:
+Then, in Claude Code, add the plugin:
 
-```bash
-$ claude --tools "" --allowedTools mcp__clank-talk
 ```
+/plugin install clank-talk --marketplace bigskysoftware/clank-talk
+```
+
+The plugin gives you `/taint` to review untrusted inputs, `/clank-talk on|off`, and ClankTalk's questions in Claude Code's own dialog.  In a project with an `AGENTS.talk`, it blocks the other tools.  To allow some of them, add `allow harness tools Read, Grep` to your `AGENTS.talk`.
 
 <aside>
 
@@ -169,7 +172,7 @@ args = ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
 
 ### pi
 
-ClankTalk ships as a pi package, so it runs inside pi.  It turns off every other tool.
+ClankTalk ships as a pi package, so it runs inside pi.  In a project with an `AGENTS.talk`, it turns off every other tool; `/clank-talk off` turns them back on, and `/taint` reviews untrusted inputs.
 
 ```bash
 # try it once, with no install
@@ -186,6 +189,26 @@ $ pi remove -l git:github.com/bigskysoftware/clank-talk
 ```
 
 Careful with `pi install` without the `-l`: then every pi session on your machine gets ClankTalk!
+
+</div>
+
+<div class="harness" data-agent="opencode" hidden>
+
+### opencode (experimental)
+
+ClankTalk has an experimental plugin for opencode V2.  Install the package in your project:
+
+```bash
+$ npm install --save-dev clank-talk
+```
+
+Then load the plugin in `opencode.jsonc`:
+
+```json
+{ "plugins": ["./node_modules/clank-talk/src/js/harnesses/opencode"] }
+```
+
+It gives you `/taint` and `/clank-talk on|off`.  In a project with an `AGENTS.talk`, it hides and blocks the other tools.
 
 </div>
 

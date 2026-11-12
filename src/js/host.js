@@ -372,3 +372,14 @@ export function harnessToolAllowed(name, patterns) {
     return new RegExp("^" + parts.join(".*") + "$").test(name);
   });
 }
+
+// a path that an allowed harness tool must never change: .talk/ (the audit, the taint store, the session state) and .talk files
+// scripts cannot change them; this keeps an allowed Write or Edit from doing it; see src/md/features/harness-tools.md
+export function protectedHarnessPath(root, path) {
+  if (typeof path !== "string" || path === "") {
+    return false;
+  }
+  const full = nodePath.resolve(root, path);
+  const talk = nodePath.join(nodePath.resolve(root), ".talk");
+  return full === talk || full.startsWith(talk + nodePath.sep) || full.endsWith(".talk");
+}

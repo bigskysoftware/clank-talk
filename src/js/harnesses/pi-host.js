@@ -8,7 +8,7 @@ import { projectHarness, recordHarnessTool } from "../runtime.js";
 import * as untrusted from "../untrusted.js";
 import { taintCommand } from "../taint-cli.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, harnessToolAllowed } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -168,6 +168,11 @@ export function clankTalkExtension(pi, Type, options = {}) {
   pi.on("tool_call", async (event) => {
     if (mode().on && event.toolName !== TOOL_NAME && !harnessToolAllowed(event.toolName, harness.allowed)) {
       return { block: true, reason: "Only clank_talk is allowed here. Do the work in a ClankTalk script. To allow the tool, the human can add a line to AGENTS.talk: allow harness tools " + event.toolName };
+    }
+    // an allowed write or edit never changes .talk/ or a .talk file, as a script cannot
+    const input = event.input || {};
+    if (mode().on && /^(write|edit)$/.test(event.toolName) && session !== null && protectedHarnessPath(session.root, input.path)) {
+      return { block: true, reason: "ClankTalk protects .talk/ and .talk files: " + input.path + ". Only the human changes them." };
     }
     return undefined;
   });
