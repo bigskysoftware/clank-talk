@@ -11,7 +11,7 @@ import { watch } from "node:fs";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { stopAllProcesses, VERSION } from "../clank-talk.js";
-import { describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, sessionName, loadPolicy, projectRoot, rootWarning } from "../host.js";
+import { describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, sessionName, readPolicyFile, projectRoot, rootWarning } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -327,7 +327,7 @@ export function readPolicy(args) {
   const hashIndex = args.indexOf("--policy-hash");
   const file = index === -1 ? null : args[index + 1];
   const hash = hashIndex === -1 ? null : args[hashIndex + 1] || "";
-  return loadPolicy(file, hash, { file: "--policy", hash: "--policy-hash", stops: "the server does not start" });
+  return readPolicyFile(file, hash, { file: "--policy", hash: "--policy-hash", stops: "the server does not start" });
 }
 
 /**

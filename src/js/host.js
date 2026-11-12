@@ -61,7 +61,7 @@ export function rootWarning(root, home) {
 // read a harness policy file, and check it against its sha256 if a hash is given
 // file null: no policy; flags names the host's options, for the errors
 // gives { policy: { name, source } or null } or { error }; see src/md/features/policy.md
-export function loadPolicy(file, hash, flags) {
+export function readPolicyFile(file, hash, flags) {
   if (file === null) {
     return { policy: null };
   }
@@ -344,18 +344,23 @@ const STARTED = Date.now();
 // the .js files under a folder, by path, with a hash of each file's text
 export function codeHashes(dir) {
   const hashes = new Map();
-  for (const name of readdirSync(dir, { recursive: true })) {
-    const path = String(name);
-    if (!path.endsWith(".js")) {
-      continue;
-    }
+  for (const path of jsFiles(dir)) {
     try {
-      hashes.set(path.split(nodePath.sep).join("/"), createHash("sha256").update(readFileSync(nodePath.join(dir, path))).digest("hex"));
+      hashes.set(path, hashFile(dir, path));
     } catch (err) {
       // a file that went away while the folder was read
     }
   }
   return hashes;
+}
+
+// the .js files under a folder, as paths with / on every platform
+function jsFiles(dir) {
+  return readdirSync(dir, { recursive: true }).map((name) => String(name).split(nodePath.sep).join("/")).filter((path) => path.endsWith(".js"));
+}
+
+function hashFile(dir, path) {
+  return createHash("sha256").update(readFileSync(nodePath.join(dir, path))).digest("hex");
 }
 
 // the code as it was when the server started
@@ -365,11 +370,7 @@ const START_HASHES = codeHashes(CODE_DIR);
 // the change time is a quick first check, so most calls read no file
 export function staleCodeWarning(dir = CODE_DIR, since = STARTED, baseline = START_HASHES) {
   let newest = null;
-  for (const name of readdirSync(dir, { recursive: true })) {
-    const path = String(name);
-    if (!path.endsWith(".js")) {
-      continue;
-    }
+  for (const path of jsFiles(dir)) {
     let time;
     let hash;
     try {
@@ -377,16 +378,15 @@ export function staleCodeWarning(dir = CODE_DIR, since = STARTED, baseline = STA
       if (time <= since) {
         continue;
       }
-      hash = createHash("sha256").update(readFileSync(nodePath.join(dir, path))).digest("hex");
+      hash = hashFile(dir, path);
     } catch (err) {
       continue;
     }
-    const key = path.split(nodePath.sep).join("/");
-    if (baseline.get(key) === hash) {
+    if (baseline.get(path) === hash) {
       continue;
     }
     if (newest === null || time > newest.time) {
-      newest = { name: key, time };
+      newest = { name: path, time };
     }
   }
   if (newest === null) {

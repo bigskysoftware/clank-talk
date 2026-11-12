@@ -7,7 +7,7 @@ import { stopAllProcesses } from "../clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../runtime.js";
 import { taintCommand } from "../taint-cli.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, loadPolicy, projectRoot, harnessToolAllowed, protectedHarnessPath, harnessMode, statusLine, STAYS_ON, CLANK_TALK_USAGE, TAINT_USAGE } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, readPolicyFile, projectRoot, harnessToolAllowed, protectedHarnessPath, harnessMode, statusLine, STAYS_ON, CLANK_TALK_USAGE, TAINT_USAGE } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -68,7 +68,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
     // pi gives the flag values only after loading, so the policy is read here
     const file = pi.getFlag("clank-policy");
     const hash = pi.getFlag("clank-policy-hash");
-    const loaded = loadPolicy(file ? file : null, hash ? hash : null, { file: "--clank-policy", hash: "--clank-policy-hash", stops: "ClankTalk refuses every call" });
+    const loaded = readPolicyFile(file ? file : null, hash ? hash : null, { file: "--clank-policy", hash: "--clank-policy-hash", stops: "ClankTalk refuses every call" });
     session.policy = loaded.policy || null;
     session.policyError = loaded.error || null;
     // register the tool again, now with the tools from this project's AGENTS.talk in its description
