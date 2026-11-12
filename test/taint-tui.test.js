@@ -203,6 +203,21 @@ test("in a fake terminal, a approves the input, J asks the judge, and q quits", 
   assert.ok(output.screen.endsWith("\u001b[?25h\u001b[?1049l"));
 });
 
+test("o writes a read-only page of the current input, and opens it in the browser", async () => {
+  const root = await project(2);
+  const { input, output } = terminal();
+  const opened = [];
+  const done = taintCommand(["--tui"], root, () => {}, { input, output, open: async (file) => opened.push(file) });
+  input.write("j");
+  input.write("o");
+  input.write("q");
+  assert.equal(await done, 0);
+  assert.equal(opened.length, 1);
+  assert.match(opened[0], /[\\/]\.talk[\\/]untrusted[\\/]s-1[\\/]2\.html$/);
+  assert.match(await fs.readFile(opened[0], "utf8"), /<title>Untrusted input s-1\/2<\/title>/);
+  assert.match(output.screen, /Opened in the browser/);
+});
+
 test("with no judge in AGENTS.talk, J says what to add", async () => {
   const root = await project(1);
   const { input, output } = terminal();

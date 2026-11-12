@@ -31,8 +31,33 @@ export function clankTalkExtension(pi, Type, options = {}) {
   const spawn = options.spawn || spawnSync;
   // one session, as in the MCP server: $ globals, reads, undo, fetch approvals, processes and the audit
   let session = null;
-  // other tools that AGENTS.talk allows: allow harness tools Read, 'mcp__*'
-  let allowedTools = [];
+  // the project's settings from AGENTS.talk: is there one, require clank-talk, allow harness tools
+  let harness = { agentsTalk: false, required: false, allowed: [], errors: [] };
+  // /clank-talk on or off, for this session only; null: the default from AGENTS.talk
+  let switched = null;
+  // the tools that pi had active before ClankTalk, for /clank-talk off
+  let startTools = [];
+
+  // on or off, and why: require clank-talk wins, then /clank-talk on or off, then on when there is an AGENTS.talk
+  function mode() {
+    if (harness.required) {
+      return { on: true, why: "required by AGENTS.talk" };
+    }
+    if (switched !== null) {
+      return { on: switched === "on", why: "from /clank-talk " + switched };
+    }
+    return harness.agentsTalk ? { on: true, why: "the project has an AGENTS.talk" } : { on: false, why: "the project has no AGENTS.talk" };
+  }
+
+  // the tools the model sees: while on, clank_talk and the tools that AGENTS.talk allows; while off, what pi had
+  function applyTools() {
+    const all = typeof pi.getAllTools === "function" ? pi.getAllTools().map((tool) => tool.name) : [];
+    if (mode().on) {
+      pi.setActiveTools([TOOL_NAME, ...all.filter((name) => name !== TOOL_NAME && harnessToolAllowed(name, harness.allowed))]);
+    } else {
+      pi.setActiveTools(startTools.includes(TOOL_NAME) ? startTools : [...startTools, TOOL_NAME]);
+    }
+  }
 
   // a harness policy, as the MCP server's --policy and --policy-hash; see src/md/features/policy.md
   pi.registerFlag("clank-policy", { description: "A ClankTalk policy file for this session", type: "string" });
@@ -49,14 +74,16 @@ export function clankTalkExtension(pi, Type, options = {}) {
     session.policyError = loaded.error || null;
     // register the tool again, now with the tools from this project's AGENTS.talk in its description
     registerClankTalk(await describeTool(session.root));
-    // ClankTalk is the only tool the model sees, with the tools that AGENTS.talk allows by name
+    // while ClankTalk is on, it is the only tool the model sees, with the tools that AGENTS.talk allows by name
+    // if AGENTS.talk cannot be read, it stays on with no other tools: fail closed
     try {
-      allowedTools = (await projectHarness(session.root)).allowed;
-    } catch {
-      allowedTools = [];
+      harness = await projectHarness(session.root);
+    } catch (err) {
+      harness = { agentsTalk: true, required: false, allowed: [], errors: [err.message] };
     }
-    const all = typeof pi.getAllTools === "function" ? pi.getAllTools().map((tool) => tool.name) : [];
-    pi.setActiveTools([TOOL_NAME, ...all.filter((name) => name !== TOOL_NAME && harnessToolAllowed(name, allowedTools))]);
+    switched = null;
+    startTools = typeof pi.getActiveTools === "function" ? pi.getActiveTools() : [];
+    applyTools();
     await showTaint(ctx, session.root);
   });
 
@@ -100,12 +127,52 @@ export function clankTalkExtension(pi, Type, options = {}) {
     }
   });
 
-  // block every other tool: built-in tools, MCP tools, and calls from codemode
+  // while ClankTalk is on, block every other tool: built-in tools, MCP tools, and calls from codemode
   pi.on("tool_call", async (event) => {
-    if (event.toolName !== TOOL_NAME && !harnessToolAllowed(event.toolName, allowedTools)) {
-      return { block: true, reason: "Only clank_talk is allowed here. Do the work in a ClankTalk script." };
+    if (mode().on && event.toolName !== TOOL_NAME && !harnessToolAllowed(event.toolName, harness.allowed)) {
+      return { block: true, reason: "Only clank_talk is allowed here. Do the work in a ClankTalk script. To allow the tool, the human can add a line to AGENTS.talk: allow harness tools " + event.toolName };
     }
     return undefined;
+  });
+
+  // /clank-talk on | off for this session, or a report; see src/md/features/harness-tools.md
+  // only the human can type a command, so the model cannot turn ClankTalk off
+  pi.registerCommand("clank-talk", {
+    description: "ClankTalk only: on, off, or show which tools are allowed",
+    handler: async (args, ctx) => {
+      const say = (text, type = "info") => (ctx && ctx.hasUI ? ctx.ui.notify(text, type) : undefined);
+      const arg = String(args || "").trim();
+      if (arg === "on" || arg === "off") {
+        if (arg === "off" && harness.required) {
+          say("AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.", "warning");
+          return;
+        }
+        switched = arg;
+        applyTools();
+        say("ClankTalk is " + arg + " for this session." + (arg === "on" ? " Other tools are blocked; /clank-talk shows which." : ""));
+        return;
+      }
+      if (arg !== "") {
+        say("Usage: /clank-talk [on | off]", "warning");
+        return;
+      }
+      const state = mode();
+      const names = typeof pi.getAllTools === "function" ? pi.getAllTools().map((tool) => tool.name) : [];
+      const allowed = names.filter((name) => name === TOOL_NAME || harnessToolAllowed(name, harness.allowed));
+      const blocked = names.filter((name) => !allowed.includes(name));
+      const lines = [
+        "ClankTalk: " + (state.on ? "on" : "off") + " (" + state.why + ")",
+        "allowed: " + (allowed.join(", ") || "none"),
+        (state.on ? "blocked: " : "blocked when on: ") + (blocked.length === 0 ? "none" : blocked.join(", ") + " (" + blocked.length + ")"),
+      ];
+      if (harness.allowed.length > 0) {
+        lines.push("AGENTS.talk allows: " + harness.allowed.join(", "));
+      }
+      for (const error of harness.errors) {
+        lines.push("AGENTS.talk error: " + error);
+      }
+      say(lines.join("\n"));
+    },
   });
 
   // pi registers the tool before it knows the project, so the first description has no AGENTS.talk tools;

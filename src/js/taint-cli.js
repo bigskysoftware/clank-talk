@@ -7,15 +7,8 @@ import { parse } from "./parser.js";
 import * as untrusted from "./untrusted.js";
 import { projectFetchWarnings, projectJudge } from "./runtime.js";
 import { runTui } from "./taint-tui.js";
-import { inputPage } from "./taint-page.js";
+import { openFile, writePage } from "./taint-page.js";
 import { viewText } from "./taint-view.js";
-import { execFile } from "node:child_process";
-
-// open a file in the browser, with the system's own opener; the path is one argument, never shell text
-function openFile(file) {
-  const [program, args] = process.platform === "darwin" ? ["open", [file]] : process.platform === "win32" ? ["explorer.exe", [file]] : ["xdg-open", [file]];
-  return new Promise((resolve) => execFile(program, args, () => resolve()));
-}
 
 export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
 
@@ -191,8 +184,7 @@ export async function taintCommand(args, root, out, options = {}) {
       const body = start === -1 ? stored : stored.slice(start + 2);
       if (flags.includes("--html")) {
         const ref = found.session + "/" + found.entry.n;
-        const file = nodePath.join(root, untrusted.storePath(found.session), found.entry.n + ".html");
-        await fs.writeFile(file, inputPage({ ref, status: statusText(found.entry), time: found.entry.time, source: found.entry.source, judge: judgeText(found.entry) }, body));
+        const file = await writePage(root, found.session, found.entry, { ref, status: statusText(found.entry), time: found.entry.time, source: found.entry.source, judge: judgeText(found.entry) });
         out(file);
         await (options.open || openFile)(file);
         return 0;

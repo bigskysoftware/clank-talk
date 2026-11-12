@@ -2,8 +2,28 @@
 // See src/md/features/taint.md. The page has no script and approves nothing.
 // The input's own HTML renders only in a sandboxed iframe, with a CSP that blocks scripts and all loads.
 
+import fs from "node:fs/promises";
+import nodePath from "node:path";
+import { execFile } from "node:child_process";
 import { kind, viewText } from "./taint-view.js";
 import * as untrusted from "./untrusted.js";
+
+// write the page of one input next to it in the store: .talk/untrusted/<session>/<n>.html; gives the file
+export async function writePage(root, session, entry, info) {
+  const stored = await untrusted.inputText(root, session, entry);
+  // the store keeps the source and the time first, then a blank line, then the text
+  const start = stored.indexOf("\n\n");
+  const body = start === -1 ? stored : stored.slice(start + 2);
+  const file = nodePath.join(root, untrusted.storePath(session), entry.n + ".html");
+  await fs.writeFile(file, inputPage(info, body));
+  return file;
+}
+
+// open a file in the browser, with the system's own opener; the path is one argument, never shell text
+export function openFile(file) {
+  const [program, args] = process.platform === "darwin" ? ["open", [file]] : process.platform === "win32" ? ["explorer.exe", [file]] : ["xdg-open", [file]];
+  return new Promise((resolve) => execFile(program, args, () => resolve()));
+}
 
 // the text as HTML text or an attribute value
 function escape(text) {

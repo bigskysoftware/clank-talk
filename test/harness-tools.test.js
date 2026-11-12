@@ -55,28 +55,68 @@ test("a name matches itself, or a pattern where * is any text", () => {
   assert.equal(harnessToolAllowed("axb", ["a.b"]), false);
 });
 
-test("pi: the tools that AGENTS.talk allows by name are active, and are not blocked", async () => {
-  const root = await project("allow harness tools read, 'mcp_*'");
-  const pi = { handlers: {}, tools: {}, active: null, flags: {} };
+// a fake pi with five tools, all active at the start
+function fakePi() {
+  const pi = { handlers: {}, tools: {}, commands: {}, active: ["read", "bash", "write", "mcp_search", "clank_talk"], flags: {} };
   pi.on = (name, handler) => {
     pi.handlers[name] = handler;
   };
   pi.registerTool = (tool) => {
     pi.tools[tool.name] = tool;
   };
-  pi.registerCommand = () => {};
+  pi.registerCommand = (name, command) => {
+    pi.commands[name] = command;
+  };
   pi.registerFlag = () => {};
   pi.getFlag = (name) => pi.flags[name];
   pi.setActiveTools = (names) => {
     pi.active = names;
   };
+  pi.getActiveTools = () => pi.active;
   pi.getAllTools = () => ["read", "bash", "write", "mcp_search", "clank_talk"].map((name) => ({ name }));
   const Type = { Object: (properties) => ({ type: "object", properties }), String: (options) => ({ type: "string", ...options }), Optional: (schema) => schema };
   clankTalkExtension(pi, Type);
+  return pi;
+}
+
+test("pi: the tools that AGENTS.talk allows by name are active, and are not blocked", async () => {
+  const root = await project("allow harness tools read, 'mcp_*'");
+  const pi = fakePi();
   await pi.handlers.session_start({}, { cwd: root });
   assert.deepEqual(pi.active, ["clank_talk", "read", "mcp_search"]);
   assert.equal(await pi.handlers.tool_call({ toolName: "read" }), undefined);
   assert.equal(await pi.handlers.tool_call({ toolName: "mcp_search" }), undefined);
   assert.equal((await pi.handlers.tool_call({ toolName: "bash" })).block, true);
   await pi.handlers.session_shutdown({}, {});
+});
+
+test("pi: /clank-talk off and on for the session; with no AGENTS.talk it is off; require clank-talk keeps it on", async () => {
+  const said = [];
+  const ctx = (cwd) => ({ cwd, hasUI: true, ui: { notify: (text) => said.push(text), setStatus: () => {} } });
+  // no AGENTS.talk: off, and nothing is blocked
+  const plain = await project(null);
+  const pi = fakePi();
+  await pi.handlers.session_start({}, ctx(plain));
+  assert.deepEqual(pi.active, ["read", "bash", "write", "mcp_search", "clank_talk"]);
+  assert.equal(await pi.handlers.tool_call({ toolName: "bash" }), undefined);
+  await pi.commands["clank-talk"].handler("", ctx(plain));
+  assert.match(said.at(-1), /^ClankTalk: off \(the project has no AGENTS.talk\)\nallowed: clank_talk\nblocked when on: read, bash, write, mcp_search \(4\)$/);
+  // on for this session: only clank_talk
+  await pi.commands["clank-talk"].handler("on", ctx(plain));
+  assert.deepEqual(pi.active, ["clank_talk"]);
+  assert.equal((await pi.handlers.tool_call({ toolName: "bash" })).block, true);
+  // off again: the tools that pi had
+  await pi.commands["clank-talk"].handler(" off ", ctx(plain));
+  assert.deepEqual(pi.active, ["read", "bash", "write", "mcp_search", "clank_talk"]);
+  // a new session starts from AGENTS.talk again
+  await pi.handlers.session_start({}, ctx(await project("")));
+  assert.deepEqual(pi.active, ["clank_talk"]);
+  // require clank-talk: off is refused
+  const required = fakePi();
+  await required.handlers.session_start({}, ctx(await project("require clank-talk")));
+  await required.commands["clank-talk"].handler("off", ctx(plain));
+  assert.match(said.at(-1), /^AGENTS.talk has require clank-talk, so ClankTalk stays on/);
+  assert.deepEqual(required.active, ["clank_talk"]);
+  await required.commands["clank-talk"].handler("maybe", ctx(plain));
+  assert.equal(said.at(-1), "Usage: /clank-talk [on | off]");
 });

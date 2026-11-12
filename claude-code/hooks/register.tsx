@@ -65,8 +65,8 @@ export const register: Register = on => {
       if (arg === 'off' && harness.required) {
         return { text: 'AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.' }
       }
-      await $.store.set('mode:' + root, arg)
-      return { text: 'ClankTalk is ' + arg + ' in this project.' + (arg === 'on' ? ' Other tools are blocked; /clank-talk shows which.' : '') }
+      switched = arg
+      return { text: 'ClankTalk is ' + arg + ' for this session.' + (arg === 'on' ? ' Other tools are blocked; /clank-talk shows which.' : '') }
     }
     if (arg !== '') {
       return { text: 'Usage: /clank-talk [on | off]' }
@@ -331,12 +331,15 @@ async function projectHarness($: EngineInterface, root: string): Promise<Harness
   return harness
 }
 
+// /clank-talk on or off, for this session only: nothing is kept
+let switched: 'on' | 'off' | null = null
+
 // on or off, and why: require clank-talk wins, then /clank-talk on or off, then on when there is an AGENTS.talk
 async function mode($: EngineInterface, root: string, harness: Harness): Promise<{ on: boolean; why: string }> {
   if (harness.required) {
     return { on: true, why: 'required by AGENTS.talk' }
   }
-  const saved = await $.store.get('mode:' + root)
+  const saved = switched
   if (saved === 'on' || saved === 'off') {
     return { on: saved === 'on', why: 'from /clank-talk ' + saved }
   }

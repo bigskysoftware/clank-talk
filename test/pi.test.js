@@ -40,6 +40,8 @@ let pi;
 
 before(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-"));
+  // with an AGENTS.talk, ClankTalk is on: the only tool
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "");
   pi = fakePi();
   clankTalkExtension(pi, Type);
   await pi.handlers.session_start({}, { cwd: root });

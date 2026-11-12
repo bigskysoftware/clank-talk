@@ -6,6 +6,7 @@
 import readline from "node:readline";
 import * as untrusted from "./untrusted.js";
 import { projectFetchWarnings, projectJudge } from "./runtime.js";
+import { openFile, writePage } from "./taint-page.js";
 import { displayLines, kind, lineText, styleRuns, viewText, wrapRuns } from "./taint-view.js";
 
 export const FOOTER_KEYS = [["?", "keys"], ["j/k", "move"], ["space", "mark"], ["V", "select"], ["a", "approve"], ["u", "undo"], ["J", "judge"], ["m", "view"], ["/", "search"], ["tab", "pane"], ["q", "quit"]];
@@ -32,6 +33,7 @@ export const HELP = [
   "/ n N               search the pane, next, back",
   "m                   HTML: the raw text, or the page and what it hides",
   "                    JSON: the raw text, or pretty JSON",
+  "o                   open the input in the browser: a read-only page",
   "#                   line numbers on or off",
   ".                   show or hide the approved inputs",
   "r                   read the store again",
@@ -255,6 +257,11 @@ export function press(view, key) {
       view.page = !view.page;
       view.scroll = 0;
       return null;
+    case "o": {
+      // a read-only page of the input in the browser
+      const item = current(view);
+      return item === null || item === undefined ? null : { type: "open", ref: item.ref };
+    }
     case "tab":
       view.focus = view.focus === "list" ? "text" : "list";
       return null;
@@ -763,6 +770,12 @@ export async function runTui(root, input, output, out, options = {}) {
           view.message = "The judge reads the lines...";
           draw();
           view.message = await judgeLinesOf(root, view, action.ref, action.page, options);
+        } else if (action.type === "open") {
+          const item = view.items.find((each) => each.ref === action.ref);
+          const judged = item.entry.verdict ? item.entry.verdict.result : "-";
+          const file = await writePage(root, item.session, item.entry, { ref: item.ref, status: item.entry.approved ? "approved" : "new", time: item.entry.time, source: item.entry.source, judge: judged });
+          await (options.open || openFile)(file);
+          view.message = "Opened in the browser: " + file;
         } else if (action.type === "unapprove") {
           const count = await unapproveRefs(root, view, action.refs);
           await reload();
