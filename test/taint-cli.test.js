@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { run } from "../src/js/clank-talk.js";
 import { taintCommand } from "../src/js/taint-cli.js";
+import * as untrusted from "../src/js/untrusted.js";
 
 // npx clank-talk taint; see src/md/features/taint.md
 
@@ -120,6 +121,17 @@ test("--line gives one short line for a status bar", async () => {
   assert.equal((await taint(await project("taint required"), "--line")).text, "untainted");
 });
 
+test("clear approves every input, and says which", async () => {
+  const root = await project();
+  assert.equal((await taint(root, "clear")).text, "Nothing to approve.");
+  await run("issue 1\nissue 2\nissue 3\nissue 4", { root, session: "s-1" });
+  await taint(root, "approve", "s-1/2");
+  assert.deepEqual(await taint(root, "clear"), { code: 0, text: 'Approved 3 inputs: tool issue (1), tool issue (3), tool issue (4).' });
+  const entries = await untrusted.inputs(root, "s-1");
+  assert.deepEqual(entries.map((entry) => entry.approvedBy), ["taint clear", "the command line", "taint clear", "taint clear"]);
+  assert.equal(await untrustedNow(root, "s-1"), false);
+});
+
 test("--json gives the state and the inputs for a program, such as the /taint pane", async () => {
   const root = await project();
   assert.deepEqual(JSON.parse((await taint(root, "--json")).text), { taint: "on", why: "the default", warnings: [], inputs: [] });
@@ -181,9 +193,9 @@ test("taint review: no inputs gives 0; no answer or no form is an error that app
 
 test("an unknown command shows the usage", async () => {
   const root = await project();
-  const { code, text } = await taint(root, "clear");
+  const { code, text } = await taint(root, "wipe");
   assert.equal(code, 1);
-  assert.match(text, /^Unknown taint command: clear\n\nUsage: clank-talk taint/);
+  assert.match(text, /^Unknown taint command: wipe\n\nUsage: clank-talk taint/);
 });
 
 test("the bin runs, with --root", async () => {

@@ -160,10 +160,10 @@ test("/taint runs the full-screen review over pi, and the footer counts the inpu
     };
     const ctx = { cwd: project, hasUI: true, ui };
     await other.handlers.session_start({}, ctx);
-    assert.deepEqual(status.at(-1), ["clank-talk", undefined]);
+    assert.deepEqual(status.at(-1), ["clank-talk", "clank-talk: on, untainted"]);
     await other.tools.clank_talk.execute("id-5", { script: "issue 1" }, undefined, undefined, ctx);
     await other.handlers.tool_execution_end({ toolName: "clank_talk" }, ctx);
-    assert.deepEqual(status.at(-1), ["clank-talk", "taint: 1 not approved (/taint)"]);
+    assert.deepEqual(status.at(-1), ["clank-talk", "clank-talk: on, tainted 1"]);
     await other.commands.taint.handler("", ctx);
     assert.deepEqual(steps, ["stop", "start", "render"]);
     assert.equal(spawned.length, 1);
@@ -174,7 +174,7 @@ test("/taint runs the full-screen review over pi, and the footer counts the inpu
     // the human approves in the review; the footer then shows no count
     await taintCommand(["approve", "--all"], project, () => {});
     await other.handlers.agent_end({}, ctx);
-    assert.deepEqual(status.at(-1), ["clank-talk", undefined]);
+    assert.deepEqual(status.at(-1), ["clank-talk", "clank-talk: on, untainted"]);
     // with no UI, /taint does nothing
     await other.commands.taint.handler("", { cwd: project, hasUI: false });
     assert.equal(spawned.length, 1);

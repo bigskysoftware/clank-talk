@@ -18,6 +18,7 @@ export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
   clank-talk taint show --html <ref>   open a read-only page of the input in the browser
   clank-talk taint approve <ref> ...   approve inputs
   clank-talk taint approve --all       approve all inputs: clears all taints
+  clank-talk taint clear               approve all inputs, and say which
   clank-talk taint approve --clean     approve the inputs that the judge found clean
   clank-talk taint unapprove <ref> ... take back approvals: the inputs taint the session again
   clank-talk taint judge <ref> ...     the judge reads inputs, and gives clean, suspect or unsure
@@ -196,6 +197,28 @@ export async function taintCommand(args, root, out, options = {}) {
     out("judge: " + untrusted.printable(judgeText(found.entry)));
     // the text is untrusted: control characters can hide text or move the cursor, so they show as ?
     out(untrusted.printable(await untrusted.inputText(root, found.session, found.entry), true));
+    return 0;
+  }
+
+  // clear: approve every input that is not approved, and say which; the human typed it, so it asks nothing
+  // /taint clear in Claude Code and pi runs this; see src/md/features/taint.md
+  if (command === "clear") {
+    const waiting = (await allInputs(root)).filter(({ entry }) => !entry.approved);
+    if (waiting.length === 0) {
+      out("Nothing to approve.");
+      return 0;
+    }
+    const bySession = new Map();
+    for (const { session, entry } of waiting) {
+      bySession.set(session, [...(bySession.get(session) || []), entry.n]);
+    }
+    let count = 0;
+    for (const [session, numbers] of bySession) {
+      count += (await untrusted.approve(root, session, numbers, options.by || "taint clear")).length;
+    }
+    const sources = waiting.map(({ entry }) => untrusted.printable(entry.source));
+    const shown = sources.slice(0, 3).join(", ") + (sources.length > 3 ? " (" + (sources.length - 3) + " more)" : "");
+    out("Approved " + count + (count === 1 ? " input: " : " inputs: ") + shown + ".");
     return 0;
   }
 

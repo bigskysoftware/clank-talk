@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { run, stopAllProcesses } from "../clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../runtime.js";
 import * as untrusted from "../untrusted.js";
+import { taintCommand } from "../taint-cli.js";
 import { SubagentError, schemaFor } from "../subagent.js";
 import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, harnessToolAllowed } from "../host.js";
 
@@ -49,6 +50,11 @@ export function clankTalkExtension(pi, Type, options = {}) {
     return harness.agentsTalk ? { on: true, why: "the project has an AGENTS.talk" } : { on: false, why: "the project has no AGENTS.talk" };
   }
 
+  // the project root for a command: the session's, or the folder where pi runs
+  function harnessRoot(ctx) {
+    return session !== null ? session.root : projectRoot(null, ctx.cwd);
+  }
+
   // the tools the model sees: while on, clank_talk and the tools that AGENTS.talk allows; while off, what pi had
   function applyTools() {
     const all = typeof pi.getAllTools === "function" ? pi.getAllTools().map((tool) => tool.name) : [];
@@ -84,13 +90,13 @@ export function clankTalkExtension(pi, Type, options = {}) {
     switched = null;
     startTools = typeof pi.getActiveTools === "function" ? pi.getActiveTools() : [];
     applyTools();
-    await showTaint(ctx, session.root);
+    await showTaint(ctx, session.root, mode().on);
   });
 
   // the count in the footer changes when a script reads web text, and when the human approves
   pi.on("tool_execution_end", async (event, ctx) => {
     if (session !== null) {
-      await showTaint(ctx, session.root);
+      await showTaint(ctx, session.root, mode().on);
     }
   });
 
@@ -113,17 +119,30 @@ export function clankTalkExtension(pi, Type, options = {}) {
   });
   pi.on("agent_end", async (_event, ctx) => {
     if (session !== null) {
-      await showTaint(ctx, session.root);
+      await showTaint(ctx, session.root, mode().on);
     }
   });
 
   // /taint: the full-screen review over pi; see src/md/features/taint.md
   // only the human can type a command, so the model cannot approve through it
   pi.registerCommand("taint", {
-    description: "Review and approve the untrusted inputs of this project, full screen",
-    handler: async (_args, ctx) => {
+    description: "Review and approve the untrusted inputs of this project, full screen; /taint clear approves all",
+    handler: async (args, ctx) => {
       const root = session !== null ? session.root : projectRoot(null, ctx.cwd);
       if (!ctx.hasUI) {
+        return;
+      }
+      // /taint clear: approve all, and say which; typing it is the human's act, so it asks nothing
+      const arg = String(args || "").trim();
+      if (arg === "clear") {
+        const lines = [];
+        await taintCommand(["clear"], root, (line) => lines.push(line), { by: "/taint clear" });
+        ctx.ui.notify(lines.join("\n"), "info");
+        await showTaint(ctx, root, mode().on);
+        return;
+      }
+      if (arg !== "") {
+        ctx.ui.notify("Usage: /taint [clear]", "warning");
         return;
       }
       await ctx.ui.custom((tui, _theme, _keybindings, done) => {
@@ -135,7 +154,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
         done(result.status);
         return { render: () => [], invalidate: () => {} };
       });
-      await showTaint(ctx, root);
+      await showTaint(ctx, root, mode().on);
     },
   });
 
@@ -167,6 +186,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
         }
         switched = arg;
         applyTools();
+        await showTaint(ctx, harnessRoot(ctx), mode().on);
         say("ClankTalk is " + arg + " for this session." + (arg === "on" ? " Other tools are blocked; /clank-talk shows which." : ""));
         return;
       }
@@ -250,18 +270,19 @@ export function clankTalkExtension(pi, Type, options = {}) {
   }
 }
 
-// the footer: the count of inputs that are not approved, or nothing
-async function showTaint(ctx, root) {
+// the footer, as Claude Code's status line: clank-talk: on, untainted | clank-talk: off, tainted 3 | clank-talk: on, taint off
+async function showTaint(ctx, root, on) {
   if (!ctx || !ctx.hasUI) {
     return;
   }
-  let count = 0;
+  const lines = [];
   try {
-    count = (await untrusted.pendingAll(root)).length;
+    await taintCommand(["--line"], root, (line) => lines.push(line));
   } catch {
-    // no store yet, or one that cannot be read: show no count
+    // no store yet, or one that cannot be read
+    lines.push("taint unknown");
   }
-  ctx.ui.setStatus(STATUS_KEY, count === 0 ? undefined : "taint: " + count + " not approved (/taint)");
+  ctx.ui.setStatus(STATUS_KEY, "clank-talk: " + (on ? "on" : "off") + ", " + lines.join(" "));
 }
 
 function newSession(root) {

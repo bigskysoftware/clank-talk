@@ -32,7 +32,7 @@ const ANSWER_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/answer$/
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'taint', description: 'Review and approve the untrusted inputs of this ClankTalk project' })
+    await $.command.register({ name: 'taint', description: 'Review and approve the untrusted inputs of this ClankTalk project; clear approves all', argumentHint: '[clear]' })
     await $.command.register({ name: 'clank-talk', description: 'ClankTalk only: on, off, or show which tools are allowed', argumentHint: '[on | off]' })
     // the status line: this session's on or off state, for npx clank-talk status-line
     void showStatus($)
@@ -107,6 +107,19 @@ export const register: Register = on => {
     // only the person's own Enter opens the review; never the model, a plugin, or a channel the engine cannot attest
     if (e.origin.kind !== 'composer') {
       return { text: 'Only the person at the terminal can open /taint.' }
+    }
+    // /taint clear: approve all, and say which; typing it is the human's act, so it asks nothing
+    const arg = e.args.trim()
+    if (arg === 'clear') {
+      const ran = await cli($, ['clear'])
+      if (ran.ok) {
+        // the pane, if open, shows the new state
+        await load($, null)
+      }
+      return { text: ran.ok ? ran.text.trim() : 'clank-talk taint clear failed: ' + ran.text.trim().slice(0, 300) }
+    }
+    if (arg !== '') {
+      return { text: 'Usage: /taint [clear]' }
     }
     await load($, null)
     const opened = await $.ui.open({ id: PANE, title: 'Taint review', focus: true, closeOnEscape: true })
