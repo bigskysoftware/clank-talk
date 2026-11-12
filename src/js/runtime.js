@@ -1239,6 +1239,27 @@ function checkSandboxRequired(what, sandbox, state, node) {
   }
 }
 
+// the lines that only AGENTS.talk can have, by type, with the words for the error
+const AGENTS_TALK_ONLY = {
+  requireClankTalk: "require clank-talk",
+  allowHarnessTools: "allow harness tools",
+  allowEnv: "allow env",
+  outputLimit: "limit output",
+  audit: "audit as",
+  keepAudit: "keep audit",
+  taint: "taint",
+  keepUntrusted: "keep untrusted inputs",
+  taintAsks: "taint asks before",
+  useModel: "use model",
+  judgeApproves: "let the judge approve clean inputs",
+  judgeAutomatically: "judge untrusted inputs automatically",
+  judgePrompt: "judge with prompt",
+  allowSecret: "allow secret",
+  trustFetch: "trust fetch from",
+  allowFetch: "allow fetch from",
+  allowChanges: "allow changes to",
+};
+
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
@@ -1282,35 +1303,33 @@ async function loadAgentsTalk(root, hostTools) {
         }
         continue;
       }
-    if (definition.type.startsWith("allow") && file.name === AGENTS_TALK) {
-      result.allows.push({ definition, where });
-    }
+      // these lines are only allowed in AGENTS.talk, so the settings stay in one file
+      const onlyHere = AGENTS_TALK_ONLY[definition.type];
+      if (onlyHere !== undefined && file.name !== AGENTS_TALK) {
+        result.errors.push({ message: "'" + onlyHere + "' is only allowed in " + AGENTS_TALK, ...where });
+        continue;
+      }
+      if (definition.type.startsWith("allow") && file.name === AGENTS_TALK) {
+        result.allows.push({ definition, where });
+      }
       // require clank-talk and allow harness tools: for the harness, which blocks its other tools; see src/md/features/harness-tools.md
-      if (definition.type === "requireClankTalk" || definition.type === "allowHarnessTools") {
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "'" + (definition.type === "requireClankTalk" ? "require clank-talk" : "allow harness tools") + "' is only allowed in " + AGENTS_TALK, ...where });
-        } else if (definition.type === "requireClankTalk") {
-          result.requireClankTalk = true;
-        } else {
-          result.harnessTools.push(...definition.names);
-          if (definition.untrusted) {
-            result.untrustedHarnessTools.push(...definition.names);
-          }
+      if (definition.type === "requireClankTalk") {
+        result.requireClankTalk = true;
+        continue;
+      }
+      if (definition.type === "allowHarnessTools") {
+        result.harnessTools.push(...definition.names);
+        if (definition.untrusted) {
+          result.untrustedHarnessTools.push(...definition.names);
         }
         continue;
       }
       if (definition.type === "allowEnv") {
-        if (file.name === AGENTS_TALK) {
-          result.allowedEnv.push(...definition.names);
-        } else {
-          result.errors.push({ message: "'allow env' is only allowed in " + AGENTS_TALK, ...where });
-        }
+        result.allowedEnv.push(...definition.names);
         continue;
       }
       if (definition.type === "outputLimit") {
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "'limit output' is only allowed in " + AGENTS_TALK, ...where });
-        } else if (result.outputLimit !== null) {
+        if (result.outputLimit !== null) {
           result.errors.push({ message: "Only one 'limit output' line is allowed", ...where });
         } else {
           result.outputLimit = definition;
@@ -1318,41 +1337,45 @@ async function loadAgentsTalk(root, hostTools) {
         continue;
       }
       if (definition.type === "audit") {
-        if (file.name === AGENTS_TALK) {
-          result.auditFormat = definition.format;
-        } else {
-          result.errors.push({ message: "'audit as' is only allowed in " + AGENTS_TALK, ...where });
-        }
+        result.auditFormat = definition.format;
         continue;
       }
       if (definition.type === "keepAudit") {
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "'keep audit' is only allowed in " + AGENTS_TALK, ...where });
-        } else if (result.keepAudit !== null) {
+        if (result.keepAudit !== null) {
           result.errors.push({ message: "Only one 'keep audit' line is allowed", ...where });
         } else {
           result.keepAudit = { days: definition.days, where };
         }
         continue;
       }
-      // taint on | off | required, and keep untrusted inputs up to <n> MB; see src/md/features/taint.md
-      if (definition.type === "taint" || definition.type === "keepUntrusted" || definition.type === "taintAsks") {
-        const shown = { taint: "taint", keepUntrusted: "keep untrusted inputs", taintAsks: "taint asks before" }[definition.type];
-        const field = { taint: "taint", keepUntrusted: "keepUntrustedBytes", taintAsks: "taintAsks" }[definition.type];
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "'" + shown + "' is only allowed in " + AGENTS_TALK, ...where });
-        } else if (result[field] !== null) {
-          result.errors.push({ message: "Only one '" + shown + "' line is allowed", ...where });
+      // taint on | off | required, keep untrusted inputs up to <n> MB, and taint asks before; see src/md/features/taint.md
+      if (definition.type === "taint") {
+        if (result.taint !== null) {
+          result.errors.push({ message: "Only one 'taint' line is allowed", ...where });
         } else {
-          result[field] = { taint: definition.mode, keepUntrusted: definition.bytes, taintAsks: definition.asks }[definition.type];
+          result.taint = definition.mode;
+        }
+        continue;
+      }
+      if (definition.type === "keepUntrusted") {
+        if (result.keepUntrustedBytes !== null) {
+          result.errors.push({ message: "Only one 'keep untrusted inputs' line is allowed", ...where });
+        } else {
+          result.keepUntrustedBytes = definition.bytes;
+        }
+        continue;
+      }
+      if (definition.type === "taintAsks") {
+        if (result.taintAsks !== null) {
+          result.errors.push({ message: "Only one 'taint asks before' line is allowed", ...where });
+        } else {
+          result.taintAsks = definition.asks;
         }
         continue;
       }
       if (definition.type === "useModel") {
         const judging = definition.purpose === "judging";
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "'use model' is only allowed in " + AGENTS_TALK, ...where });
-        } else if ((judging ? result.judge.model : result.useModel) !== null) {
+        if ((judging ? result.judge.model : result.useModel) !== null) {
           result.errors.push({ message: "Only one 'use model ... for " + definition.purpose + "' line is allowed", ...where });
         } else if (judging) {
           result.judge.model = { model: definition.model, secret: definition.secret, where };
@@ -1362,11 +1385,9 @@ async function loadAgentsTalk(root, hostTools) {
         continue;
       }
       // the judge lines; see src/md/features/taint.md
-      if (["judgeApproves", "judgeAutomatically", "judgePrompt"].includes(definition.type)) {
+      if (definition.type === "judgeApproves" || definition.type === "judgeAutomatically" || definition.type === "judgePrompt") {
         const field = { judgeApproves: "approves", judgeAutomatically: "automatically", judgePrompt: "prompt" }[definition.type];
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "The judge lines are only allowed in " + AGENTS_TALK, ...where });
-        } else if (result.judge[field] !== false && result.judge[field] !== null) {
+        if (result.judge[field] !== false && result.judge[field] !== null) {
           result.errors.push({ message: "Only one line of each kind is allowed for the judge", ...where });
         } else {
           result.judge[field] = definition.type === "judgePrompt" ? definition.prompt : true;
@@ -1376,41 +1397,27 @@ async function loadAgentsTalk(root, hostTools) {
       if (definition.type === "allowSecret") {
         if (definition.hosts.includes("*")) {
           result.errors.push({ message: "'allow secret' cannot send a secret to every host ('*'). Name the hosts.", ...where });
-        } else if (file.name === AGENTS_TALK) {
-          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, subagents: definition.subagents, where });
         } else {
-          result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
+          result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, subagents: definition.subagents, where });
         }
         continue;
       }
       if (definition.type === "trustFetch") {
-        if (file.name === AGENTS_TALK) {
-          result.trustedFetch.push(...definition.hosts);
-          result.trustWhere = result.trustWhere || where;
-        } else {
-          result.errors.push({ message: "'trust fetch from' is only allowed in " + AGENTS_TALK, ...where });
-        }
+        result.trustedFetch.push(...definition.hosts);
+        result.trustWhere = result.trustWhere || where;
         continue;
       }
       if (definition.type === "allowFetch") {
-        if (file.name === AGENTS_TALK) {
-          result.allowedFetch.push(...definition.hosts);
-        } else {
-          result.errors.push({ message: "'allow fetch from' is only allowed in " + AGENTS_TALK, ...where });
-        }
+        result.allowedFetch.push(...definition.hosts);
         continue;
       }
       if (definition.type === "allowChanges") {
-        if (file.name !== AGENTS_TALK) {
-          result.errors.push({ message: "'allow changes to' is only allowed in " + AGENTS_TALK, ...where });
-          continue;
-        }
         for (const shown of definition.paths) {
           // @/ and ./ both start from the root, where AGENTS.talk is
           const rest = shown.startsWith("@/") ? shown.slice(2) : shown;
           const absolute = nodePath.resolve(root, rest);
           // .talk/ holds the audit and the untrusted inputs: no line can open it
-          if (isProtectedPath(nodePath.relative(root, absolute).split(nodePath.sep).join("/") + "/")) {
+          if (isProtectedPath(relativeName(root, absolute) + "/")) {
             result.errors.push({ message: "Cannot allow changes to " + shown + ": .talk/ and talk/ hold the audit and the tools, and no line can open them", ...where });
             continue;
           }
@@ -1418,7 +1425,7 @@ async function loadAgentsTalk(root, hostTools) {
             result.errors.push({ message: "Cannot allow changes to " + shown + ": it must be inside the project root", ...where });
             continue;
           }
-          result.allowedChanges.push(nodePath.relative(root, absolute).split(nodePath.sep).join("/"));
+          result.allowedChanges.push(relativeName(root, absolute));
         }
         continue;
       }

@@ -265,6 +265,25 @@ test('allow env is only allowed in AGENTS.talk', async () => {
   assert.deepEqual(e, { message: "'allow env' is only allowed in AGENTS.talk", line: 1, column: 1, file: 'a.talk' });
 });
 
+test('every AGENTS.talk-only line is refused in an imported file, with its own words', async () => {
+  const lines = {
+    'require clank-talk': 'require clank-talk',
+    'taint off': 'taint',
+    'keep untrusted inputs up to 2 MB': 'keep untrusted inputs',
+    'keep audit for 5 days': 'keep audit',
+    'let the judge approve clean inputs': 'let the judge approve clean inputs',
+    "allow fetch from 'example.com'": 'allow fetch from',
+    "trust fetch from 'example.com'": 'trust fetch from',
+    'allow changes to @/.github/': 'allow changes to',
+  };
+  for (const [line, words] of Object.entries(lines)) {
+    await fs.writeFile(path.join(root, 'a.talk'), line);
+    await agentsTalk('import ./a.talk');
+    const [e] = await errors('print 1');
+    assert.equal(e.message, "'" + words + "' is only allowed in AGENTS.talk", line);
+  }
+});
+
 test('scripts cannot import', async () => {
   const [e] = await errors('import ./a.talk');
   assert.equal(e.message, "Unknown command 'import'");
