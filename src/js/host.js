@@ -89,9 +89,6 @@ export function sessionName(client) {
   return base.slice(0, 30) + "-" + randomBytes(2).toString("hex");
 }
 
-// the step budget for each call
-export const MAX_STEPS = 10_000;
-
 // the most print output that goes to the model; "limit output keeping" in AGENTS.talk or a policy cuts before this
 // above it, a host such as pi cuts the output at a place it chooses, so ClankTalk cuts first, and says where the rest is
 export const OUTPUT_MAX_LINES = 1000;
@@ -298,7 +295,6 @@ export async function runScript(session, script, agent, options) {
     fetchHosts: session.fetchHosts,
     processes: session.processes,
     audit: session.audit,
-    maxSteps: MAX_STEPS,
     previousOutput: scope.output.text,
     session: session.name,
     ...options,

@@ -61,7 +61,7 @@ class FileRef {
     this.absolute = absolute;
     this.folder = folder;
     // the path relative to the project root, with / on every platform
-    this.path = nodePath.relative(root, absolute).split(nodePath.sep).join("/");
+    this.path = relativeName(root, absolute);
     this.name = nodePath.basename(absolute);
   }
 
@@ -385,7 +385,7 @@ async function execute(source, options, execution) {
   let status = "done";
   let failure = [];
   try {
-    await runCommands(script.commands, state, tools, maxSteps);
+    await runCommands(script.commands, state);
   } catch (err) {
     execution.patterns.stop();
     if (err instanceof Cancelled) {
@@ -642,7 +642,7 @@ async function runSubagentCommand(command, state) {
     if (!command.subagent.tools.includes(name)) {
       return noSuchTool(name, command.subagent.tools);
     }
-    takeStep(command, state, state.maxSteps);
+    takeStep(command, state);
     const definition = state.definitions[name];
     const args = definition.params.map((param) => inputText(input[param]));
     const savedFrom = state.auditFrom;
@@ -651,7 +651,7 @@ async function runSubagentCommand(command, state) {
       const step = toolStep(definition, args, Object.create(null));
       await runHooks("before", [name], step, state, command);
       auditStep(state, "tool", name, args.map((arg) => toText(arg)).join(", "));
-      const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps);
+      const result = await callTool(definition, args, Object.create(null), command, state);
       await runHooks("after", [name], step, state, command);
       return { content: redact(toText(showSecrets(result)), state), isError: false };
     } catch (err) {
@@ -975,7 +975,7 @@ function systemPath(absolute, state) {
   // the system gives the real path, after links, and the root can be a link (on macOS, /var is /private/var)
   for (const root of [state.root, realRootSync(state.root)]) {
     if (isInside(absolute, root)) {
-      return nodePath.relative(root, absolute).split(nodePath.sep).join("/") || ".";
+      return relativeName(root, absolute) || ".";
     }
   }
   return "a file outside the project";
@@ -1555,7 +1555,8 @@ function finish(execution, status, errors) {
 // every command is one step, and so is every pass of a loop,
 // so a script that does not end stops at the budget
 // this is also where the host sees progress, and where cancel takes effect
-function takeStep(node, state, maxSteps) {
+function takeStep(node, state) {
+  const maxSteps = state.maxSteps;
   const execution = state.execution;
   if (execution.signal.aborted) {
     throw new Cancelled("Cancelled", node);
@@ -1571,15 +1572,15 @@ function takeStep(node, state, maxSteps) {
 
 // gives "break", "continue" or "stop" if one ran, so a loop or "on error" can see it
 // "on error" is not a step: it runs only when a command fails
-async function runCommands(commands, state, tools, maxSteps) {
+async function runCommands(commands, state) {
   for (const command of commands) {
     if (command.type === "onError") {
       continue;
     }
-    takeStep(command, state, maxSteps);
+    takeStep(command, state);
     let signal;
     try {
-      signal = await runCommand(command, state, tools, maxSteps);
+      signal = await runCommand(command, state);
     } catch (caught) {
       let err = caught;
       // a secret in the wrong place: the error points at this command, and names it
@@ -1593,7 +1594,7 @@ async function runCommands(commands, state, tools, maxSteps) {
         throw err;
       }
       // continue: go on with the command after the one that failed
-      if (await runHandler(err, state, tools, maxSteps) === "continue") {
+      if (await runHandler(err, state) === "continue") {
         continue;
       }
       err.handledBy = state.handler;
@@ -1630,7 +1631,7 @@ function canHandle(err, state) {
 
 // run "on error", with the error in a local variable named error
 // gives "continue" or "stop" (the default)
-async function runHandler(err, state, tools, maxSteps) {
+async function runHandler(err, state) {
   const error = Object.create(null);
   // the handler sees no secret's value
   error.message = redact(err.message, state);
@@ -1642,7 +1643,7 @@ async function runHandler(err, state, tools, maxSteps) {
   setOwn(state.variables, "error", error);
   state.handling = true;
   try {
-    const signal = await runCommands(state.handler.body, state, tools, maxSteps);
+    const signal = await runCommands(state.handler.body, state);
     if (signal === "continue") {
       return "continue";
     }
@@ -1659,13 +1660,13 @@ async function runHandler(err, state, tools, maxSteps) {
 }
 
 // one pass of a loop body; gives true if the loop must stop
-async function runLoopBody(node, state, tools, maxSteps) {
-  takeStep(node, state, maxSteps);
-  const signal = await runCommands(node.body, state, tools, maxSteps);
+async function runLoopBody(node, state) {
+  takeStep(node, state);
+  const signal = await runCommands(node.body, state);
   return signal === "break";
 }
 
-async function runCommand(command, state, tools, maxSteps) {
+async function runCommand(command, state) {
   if (command.type === "print") {
     // a secret shows as <secret NAME>, and a secret's value in other text too
     const value = showSecrets(await evaluate(command.value, state));
@@ -1682,9 +1683,9 @@ async function runCommand(command, state, tools, maxSteps) {
     const condition = await evaluate(command.condition, state);
     if (isTrue(condition)) {
       // pass break and continue up to the loop
-      return await runCommands(command.body, state, tools, maxSteps);
+      return await runCommands(command.body, state);
     }
-    return await runCommands(command.elseBody, state, tools, maxSteps);
+    return await runCommands(command.elseBody, state);
   }
 
   if (command.type === "break" || command.type === "continue" || command.type === "stop") {
@@ -1694,7 +1695,7 @@ async function runCommand(command, state, tools, maxSteps) {
   // in <target> do ... end: the body runs as is; the parser already gave its replace and find the target
   // break and continue pass up to a loop around it
   if (command.type === "do") {
-    return await runCommands(command.body, state, tools, maxSteps);
+    return await runCommands(command.body, state);
   }
 
   if (command.type === "for") {
@@ -1705,7 +1706,7 @@ async function runCommand(command, state, tools, maxSteps) {
       if (command.index !== null) {
         setOwn(scopeFor(command.index, state), command.index, index);
       }
-      if (await runLoopBody(command, state, tools, maxSteps)) {
+      if (await runLoopBody(command, state)) {
         break;
       }
     }
@@ -1734,7 +1735,7 @@ async function runCommand(command, state, tools, maxSteps) {
       if (command.index !== null) {
         setOwn(scopeFor(command.index, state), command.index, index);
       }
-      if (await runLoopBody(command, state, tools, maxSteps)) {
+      if (await runLoopBody(command, state)) {
         break;
       }
       index++;
@@ -1892,7 +1893,7 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "help") {
-    const list = toolList(state, tools);
+    const list = toolList(state, state.tools);
     let text;
     if (command.word === null) {
       text = helpIndex(list);
@@ -1973,7 +1974,7 @@ async function runCommand(command, state, tools, maxSteps) {
         state.timeLimit = shorter(state.timeLimit, await durationMs(command.within, state));
       }
       try {
-        state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
+        state.result = await callTool(definition, args, named, command, state);
       } finally {
         state.timeLimit = savedLimit;
       }
@@ -1983,7 +1984,7 @@ async function runCommand(command, state, tools, maxSteps) {
 
     const signal = state.execution.signal;
     try {
-      state.result = await tools[command.name]({ signal, args, named });
+      state.result = await state.tools[command.name]({ signal, args, named });
     } catch (err) {
       if (signal.aborted) {
         throw new Cancelled("Cancelled", command);
@@ -2000,10 +2001,6 @@ async function runCommand(command, state, tools, maxSteps) {
 // ----- expressions -----
 
 async function evaluate(node, state) {
-  return await evaluateNode(node, state);
-}
-
-async function evaluateNode(node, state) {
   const type = node.type;
 
   if (type === "string" || type === "number" || type === "boolean") {
@@ -2162,9 +2159,9 @@ async function evaluateNode(node, state) {
   // a tool call as a value: set tests to run_tests
   // it runs as the command does, with hooks and the audit, but leaves the result as it was
   if (type === "toolCall") {
-    takeStep(node, state, state.maxSteps);
+    takeStep(node, state);
     const saved = state.result;
-    await runCommand(node, state, state.tools, state.maxSteps);
+    await runCommand(node, state);
     const value = state.result;
     state.result = saved;
     return value;
@@ -2339,7 +2336,7 @@ function toolStep(definition, args, named) {
 
 // run a tool from AGENTS.talk, with its own local variables
 // gives back the tool's result at the end of the tool
-async function callTool(definition, args, named, command, state, tools, maxSteps) {
+async function callTool(definition, args, named, command, state) {
   if (args.length > definition.params.length) {
     throw new ScriptError("Tool '" + definition.name + "' takes " + definition.params.length + " arguments, found " + args.length, command);
   }
@@ -2376,7 +2373,7 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   // what the tool prints goes to the agent too, so an untrusted tool's print output goes to the store with its result
   const printedFrom = state.execution.output.length;
   try {
-    await runCommands(definition.body, state, tools, maxSteps);
+    await runCommands(definition.body, state);
     // an untrusted tool's result goes to the store, and makes the session untrusted
     if (definition.untrusted) {
       const shownArgs = args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name]))));
@@ -2626,7 +2623,7 @@ async function templateWords(node, state) {
 // so it never starts with "-"; the path was checked to be inside the project when the file value was made
 function argText(value, state) {
   if (value instanceof FileRef) {
-    const relative = nodePath.relative(state.cwd, value.absolute).split(nodePath.sep).join("/");
+    const relative = relativeName(state.cwd, value.absolute);
     if (relative === "") {
       return ".";
     }
@@ -2693,7 +2690,7 @@ async function resolveProgram(program, env, state, node) {
     }
     const real = await fs.realpath(candidate);
     if (isInside(candidate, state.root) || isInside(real, state.root)) {
-      const shown = nodePath.relative(state.root, candidate).split(nodePath.sep).join("/");
+      const shown = relativeName(state.root, candidate);
       throw new ScriptError("run '" + program + "' found " + shown + " inside the project, and the agent can change files there. Write the path in the tool to run it on purpose: run './" + shown + "'", node);
     }
     return candidate;
@@ -3469,7 +3466,7 @@ async function waitUntil(command, state) {
   const every = command.every ? await durationMs(command.every, state) : null;
   let pause = every === null ? WAIT_UNTIL_EVERY : every;
   while (true) {
-    takeStep(command, state, state.maxSteps);
+    takeStep(command, state);
     try {
       if (isTrue(await evaluate(command.condition, state))) {
         return;
@@ -5040,7 +5037,7 @@ async function runHook(hook, step, state, node) {
   const savedFrom = state.auditFrom;
   state.auditFrom = "hook " + hook.when + " " + hook.name;
   try {
-    await runCommands(hook.body, state, state.tools, state.maxSteps);
+    await runCommands(hook.body, state);
   } catch (err) {
     // a reject points at the command it stopped, so the agent sees where
     if (err instanceof Rejected) {
@@ -6003,7 +6000,7 @@ async function realTarget(file, state, node) {
   if (!isInside(real, realRoot)) {
     throw new ScriptError("Path is outside the project root: " + file.path, node);
   }
-  return { real, relative: nodePath.relative(realRoot, real).split(nodePath.sep).join("/") };
+  return { real, relative: relativeName(realRoot, real) };
 }
 
 // replace in one file, with the change hooks; gives the replacements
