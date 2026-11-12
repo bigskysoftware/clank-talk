@@ -10,7 +10,7 @@ import os from "node:os";
 import { listTools, run } from "./clank-talk.js";
 import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
-import { isProtectedPath, wildcardMatch, OUTPUT_TEXT_MAX } from "./runtime.js";
+import { isProtectedPath, wildcardMatch, OUTPUT_TEXT_MAX, hostTool } from "./runtime.js";
 import { taintCommand } from "./taint-cli.js";
 
 // ----- the project root -----
@@ -154,12 +154,17 @@ If you are one of several agents (a subagent), pass your name as 'agent' in each
 // the syntax summary comes from the help table, so it cannot drift from help
 export const SYNTAX = INTRO + "\n\n" + syntaxSummary() + "\n\n" + RULES;
 
-// build the tool description: the syntax, then the tools from AGENTS.talk
-export async function describeTool(root) {
+// build the tool description: the syntax, then the tools from AGENTS.talk, then the host's tools (see runScript)
+export async function describeTool(root, hostTools = {}) {
   let text = SYNTAX;
   const { tools, errors } = await listTools(root);
+  for (const name of Object.keys(hostTools)) {
+    const host = hostTool(hostTools[name]);
+    tools.push({ name, params: host.params, description: host.description });
+  }
   if (tools.length > 0) {
-    text += "\n\nTools from AGENTS.talk (call by name, arguments by position or with name: value):";
+    const from = Object.keys(hostTools).length > 0 ? "AGENTS.talk and the host" : "AGENTS.talk";
+    text += "\n\nTools from " + from + " (call by name, arguments by position or with name: value):";
     for (const tool of tools) {
       if (tool.params.length > 0) {
         text += "\n  " + tool.name + " with " + tool.params.join(", ");

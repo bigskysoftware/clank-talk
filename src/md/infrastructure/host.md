@@ -2,7 +2,11 @@
 
 Two hosts run the runtime: the MCP host and a pi extension.
 
-- Shared host code: `src/js/host.js` (tool description, result format, output cut, policy load). There is no formal host API.
+- Shared host code: `src/js/host.js` (tool description, result format, output cut, policy load).
+- Approved (built, 2026-11-12): the supported entry for a host that embeds ClankTalk (asked for by tau, `tmp/tau-host-tools.md`): `newSession(root, client, policy)`, `runScript(session, script, agent, { tools, ask, harness, onStep, signal })`, `describeTool(root, tools)` for the tool description, and `statusLine(root, on)`. Other exports can change.
+- Approved (built, 2026-11-12): a host tool is a function, or `{ run, description, params, untrusted, effects }`. `run` gets `{ signal, args, named }`, with the raw values: a path is a file object (`.absolute`, `.path`), and a secret is an object that throws if it is used as text. `description` and `params` show in `help tools` and the tool description, and `params` names the fields of the step for hooks (`the excel_read's path`). An object with no `run` function fails the load.
+- Approved (built, 2026-11-12): `untrusted: true`: the result and an error message go to the taint store, as for `untrusted tool`.
+- Approved (built, 2026-11-12): `effects`. `reads: '<param>'` is an audit read. `changes: '<param>'` gets the checks of a write before the call (inside the root, not protected, not hidden, writes not denied, not stale) and the `write` and `change` hooks (the step has `tool`), and after the call the change goes on the undo list and the changed files. A file that is not UTF-8 text gets a warning and no undo entry. `sends: true` asks the human before each call, tainted or not: `<tool> (<args>): this sends data out of this machine. Allow it?`. No answer is no. Limit: the runtime checks only the declared path; it cannot see what the tool really writes or sends. A host tool is trusted code, with no sandbox. Rejected for now: `taint asks before sends` (no AGENTS.talk tool has `sends`), and host tools in subagents.
 - pi extension: `src/js/harnesses/pi.js` and `src/js/harnesses/pi-host.js`. It runs in pi's process, with `ask` through pi's UI.
 - Other hosts: open.
 

@@ -243,6 +243,11 @@ async function execute(source, options, execution) {
   await null;
 
   const tools = options.tools || {};
+  for (const name of Object.keys(tools)) {
+    if (typeof hostTool(tools[name]).run !== "function") {
+      return finish(execution, "failed", [{ message: "The host tool " + name + " has no run function", line: 0, column: 0 }]);
+    }
+  }
   const maxSteps = options.maxSteps || DEFAULT_MAX_STEPS;
   const root = nodePath.resolve(options.root || process.cwd());
 
@@ -998,7 +1003,8 @@ function toolList(state, hostTools) {
     list.push({ name, params: definition.params, description: definition.description || "" });
   }
   for (const name of Object.keys(hostTools)) {
-    list.push({ name, params: [], description: "A tool from the host." });
+    const host = hostTool(hostTools[name]);
+    list.push({ name, params: host.params, description: host.description || "A tool from the host." });
   }
   return list;
 }
@@ -1936,10 +1942,12 @@ async function runCommand(command, state) {
     }
 
     const definition = state.definitions[command.name];
-    const step = toolStep(definition, args, named);
+    const host = definition === undefined ? hostTool(state.tools[command.name]) : null;
+    const step = toolStep(definition || host, args, named);
     await runHooks("before", [command.name], step, state, command);
     // the audit shows the arguments by position, then by name
-    auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name])))).join(", "));
+    const argText = args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name])))).join(", ");
+    auditStep(state, "tool", command.name, argText);
 
     if (definition !== undefined) {
       // "within" on the call limits every run inside the tool; the shorter limit wins
@@ -1956,14 +1964,28 @@ async function runCommand(command, state) {
       return null;
     }
 
+    // a host tool: its effects first, then the call; see src/md/infrastructure/host.md
+    const changed = await hostToolEffects(host, command, step, argText, state);
     const signal = state.execution.signal;
     try {
-      state.result = await state.tools[command.name]({ signal, args, named });
+      state.result = await host.run({ signal, args, named });
     } catch (err) {
       if (signal.aborted) {
         throw new Cancelled("Cancelled", command);
       }
-      throw new ScriptError("Tool '" + command.name + "' failed: " + err.message, command);
+      const message = "Tool '" + command.name + "' failed: " + err.message;
+      // an untrusted tool's error can hold its text, and the agent sees the error, so it goes to the store too
+      if (host.untrusted) {
+        await noteUntrusted(state, "tool " + command.name + " (error)", message, command);
+      }
+      throw new ScriptError(message, command);
+    } finally {
+      if (changed !== null) {
+        await recordHostChange(changed, state, command);
+      }
+    }
+    if (host.untrusted) {
+      await noteUntrusted(state, "tool " + command.name + (argText !== "" ? " (" + argText + ")" : ""), toText(showSecrets(state.result)));
     }
     await runHooks("after", [command.name], step, state, command);
     return null;
@@ -2300,6 +2322,100 @@ async function evaluate(node, state) {
 }
 
 // the step that a hook for a tool sees: args, named, and each parameter by its name (null if not given)
+// ----- host tools; see src/md/infrastructure/host.md -----
+
+// a host tool is a function, or { run, description, params, untrusted, effects }
+// effects: { reads: '<param>', changes: '<param>', sends: true }; reads and changes name the parameter with the path
+export function hostTool(value) {
+  if (typeof value === "function") {
+    return { run: value, description: "", params: [], untrusted: false, effects: {} };
+  }
+  if (value === null || typeof value !== "object") {
+    return { run: null, description: "", params: [], untrusted: false, effects: {} };
+  }
+  return { run: value.run, description: value.description || "", params: value.params || [], untrusted: value.untrusted === true, effects: value.effects || {} };
+}
+
+// before a host tool runs: reads is an audit read, changes gets the checks of a write, and sends asks the human
+// each time, tainted or not; gives { file, before } for undo, or null
+async function hostToolEffects(host, command, step, argText, state) {
+  const reads = await effectFile(host, "reads", step, command, state);
+  if (reads !== null) {
+    auditRead(state, reads.path);
+  }
+  let changed = null;
+  const changes = await effectFile(host, "changes", step, command, state);
+  if (changes !== null) {
+    await checkWritable(changes, state, command);
+    const before = await utf8TextOrNull(changes.absolute);
+    const real = await realPath(changes, state, command);
+    // stale-write check: the file changed after this script read it
+    if (real !== null && state.seen.has(real) && before !== undefined && state.seen.get(real) !== before) {
+      throw new ScriptError("File changed since it was read: " + changes.path + ". Read it again", command);
+    }
+    // the write and change hooks see it as a write, so a policy that guards a folder guards it too
+    const changeOf = changeStep("write", changes, { text: null, tool: command.name });
+    await changeHooks("before", changeOf, state, command);
+    changed = { file: changes, before, step: changeOf };
+  }
+  if (host.effects.sends === true) {
+    const question = redact(command.name + (argText !== "" ? " (" + argText + ")" : "") + ": this sends data out of this machine. Allow it?", state);
+    const answer = await askState(state, question, ["yes", "no"], null);
+    if (answer !== "yes") {
+      throw new Rejected("The human did not approve " + command.name + ", which sends data out of this machine", command);
+    }
+  }
+  return changed;
+}
+
+// the file in the parameter that an effect names, or null if the effect or the value is not there
+async function effectFile(host, effect, step, command, state) {
+  const name = host.effects[effect];
+  if (typeof name !== "string") {
+    return null;
+  }
+  const value = step[name];
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value instanceof FileRef) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return await resolvePath(value, state, command);
+  }
+  throw new ScriptError("Tool '" + command.name + "' needs a file in '" + name + "', found " + describe(value), command);
+}
+
+// the text of a file, null if there is no file, or undefined if it is not UTF-8 (undo cannot put back its bytes)
+async function utf8TextOrNull(absolute) {
+  let bytes;
+  try {
+    bytes = await fs.readFile(absolute);
+  } catch {
+    return null;
+  }
+  const text = bytes.toString("utf8");
+  return Buffer.from(text, "utf8").equals(bytes) ? text : undefined;
+}
+
+// after a host tool that changes a file: the change goes on the undo list and the changed files, as a write does
+async function recordHostChange(changed, state, command) {
+  const after = await utf8TextOrNull(changed.file.absolute);
+  if (changed.before === undefined || after === undefined) {
+    state.execution.warnings.push({ message: command.name + " changed " + changed.file.path + ", which is not UTF-8 text, so undo cannot put it back", line: command.line, column: command.column });
+    return;
+  }
+  if (after === changed.before) {
+    return;
+  }
+  state.execution.changes.push({ path: changed.file.path, before: changed.before, after });
+  if (after !== null) {
+    state.seen.set(await fs.realpath(changed.file.absolute), after);
+  }
+  await changeHooks("after", changed.step, state, command, "by the host tool " + command.name);
+}
+
 function toolStep(definition, args, named) {
   const step = Object.create(null);
   step.args = args;
