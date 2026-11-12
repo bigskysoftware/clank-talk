@@ -5,3 +5,7 @@ _site/
 .env
 .talk/
 .pi/
+
+# local Claude Code state: worktrees and settings
+.claude/worktrees/
+.claude/settings.local.json

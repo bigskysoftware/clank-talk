@@ -3,7 +3,11 @@
 allow env PATH, HOME
 allow fetch from 'localhost', '127.0.0.1'
 allow fetch from 'registry.npmjs.org', 'clank.talk'
+
 allow changes to @/.github/
+
+# hidden files that I edited for the plugins
+allow changes to @/.claude-plugin/, @/src/js/harnesses/claude-code/.claude-plugin/
 
 # Runs the full test suite.
 tool run_tests
@@ -57,4 +61,14 @@ tool pi_docs with word
   run 'grep' with '-rn', '-i', word, '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs'
     in a sandbox with reads of '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs'
     keeping the first 60 lines
+end
+
+# Checks the Claude Code plugin: its manifest, and what its hooks module calls.
+tool check_plugin
+  run 'claude plugin validate ./src/js/harnesses/claude-code' within 2 minutes keeping the last 30 lines
+end
+
+# Shows a pull request: its details, its diff, and its checks.
+untrusted tool gh_pr with number
+  run 'gh' with 'pr', 'view', number, '--json', 'title,author,body,files,mergeable,statusCheckRollup' within 1 minute
 end
