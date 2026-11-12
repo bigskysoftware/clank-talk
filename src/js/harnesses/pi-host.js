@@ -1,11 +1,20 @@
 // pi host: runs ClankTalk inside pi, as the only tool; see src/md/infrastructure/pi.md
 // pi.js is the entry file. It gives this module pi's TypeBox, so the tests can run without pi.
 
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { run, stopAllProcesses } from "../clank-talk.js";
+import * as untrusted from "../untrusted.js";
 import { SubagentError, schemaFor } from "../subagent.js";
 import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
+
+// the human's command line, for /taint: it runs the full-screen review in its own process
+const CLI = fileURLToPath(new URL("../../../bin/clank-talk.js", import.meta.url));
+
+// the key of the taint count in pi's footer
+const STATUS_KEY = "clank-talk";
 
 // send progress at most this often while a script runs
 const PROGRESS_EVERY_MS = 500;
@@ -14,8 +23,11 @@ const PROGRESS_EVERY_MS = 500;
  * Set up the extension: the clank_talk tool, and a guard that blocks every other tool.
  * @param {Object} pi    pi's ExtensionAPI
  * @param {Object} Type  TypeBox's Type, for the tool parameters
+ * @param {Object} [options]
+ * @param {Function} [options.spawn]  for tests: in place of spawnSync, for /taint
  */
-export function clankTalkExtension(pi, Type) {
+export function clankTalkExtension(pi, Type, options = {}) {
+  const spawn = options.spawn || spawnSync;
   // one session, as in the MCP server: $ globals, reads, undo, fetch approvals, processes and the audit
   let session = null;
 
@@ -36,6 +48,41 @@ export function clankTalkExtension(pi, Type) {
     registerClankTalk(await describeTool(session.root));
     // ClankTalk is the only tool the model sees
     pi.setActiveTools([TOOL_NAME]);
+    await showTaint(ctx, session.root);
+  });
+
+  // the count in the footer changes when a script reads web text, and when the human approves
+  pi.on("tool_execution_end", async (event, ctx) => {
+    if (event.toolName === TOOL_NAME && session !== null) {
+      await showTaint(ctx, session.root);
+    }
+  });
+  pi.on("agent_end", async (_event, ctx) => {
+    if (session !== null) {
+      await showTaint(ctx, session.root);
+    }
+  });
+
+  // /taint: the full-screen review over pi; see src/md/features/taint.md
+  // only the human can type a command, so the model cannot approve through it
+  pi.registerCommand("taint", {
+    description: "Review and approve the untrusted inputs of this project, full screen",
+    handler: async (_args, ctx) => {
+      const root = session !== null ? session.root : projectRoot(null, ctx.cwd);
+      if (!ctx.hasUI) {
+        return;
+      }
+      await ctx.ui.custom((tui, _theme, _keybindings, done) => {
+        // pi gives up the terminal while the review runs, and draws itself again after
+        tui.stop();
+        const result = spawn(process.execPath, [CLI, "taint", "--tui", "--root", root], { stdio: "inherit", env: process.env });
+        tui.start();
+        tui.requestRender(true);
+        done(result.status);
+        return { render: () => [], invalidate: () => {} };
+      });
+      await showTaint(ctx, root);
+    },
   });
 
   pi.on("session_shutdown", async () => {
@@ -107,6 +154,20 @@ export function clankTalkExtension(pi, Type) {
       },
     });
   }
+}
+
+// the footer: the count of inputs that are not approved, or nothing
+async function showTaint(ctx, root) {
+  if (!ctx || !ctx.hasUI) {
+    return;
+  }
+  let count = 0;
+  try {
+    count = (await untrusted.pendingAll(root)).length;
+  } catch {
+    // no store yet, or one that cannot be read: show no count
+  }
+  ctx.ui.setStatus(STATUS_KEY, count === 0 ? undefined : "taint: " + count + " not approved (/taint)");
 }
 
 function newSession(root) {
