@@ -1278,11 +1278,7 @@ async function loadAgentsTalk(root, hostTools) {
   await loadTalkFile(nodePath.join(root, AGENTS_TALK), root, [], files, result.errors);
   const names = Object.keys(hostTools);
   for (const file of files) {
-    for (const definition of file.firstPass.script.definitions) {
-      if (definition.type === "tool") {
-        names.push(definition.name);
-      }
-    }
+    names.push(...toolNamesIn(file.firstPass.script));
   }
 
   // second pass: parse with the tool names, and collect the definitions
@@ -1448,6 +1444,14 @@ async function loadAgentsTalk(root, hostTools) {
 // a path relative to the project root, with / on every platform
 function relativeName(root, absolute) {
   return nodePath.relative(root, absolute).split(nodePath.sep).join("/");
+}
+
+// the names of the tools in a first parse of .talk text, so the second parse knows a tool that is defined later
+function toolNamesIn(script) {
+  if (!script) {
+    return [];
+  }
+  return script.definitions.filter((definition) => definition.type === "tool").map((definition) => definition.name);
 }
 
 // read one .talk file, then the files it imports
@@ -1915,12 +1919,7 @@ async function runCommand(command, state, tools, maxSteps) {
     // the parser needs the tool names: the ones that the session knows, and for AGENTS.talk text, its own tools
     const names = Object.keys(state.tools || {}).concat(Object.keys(state.definitions || {}));
     if (command.agents) {
-      const first = parse(text, { definitions: true });
-      for (const definition of (first.script && first.script.definitions) || []) {
-        if (definition.type === "tool") {
-          names.push(definition.name);
-        }
-      }
+      names.push(...toolNamesIn(parse(text, { definitions: true }).script));
     }
     const parsed = parse(text, command.agents ? { definitions: true, tools: names } : { tools: names });
     state.result = parsed.errors.map((error) => ({ line: error.line, column: error.column, message: error.message }));
