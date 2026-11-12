@@ -1512,16 +1512,17 @@ async function loadTalkFile(absolute, root, chain, files, errors) {
 
 // limit output keeping ...: the print output that the agent sees; the previous output keeps all of it
 // a pattern that runs too long is a warning, and the host's own cut still applies
-const LIMIT_OUTPUT_TEXT = 5 * 1024 * 1024;
+// the most print output text that is kept: "the previous output" (host.js keptOutput) and the input of "limit output"
+export const OUTPUT_TEXT_MAX = 5 * 1024 * 1024;
 
 async function limitOutput(execution, state) {
   if (execution.outputLimits.length === 0 || execution.output.length === 0) {
     return;
   }
   let text = execution.output.join("\n");
-  // the cut works on at most the last 5 MB, as the previous output keeps; more would cost too much memory
-  if (text.length > LIMIT_OUTPUT_TEXT) {
-    text = text.slice(text.length - LIMIT_OUTPUT_TEXT);
+  // the cut works on at most the last OUTPUT_TEXT_MAX characters; more would cost too much memory
+  if (text.length > OUTPUT_TEXT_MAX) {
+    text = text.slice(text.length - OUTPUT_TEXT_MAX);
   }
   const total = text.split("\n").length;
   const note = (n) => "... " + n + " lines cut. All " + total + " lines are in: the previous output";

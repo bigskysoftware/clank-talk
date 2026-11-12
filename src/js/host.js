@@ -10,7 +10,7 @@ import os from "node:os";
 import { listTools, run } from "./clank-talk.js";
 import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
-import { isProtectedPath, wildcardMatch } from "./runtime.js";
+import { isProtectedPath, wildcardMatch, OUTPUT_TEXT_MAX } from "./runtime.js";
 import { taintCommand } from "./taint-cli.js";
 
 // ----- the project root -----
@@ -322,16 +322,14 @@ export function agentScope(session, agent) {
   return session.agents.get(agent);
 }
 
-// the most that "the previous output" keeps; above it, the start and the end
-const PREVIOUS_MAX_CHARACTERS = 5 * 1024 * 1024;
-
+// "the previous output" keeps at most OUTPUT_TEXT_MAX characters (runtime.js); above it, the start and the end
 // the full print output of a script, for "the previous output" in the next one
 export function keptOutput(result) {
   const text = result.output.join("\n");
-  if (text.length <= PREVIOUS_MAX_CHARACTERS) {
+  if (text.length <= OUTPUT_TEXT_MAX) {
     return text;
   }
-  const half = PREVIOUS_MAX_CHARACTERS / 2;
+  const half = OUTPUT_TEXT_MAX / 2;
   return text.slice(0, half) + "\n... (cut: the output was more than 5 MB) ...\n" + text.slice(-half);
 }
 
