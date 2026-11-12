@@ -22,7 +22,7 @@ const MAX_CHAIN = 500;
 // words that join values, so they never start one: "set sorted to 5" sets a variable named sorted
 const LINK_WORDS = ["to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
 
-export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "move", "push", "delete"];
+export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "move", "push", "delete", "stash", "stashes", "restore", "pull", "blame", "tag", "tags"];
 
 /**
  * @typedef {Object} ParseError
@@ -273,11 +273,14 @@ export function parse(source, options = {}) {
       i++;
       return operator + " empty";
     }
-    // is private, is untrusted: taint checks; see src/md/features/taint.md
-    if (isWord("private") || isWord("untrusted")) {
-      const word = current().value;
+    // is untrusted: only for the session; see src/md/features/taint.md
+    if (isWord("untrusted")) {
       i++;
-      return operator + " " + word;
+      return operator + " untrusted";
+    }
+    if (isWord("private")) {
+      error("'" + operator + " private' was removed: values have no taint labels. Check the session: the session is untrusted");
+      return null;
     }
     if (isWord("in")) {
       i++;
@@ -287,7 +290,7 @@ export function parse(source, options = {}) {
   }
 
   // operators with no right side
-  const CHECKS = ["exists", "does not exist", "is empty", "is not empty", "is private", "is not private", "is untrusted", "is not untrusted"];
+  const CHECKS = ["exists", "does not exist", "is empty", "is not empty", "is untrusted", "is not untrusted"];
 
   function parseComparison() {
     const left = parseMath();
@@ -340,8 +343,16 @@ export function parse(source, options = {}) {
       } else if (isWord("exist")) {
         i++;
         operator = "does not exist";
+      } else if (isWord("start") || isWord("end")) {
+        operator = "does not " + current().value + " with";
+        i++;
+        if (!isWord("with")) {
+          error("Expected 'with'");
+          return null;
+        }
+        i++;
       } else {
-        error("Expected 'contain' or 'exist'");
+        error("Expected 'contain', 'exist', 'start with' or 'end with'");
         return null;
       }
     } else {
@@ -350,6 +361,10 @@ export function parse(source, options = {}) {
 
     // checks have no right side
     if (CHECKS.includes(operator)) {
+      if (operator.endsWith("untrusted") && left.type !== "session") {
+        error("'" + operator + "' only checks the session: values have no taint labels. Use: the session is untrusted");
+        return null;
+      }
       return node("check", token, { operator, value: left });
     }
 
@@ -457,6 +472,11 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
+    // the session's untrusted inputs: a name of two words
+    if (object !== null && object.type === "session" && name.value === "untrusted" && isWord("inputs")) {
+      i++;
+      return node("property", token, { object, name: "untrusted inputs" });
+    }
     return node("property", token, { object, name: name.value });
   }
 
@@ -476,6 +496,11 @@ export function parse(source, options = {}) {
         i++;
         return node("processes", next, {});
       }
+      // the session: is untrusted, and its untrusted inputs; see src/md/features/taint.md
+      if (next !== undefined && next.type === "word" && next.value === "session") {
+        i++;
+        return node("session", next, {});
+      }
       // the previous output: the full print output of the last script, which the host can cut
       if (next !== undefined && next.type === "word" && next.value === "previous" && tokens[i + 1] !== undefined && tokens[i + 1].type === "word" && tokens[i + 1].value === "output") {
         i += 2;
@@ -493,7 +518,7 @@ export function parse(source, options = {}) {
       }
     }
 
-    // fetch as a value, as read is: (fetch url as response)'s status
+    // fetch as a value, as read is: the status of fetch url as response
     if (isWord("fetch")) {
       const fetchToken = current();
       i++;
@@ -599,9 +624,15 @@ export function parse(source, options = {}) {
       }
     }
 
-    // pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
+    // pattern /<regexp>/ or pattern '<regexp>': only with text after it on the same line, so "pattern" alone stays a plain word
     if (isWord("pattern")) {
       const after = tokens[i + 1];
+      // pattern /regex/flags: the regex as written, with its flags
+      if (after !== undefined && after.type === "regex") {
+        const patternToken = current();
+        i += 2;
+        return node("pattern", patternToken, { source: node("string", after, { value: after.value.source }), flags: after.value.flags });
+      }
       if (after !== undefined && after.line === current().line && (after.type === "string" || after.type === "template")) {
         const patternToken = current();
         i++;
@@ -609,7 +640,7 @@ export function parse(source, options = {}) {
         if (source === null) {
           return null;
         }
-        return node("pattern", patternToken, { source });
+        return node("pattern", patternToken, { source, flags: "" });
       }
     }
 
@@ -1000,7 +1031,18 @@ export function parse(source, options = {}) {
     return { type: "help", word, line: token.line, column: token.column };
   }
 
-  // ask <question> [with <choice> or <choice> ...] [within <duration>]
+  // taint review: a form shows the human the inputs that are not approved; see src/md/features/taint.md
+  function parseTaint(token) {
+    if (!isWord("review")) {
+      error("Expected 'review', as in: taint review. 'taint on', 'taint off' and 'taint required' go at the top of AGENTS.talk");
+      return null;
+    }
+    i++;
+    return { type: "taintReview", line: token.line, column: token.column };
+  }
+
+  // ask <question> [with [any of] <choice> or <choice> ...] [within <duration>]
+  // 'with any of' lets the human pick several: the answer is a list
   // only the human answers; see src/md/features/ask.md
   function parseAsk(token) {
     const question = parseBefore(["with", "within"], parseExpression);
@@ -1008,8 +1050,13 @@ export function parse(source, options = {}) {
       return null;
     }
     const choices = [];
+    let many = false;
     if (isWord("with")) {
       i++;
+      if (isWord("any") && tokens[i + 1] !== undefined && tokens[i + 1].value === "of") {
+        many = true;
+        i += 2;
+      }
       while (true) {
         const choice = parseBefore(["or", "within"], parseExpression);
         if (choice === null) {
@@ -1034,7 +1081,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "ask", question, choices, within, line: token.line, column: token.column };
+    return { type: "ask", question, choices, many, within, line: token.line, column: token.column };
   }
 
   // undo, undo <count>, undo changes to <file>
@@ -1081,8 +1128,24 @@ export function parse(source, options = {}) {
       }
       i++;
     }
-    // git show <commit>, git merge <branch>, git delete branch <branch>
-    if (op.value === "show" || op.value === "merge" || op.value === "delete") {
+    // git push, git push tag <name>
+    if (op.value === "push" && isWord("tag") && current().line === op.line) {
+      i++;
+      command.tag = parseExpression();
+      if (command.tag === null) {
+        return null;
+      }
+    }
+    // git stash, git stash pop
+    if (op.value === "stash") {
+      command.pop = false;
+      if (isWord("pop") && current().line === op.line) {
+        i++;
+        command.pop = true;
+      }
+    }
+    // git show <commit>, git merge <branch>, git delete branch <branch>, git restore <files>, git blame <file>, git tag <name>
+    if (["show", "merge", "delete", "restore", "blame", "tag"].includes(op.value)) {
       command.value = parseExpression();
       if (command.value === null) {
         return null;
@@ -1144,6 +1207,20 @@ export function parse(source, options = {}) {
       if (command.value === null) {
         return null;
       }
+      // git commit a, b with ...: a list with no brackets, as the arguments of run take
+      if (isOp(",")) {
+        const first = command.value;
+        const items = [first];
+        while (isOp(",")) {
+          i++;
+          const item = parseBefore(["with"], parseExpression);
+          if (item === null) {
+            return null;
+          }
+          items.push(item);
+        }
+        command.value = { type: "list", items, line: first.line, column: first.column };
+      }
       if (!isWord("with")) {
         error("Expected 'with' and a message");
         return null;
@@ -1169,10 +1246,10 @@ export function parse(source, options = {}) {
     const next = current();
     return next !== undefined && next.line === token.line && !isCommandStart();
   }
-  // reject <message>, only in a "before" hook: the step does not happen
+  // reject <message>, in a "before" hook (the step does not happen) or in a tool (the tool stops)
   function parseReject(token) {
-    if (inHook !== "before") {
-      errors.push({ message: "'reject' is only allowed in a 'before' hook", line: token.line, column: token.column });
+    if (inHook !== "before" && !inTool) {
+      errors.push({ message: "'reject' is only allowed in a 'before' hook or a tool", line: token.line, column: token.column });
       return null;
     }
     const message = parseExpression();
@@ -1269,6 +1346,12 @@ export function parse(source, options = {}) {
     // replace lines 5 to 7 of <file> with <text>: an edit by line number; "of" names the file,
     // so it never takes an "in", and an "in" after it starts a new command
     if (old.type === "lines") {
+      // an "in" on the same line is a mistake, not a new command: "of" already names the file
+      const before = tokens[i - 1];
+      if (isWord("in") && before !== undefined && !source.slice(before.end, current().start).includes("\n")) {
+        error("replace lines ... of <file> names the file after 'of', so it takes no 'in'. Remove the 'in' part");
+        return null;
+      }
       return { type: "replaceLines", range: old, text: replacement, line: token.line, column: token.column };
     }
     // in an "in <target> do ... end" block, the block names the target, and an "in" here starts a new command
@@ -1451,6 +1534,45 @@ export function parse(source, options = {}) {
     return { type: "set", target, value, line: token.line, column: token.column };
   }
 
+  // check <text> [as AGENTS.talk]: the parse errors of a script, or of AGENTS.talk text; nothing runs
+  function parseCheck(token) {
+    const value = parseBefore(["as"], parseExpression);
+    if (value === null) {
+      return null;
+    }
+    let agents = false;
+    if (isWord("as")) {
+      const next = tokens[i + 1];
+      const dot = tokens[i + 2];
+      const talk = tokens[i + 3];
+      if (next === undefined || next.value !== "AGENTS" || dot === undefined || dot.value !== "." || talk === undefined || talk.value !== "talk") {
+        error("Expected 'AGENTS.talk', as in: check text as AGENTS.talk");
+        return null;
+      }
+      i += 4;
+      agents = true;
+    }
+    return { type: "check", value, agents, line: token.line, column: token.column };
+  }
+
+  // add <expression> to <target>: the target is a list, or a variable that is not set yet
+  function parseAdd(token) {
+    const value = parseBefore(["to"], parseExpression);
+    if (value === null) {
+      return null;
+    }
+    if (!isWord("to")) {
+      error("Expected 'to', as in: add item to items");
+      return null;
+    }
+    i++;
+    const target = parseTarget();
+    if (target === null) {
+      return null;
+    }
+    return { type: "add", value, target, line: token.line, column: token.column };
+  }
+
   // increment <target> [by <expression>]
   // decrement <target> [by <expression>]
   // with no "by", the amount is 1
@@ -1508,6 +1630,9 @@ export function parse(source, options = {}) {
     git: parseGit,
     undo: parseUndo,
     ask: parseAsk,
+    taint: parseTaint,
+    add: parseAdd,
+    check: parseCheck,
     fetch: parseFetch,
     start: parseStart,
     wait: parseWait,
@@ -1639,19 +1764,31 @@ export function parse(source, options = {}) {
   function parseWait(token) {
     if (isWord("until")) {
       i++;
-      const condition = parseBefore(["within"], parseExpression);
+      const condition = parseBefore(["every", "within"], parseExpression);
       if (condition === null) {
         return null;
       }
+      // every <duration>: how often to check; with none, the checks start fast and slow down
+      let every = null;
       let within = null;
-      if (isWord("within")) {
-        i++;
-        within = parseDuration();
-        if (within === null) {
+      while (isWord("every") || isWord("within")) {
+        const word = current().value;
+        if ((word === "every" && every !== null) || (word === "within" && within !== null)) {
+          error("'" + word + "' is given twice");
           return null;
         }
+        i++;
+        const duration = parseDuration();
+        if (duration === null) {
+          return null;
+        }
+        if (word === "every") {
+          every = duration;
+        } else {
+          within = duration;
+        }
       }
-      return { type: "waitUntil", condition, within, line: token.line, column: token.column };
+      return { type: "waitUntil", condition, every, within, line: token.line, column: token.column };
     }
     const duration = parseDuration();
     if (duration === null) {
@@ -1734,12 +1871,22 @@ export function parse(source, options = {}) {
     if (name === null) {
       return null;
     }
+    // a call to it would run the command, so the tool could never be called
+    if (Object.hasOwn(COMMANDS, name)) {
+      error("A tool cannot be named '" + name + "', because '" + name + "' is a command. Use another name");
+      return null;
+    }
     const params = [];
     if (isWord("with")) {
       i++;
       while (true) {
         const param = parseName();
         if (param === null) {
+          return null;
+        }
+        // a hook for the tool reads the step's args, named, and each parameter by name
+        if (param === "args" || param === "named") {
+          error("A tool parameter cannot be named '" + param + "': hooks use 'the " + name + "'s " + param + "'. Use another name");
           return null;
         }
         params.push(param);
@@ -1818,7 +1965,7 @@ export function parse(source, options = {}) {
       errors.push({ message: "'run' is only allowed in a tool", line: token.line, column: token.column });
       return null;
     }
-    const program = parseBefore(["with", "using", "in", "within"], parseExpression);
+    const program = parseBefore(["with", "using", "in", "within", "keeping"], parseExpression);
     if (program === null) {
       return null;
     }
@@ -1827,7 +1974,7 @@ export function parse(source, options = {}) {
       i++;
       args = [];
       while (true) {
-        const arg = parseBefore(["using", "in", "within"], parseExpression);
+        const arg = parseBefore(["using", "in", "within", "keeping"], parseExpression);
         if (arg === null) {
           return null;
         }
@@ -1868,7 +2015,96 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "run", program, args, secrets, sandbox, subagent, within, line: token.line, column: token.column };
+    // keeping is the last part of run
+    let keeping = null;
+    if (isWord("keeping")) {
+      if (subagent !== null) {
+        error("A subagent gives back its answer, not program output, so 'keeping' does not apply");
+        return null;
+      }
+      i++;
+      keeping = parseKeeping();
+      if (keeping === null) {
+        return null;
+      }
+    }
+    return { type: "run", program, args, keeping, secrets, sandbox, subagent, within, line: token.line, column: token.column };
+  }
+
+  // after run ... keeping: which lines of the program's output the tool gives back; see src/md/features/sandbox-run.md
+  //   the first <n> lines | the last <n> lines | the first <n> and the last <n> lines | lines matching pattern /x/
+  //   then, optional: or <n> KB
+  function parseKeeping() {
+    const example = "keeping the last 200 lines";
+    if (isWord("lines")) {
+      i++;
+      if (!isWord("matching")) {
+        error("Expected 'matching', as in: keeping lines matching pattern /FAIL/");
+        return null;
+      }
+      i++;
+      const pattern = parseBefore(["or"], parseExpression);
+      if (pattern === null) {
+        return null;
+      }
+      return parseKeepingBytes({ first: null, last: null, pattern, bytes: null });
+    }
+    if (isWord("the")) {
+      i++;
+    }
+    const keep = { first: null, last: null, pattern: null };
+    if (isWord("first")) {
+      i++;
+      keep.first = parseBefore(["and", "lines"], parseExpression);
+      if (keep.first === null) {
+        return null;
+      }
+      if (isWord("and")) {
+        i++;
+        if (isWord("the")) {
+          i++;
+        }
+        if (!isWord("last")) {
+          error("Expected 'the last', as in: keeping the first 20 and the last 200 lines");
+          return null;
+        }
+      }
+    } else if (!isWord("last")) {
+      error("Expected 'the first', 'the last' or 'lines matching', as in: " + example);
+      return null;
+    }
+    if (isWord("last")) {
+      i++;
+      keep.last = parseBefore(["lines"], parseExpression);
+      if (keep.last === null) {
+        return null;
+      }
+    }
+    if (!isWord("lines")) {
+      error("Expected 'lines', as in: " + example);
+      return null;
+    }
+    i++;
+    keep.bytes = null;
+    return parseKeepingBytes(keep);
+  }
+
+  // after keeping ...: or <n> KB
+  function parseKeepingBytes(keep) {
+    if (!isWord("or")) {
+      return keep;
+    }
+    i++;
+    keep.bytes = parseBefore(["KB", "kb"], parseMath);
+    if (keep.bytes === null) {
+      return null;
+    }
+    if (!isWord("KB") && !isWord("kb")) {
+      error("Expected 'KB', as in: keeping the last 200 lines or 20 KB");
+      return null;
+    }
+    i++;
+    return keep;
   }
 
   // in a subagent with only <tool>, <tool>: after run; gives { tools }
@@ -1918,13 +2154,18 @@ export function parse(source, options = {}) {
       return null;
     }
     i++;
-    for (const word of ["for", "subagents"]) {
-      if (!isWord(word)) {
-        error("Expected '" + word + "', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
-        return null;
-      }
-      i++;
+    if (!isWord("for")) {
+      error("Expected 'for', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+      return null;
     }
+    i++;
+    // for subagents, or for judging: the model of the judge; see src/md/features/taint.md
+    if (!isWord("subagents") && !isWord("judging")) {
+      error("Expected 'subagents' or 'judging', as in: use model 'claude-sonnet-5-5' for subagents with secret ANTHROPIC_API_KEY");
+      return null;
+    }
+    const purpose = current().value;
+    i++;
     // with secret NAME: the key, for a harness that cannot lend its model; pi needs none
     let secret = null;
     if (isWord("with")) {
@@ -1939,7 +2180,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "useModel", model: model.value, secret, line: token.line, column: token.column };
+    return { type: "useModel", model: model.value, secret, purpose, line: token.line, column: token.column };
   }
 
   // in a sandbox [with network, local network, writes to <path>, reads of <path>], after run or start
@@ -1981,7 +2222,7 @@ export function parse(source, options = {}) {
           return null;
         }
         i++;
-        const path = parseBefore(["within"], parseExpression);
+        const path = parseBefore(["within", "keeping"], parseExpression);
         if (path === null || !isLiteralGrant(path, "writes to")) {
           return null;
         }
@@ -1993,7 +2234,7 @@ export function parse(source, options = {}) {
           return null;
         }
         i++;
-        const path = parseBefore(["within"], parseExpression);
+        const path = parseBefore(["within", "keeping"], parseExpression);
         if (path === null || !isLiteralGrant(path, "reads of")) {
           return null;
         }
@@ -2084,6 +2325,36 @@ export function parse(source, options = {}) {
   //   allow changes to @/.github/, @/.gitignore
   //   allow fetch from 'api.github.com', '*.npmjs.org'
   function parseAllow(token) {
+    // allow harness tools Read, Grep, 'mcp__github__*': other tools that the harness lets the agent use; see src/md/features/harness-tools.md
+    // allow untrusted harness tools WebFetch: their results are untrusted inputs, and taint the session
+    let untrustedTools = false;
+    if (isWord("untrusted") && tokens[i + 1] !== undefined && tokens[i + 1].value === "harness") {
+      untrustedTools = true;
+      i++;
+    }
+    if (isWord("harness")) {
+      i++;
+      if (!isWord("tools")) {
+        error("Expected 'tools', as in: allow harness tools Read, Grep");
+        return null;
+      }
+      i++;
+      const names = [];
+      while (true) {
+        const name = current();
+        if (name === undefined || (name.type !== "word" && name.type !== "string") || name.value === "") {
+          error("Expected a tool name, such as Read, or a pattern in quotes, such as 'mcp__github__*'");
+          return null;
+        }
+        names.push(name.value);
+        i++;
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+      return { type: "allowHarnessTools", names, untrusted: untrustedTools, line: token.line, column: token.column };
+    }
     if (isWord("fetch")) {
       i++;
       if (!isWord("from")) {
@@ -2104,7 +2375,7 @@ export function parse(source, options = {}) {
       return parseAllowSecret(token);
     }
     if (!isWord("env")) {
-      error("Expected 'env', 'changes to', 'fetch from' or 'secret'");
+      error("Expected 'env', 'changes to', 'fetch from', 'secret' or 'harness tools'");
       return null;
     }
     i++;
@@ -2164,6 +2435,7 @@ export function parse(source, options = {}) {
   }
 
   // 'api.github.com', '*.npmjs.org': hosts in quotes, lower case
+  // http://localhost:5173/, https://*.github.com/repos/**: URL patterns, see src/md/features/fetch.md
   function parseHosts() {
     const hosts = [];
     while (true) {
@@ -2173,13 +2445,48 @@ export function parse(source, options = {}) {
         return null;
       }
       i++;
-      hosts.push(host.value.toLowerCase());
+      if (host.value.includes("://")) {
+        const pattern = urlPattern(host.value);
+        if (pattern === null) {
+          return null;
+        }
+        hosts.push(pattern);
+      } else {
+        hosts.push(host.value.toLowerCase());
+      }
       if (!isOp(",")) {
         break;
       }
       i++;
     }
     return hosts;
+  }
+
+  // a URL pattern in its normal form: the scheme, the host, a port that is not the default, and the path
+  function urlPattern(text) {
+    const example = ", such as http://localhost:5173/ or https://*.github.com/";
+    let url;
+    try {
+      url = new URL(text);
+    } catch (err) {
+      error("Expected a URL" + example + ", found '" + text + "'");
+      return null;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      error("A fetch URL must start with http:// or https://, found '" + text + "'");
+      return null;
+    }
+    if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
+      error("A fetch URL here has no user name, password, ? or #, found '" + text + "'");
+      return null;
+    }
+    // * is allowed only as the first part of the host
+    const host = url.hostname.replace(/\.+$/, "");
+    if (host.slice(2).includes("*") || (host.includes("*") && !host.startsWith("*."))) {
+      error("In the host, * must be the first part, as in https://*.github.com/, found '" + text + "'");
+      return null;
+    }
+    return url.protocol + "//" + host + (url.port === "" ? "" : ":" + url.port) + url.pathname;
   }
 
   // allow changes to <path>, <path>: hidden paths that scripts can change
@@ -2228,7 +2535,8 @@ export function parse(source, options = {}) {
   // one line of a policy, after its first word:
   //   policy 'name'
   //   require sandbox for run, start
-  //   limit fetch to 'host', ...    limit env to NAME, ...    limit changes to @/path, ...
+  //   taint required (in the definitions loop)
+  //   limit fetch from 'host', ...    limit env to NAME, ...    limit changes to @/path, ...
   //   deny git push | deny start | deny fetch | deny run | deny writes
   //   audit also to '/path/'
   function parsePolicyLine(token) {
@@ -2243,6 +2551,11 @@ export function parse(source, options = {}) {
       return { type: "policyName", name: name.value, ...at };
     }
     if (token.value === "require") {
+      // the old form of taint required
+      if (isWord("taint")) {
+        error("'require taint' is now 'taint required', the same as in AGENTS.talk");
+        return null;
+      }
       if (!isWord("sandbox")) {
         error("Expected 'sandbox for run, start'");
         return null;
@@ -2275,8 +2588,14 @@ export function parse(source, options = {}) {
         return null;
       }
       i++;
-      if (!isWord("to")) {
-        error("Expected 'to'");
+      // limit fetch from, as in allow fetch from; the others take to
+      const word = what.value === "fetch" ? "from" : "to";
+      if (what.value === "fetch" && isWord("to")) {
+        error("'limit fetch to' is now 'limit fetch from', the same as 'allow fetch from' in AGENTS.talk");
+        return null;
+      }
+      if (!isWord(word)) {
+        error("Expected '" + word + "'");
         return null;
       }
       i++;
@@ -2307,10 +2626,10 @@ export function parse(source, options = {}) {
           return null;
         }
         what = "git push";
-      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets") || isWord("subagents")) {
+      } else if (isWord("start") || isWord("fetch") || isWord("run") || isWord("writes") || isWord("secrets") || isWord("subagents") || isWord("trust")) {
         what = current().value;
       } else {
-        error("Expected git push, start, fetch, run, writes, secrets or subagents");
+        error("Expected git push, start, fetch, run, writes, secrets, subagents or trust");
         return null;
       }
       i++;
@@ -2371,38 +2690,139 @@ export function parse(source, options = {}) {
     return { type: "keepAudit", days, atLeast, line: token.line, column: token.column };
   }
 
-  // limit output to 400 lines [or 20 KB]: the most print output the agent sees, in AGENTS.talk or a policy
-  // see src/md/infrastructure/host.md
-  function parseOutputLimit(token) {
-    i++;
-    if (!isWord("to")) {
-      error("Expected 'to'");
+  // the actions that ask while untrusted inputs are not approved, after "taint asks"; see src/md/features/taint.md
+  function parseTaintAsks(token) {
+    const example = "taint asks before push, secrets, commit, network runs, new hosts";
+    if (!isWord("before")) {
+      error("Expected 'before', as in: " + example);
       return null;
     }
     i++;
-    const limit = { type: "outputLimit", lines: null, bytes: null, line: token.line, column: token.column };
+    if (isWord("nothing")) {
+      i++;
+      return { type: "taintAsks", asks: [], line: token.line, column: token.column };
+    }
+    const asks = [];
     while (true) {
-      // a number token holds its digits as text
-      const number = current();
-      const value = number === undefined || number.type !== "number" ? NaN : Number(number.value);
-      if (!Number.isInteger(value) || value < 1) {
-        error("Expected a whole number above 0, such as: limit output to 400 lines");
-        return null;
-      }
-      i++;
-      if (isWord("lines") && limit.lines === null) {
-        limit.lines = value;
-      } else if ((isWord("KB") || isWord("kb")) && limit.bytes === null) {
-        limit.bytes = value * 1024;
+      let item = null;
+      if (isWord("push") || isWord("secrets") || isWord("commit")) {
+        item = current().value;
+        i++;
+      } else if ((isWord("network") && tokens[i + 1] !== undefined && tokens[i + 1].value === "runs") || (isWord("new") && tokens[i + 1] !== undefined && tokens[i + 1].value === "hosts")) {
+        item = current().value + " " + tokens[i + 1].value;
+        i += 2;
       } else {
-        error("Expected 'lines' or 'KB', such as: limit output to 400 lines or 20 KB");
+        error("Expected push, secrets, commit, network runs, new hosts or nothing, as in: " + example);
         return null;
       }
-      i++;
-      if (!isWord("or")) {
+      if (asks.includes(item)) {
+        error("'" + item + "' is in the list twice");
+        return null;
+      }
+      asks.push(item);
+      if (!isOp(",")) {
         break;
       }
       i++;
+    }
+    return { type: "taintAsks", asks, line: token.line, column: token.column };
+  }
+
+  // a judge line, after its first word (let or judge)
+  function parseJudgeLine(token) {
+    const at = { line: token.line, column: token.column };
+    const words = (list, example) => {
+      for (const word of list) {
+        if (!isWord(word)) {
+          error("Expected '" + word + "', as in: " + example);
+          return false;
+        }
+        i++;
+      }
+      return true;
+    };
+    if (token.value === "let") {
+      return words(["the", "judge", "approve", "clean", "inputs"], "let the judge approve clean inputs") ? { type: "judgeApproves", ...at } : null;
+    }
+    if (isWord("untrusted")) {
+      return words(["untrusted", "inputs", "automatically"], "judge untrusted inputs automatically") ? { type: "judgeAutomatically", ...at } : null;
+    }
+    if (!words(["with", "prompt"], "judge with prompt 'Is this text safe?'")) {
+      return null;
+    }
+    const prompt = current();
+    if (prompt === undefined || prompt.type !== "string" || prompt.value.trim() === "") {
+      error("Expected the prompt as text, in quotes or in a text block (lines that start with |)");
+      return null;
+    }
+    i++;
+    return { type: "judgePrompt", prompt: prompt.value, ...at };
+  }
+
+  // keep untrusted inputs up to 5 MB: the most text that the store keeps of one untrusted input
+  function parseKeepUntrusted(token) {
+    for (const word of ["untrusted", "inputs", "up", "to"]) {
+      if (!isWord(word)) {
+        error("Expected '" + word + "', as in: keep untrusted inputs up to 5 MB");
+        return null;
+      }
+      i++;
+    }
+    const number = current();
+    const size = number === undefined || number.type !== "number" ? NaN : Number(number.value);
+    if (!Number.isInteger(size) || size < 1) {
+      error("Expected a whole number above 0, such as: keep untrusted inputs up to 5 MB");
+      return null;
+    }
+    i++;
+    let bytes;
+    if (isWord("MB") || isWord("mb")) {
+      bytes = size * 1024 * 1024;
+    } else if (isWord("KB") || isWord("kb")) {
+      bytes = size * 1024;
+    } else {
+      error("Expected 'MB' or 'KB', as in: keep untrusted inputs up to 5 MB");
+      return null;
+    }
+    i++;
+    return { type: "keepUntrusted", bytes, line: token.line, column: token.column };
+  }
+
+  // limit output keeping ...: the print output the agent sees, in AGENTS.talk or a policy; the same forms as run ... keeping
+  // see src/md/infrastructure/host.md and src/md/features/sandbox-run.md
+  function parseOutputLimit(token) {
+    i++;
+    if (isWord("to")) {
+      error("'limit output to' is replaced by 'keeping', as in: limit output keeping the first 200 and the last 200 lines or 20 KB");
+      return null;
+    }
+    if (!isWord("keeping")) {
+      error("Expected 'keeping', as in: limit output keeping the last 400 lines");
+      return null;
+    }
+    i++;
+    const keep = parseKeeping();
+    if (keep === null) {
+      return null;
+    }
+    // here the numbers are written out: whole numbers above 0
+    const whole = (node) => {
+      if (node === null) {
+        return null;
+      }
+      const value = node.type === "number" ? Number(node.value) : NaN;
+      if (!Number.isInteger(value) || value < 1) {
+        error("Expected a whole number above 0, such as: limit output keeping the last 400 lines");
+        return undefined;
+      }
+      return value;
+    };
+    const limit = { type: "outputLimit", first: whole(keep.first), last: whole(keep.last), pattern: keep.pattern, bytes: whole(keep.bytes), line: token.line, column: token.column };
+    if (limit.first === undefined || limit.last === undefined || limit.bytes === undefined) {
+      return null;
+    }
+    if (limit.bytes !== null) {
+      limit.bytes *= 1024;
     }
     return limit;
   }
@@ -2411,7 +2831,7 @@ export function parse(source, options = {}) {
   function parseDefinitions() {
     const definitions = [];
     while (!atEnd()) {
-      // limit output to ...: both AGENTS.talk and a policy can have it
+      // limit output keeping ...: both AGENTS.talk and a policy can have it
       if (isWord("limit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "output") {
         const token = current();
         i++;
@@ -2426,17 +2846,63 @@ export function parse(source, options = {}) {
         continue;
       }
       // keep audit for <n> days (AGENTS.talk), keep audit for at least <n> days (a policy); see src/md/features/audit.md
+      // keep untrusted inputs up to <n> MB (AGENTS.talk); see src/md/features/taint.md
       if (isWord("keep")) {
         const token = current();
         i++;
-        const definition = parseKeepAudit(token);
+        const definition = isWord("untrusted") && !options.policy ? parseKeepUntrusted(token) : parseKeepAudit(token);
         if (definition !== null) {
           definitions.push(definition);
         }
         continue;
       }
+      // let the judge approve clean inputs | judge untrusted inputs automatically | judge with prompt '...'
+      // see src/md/features/taint.md
+      if ((isWord("let") || isWord("judge")) && !options.policy) {
+        const token = current();
+        i++;
+        const definition = parseJudgeLine(token);
+        if (definition !== null) {
+          definitions.push(definition);
+        }
+        continue;
+      }
+      // taint required in a policy: the same words as AGENTS.talk; see src/md/features/policy.md
+      if (isWord("taint") && options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("required")) {
+          error("A policy can only have 'taint required'");
+          continue;
+        }
+        i++;
+        definitions.push({ type: "requireTaint", line: token.line, column: token.column });
+        continue;
+      }
+      // taint on | taint off | taint required (AGENTS.talk); see src/md/features/taint.md
+      if (isWord("taint") && !options.policy) {
+        const token = current();
+        i++;
+        // taint asks before push, secrets, commit, network runs, new hosts | taint asks before nothing
+        if (isWord("asks")) {
+          i++;
+          const definition = parseTaintAsks(token);
+          if (definition !== null) {
+            definitions.push(definition);
+          }
+          continue;
+        }
+        if (!isWord("on") && !isWord("off") && !isWord("required")) {
+          error("Expected 'on', 'off', 'required' or 'asks before', as in: taint required");
+          continue;
+        }
+        definitions.push({ type: "taint", mode: current().value, line: token.line, column: token.column });
+        i++;
+        continue;
+      }
       // a policy: policy 'name', require ..., limit ..., deny ..., audit also to ...; see src/md/features/policy.md
-      if (isWord("policy") || isWord("require") || isWord("limit") || isWord("deny") || (isWord("audit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "also")) {
+      // require clank-talk is AGENTS.talk's own line; see below
+      if (isWord("policy") || (isWord("require") && (options.policy || tokens[i + 1] === undefined || tokens[i + 1].value !== "clank-talk")) || isWord("limit") || isWord("deny") || (isWord("audit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "also")) {
         const token = current();
         if (!options.policy) {
           error("'" + token.value + "' is only allowed in a policy file");
@@ -2472,6 +2938,33 @@ export function parse(source, options = {}) {
         const definition = parseUseModel(token);
         if (definition !== null) {
           definitions.push(definition);
+        }
+        continue;
+      }
+      // require clank-talk: the harness lets the agent use only ClankTalk; see src/md/features/harness-tools.md
+      if (isWord("require") && !options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("clank-talk")) {
+          error("Expected 'clank-talk', as in: require clank-talk");
+          continue;
+        }
+        i++;
+        definitions.push({ type: "requireClankTalk", line: token.line, column: token.column });
+        continue;
+      }
+      // trust fetch from <hosts or URLs>: text from them is not an untrusted input; see src/md/features/taint.md
+      if (isWord("trust") && !options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("fetch") || tokens[i + 1] === undefined || tokens[i + 1].value !== "from") {
+          error("Expected 'fetch from', as in: trust fetch from https://registry.npmjs.org/clank-talk");
+          continue;
+        }
+        i += 2;
+        const hosts = parseHosts();
+        if (hosts !== null) {
+          definitions.push({ type: "trustFetch", hosts, line: token.line, column: token.column });
         }
         continue;
       }

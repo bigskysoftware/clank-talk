@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { handleMessage, toolsChanged } from "../src/js/harnesses/mcp.js";
-import { staleCodeWarning, codeHashes } from "../src/js/host.js";
+import { staleCodeWarning, codeHashes, projectRoot, parentAgentsTalk, rootWarning, formatResult } from "../src/js/host.js";
 
 let root;
 let session;
@@ -32,6 +32,26 @@ test("initialize answers with the client's protocol version", async () => {
 
 test("notifications get no answer", async () => {
   assert.equal(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, session), null);
+});
+
+test("the root comes from --root, then CLANK_TALK_ROOT, then the folder where the host starts", () => {
+  assert.equal(projectRoot("/a/given", "/a/cwd", { CLANK_TALK_ROOT: "/a/env" }), "/a/given");
+  assert.equal(projectRoot(null, "/a/cwd", { CLANK_TALK_ROOT: "/a/env" }), "/a/env");
+  assert.equal(projectRoot(null, "/a/cwd", {}), "/a/cwd");
+});
+
+test("a root with no AGENTS.talk, under a folder that has one, gets a warning in each result and the description", async () => {
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "tool lint\nend");
+  const sub = path.join(root, "src", "deep");
+  await fs.mkdir(sub, { recursive: true });
+  assert.equal(parentAgentsTalk(sub, root), root);
+  assert.equal(parentAgentsTalk(root, root), null);
+  const warning = rootWarning(sub, root);
+  assert.match(warning.message, /^No AGENTS\.talk in .*src\/deep, but .* has one\. .*CLANK_TALK_ROOT=.*--root /);
+  // the search stops at the home folder
+  assert.equal(parentAgentsTalk(sub, sub), null);
+  const text = formatResult({ output: ["1"], errors: [], warnings: [], changes: [], status: "done" }, "print 1", sub);
+  assert.match(text, /--- warnings ---\nNo AGENTS\.talk in /);
 });
 
 test("tools/list has one tool, with the AGENTS.talk tools in its description", async () => {
@@ -133,17 +153,13 @@ test('an error shows the script line, with an arrow at the column', async () => 
   assert.equal(response.result.content[0].text, "1\n\n--- failed ---\n2:10 Expected a number, found 'x'\n  2 | \tprint 2 * 'x'\n    | \t        ^");
 });
 
-test("the previous output keeps the taint labels of what the last script printed", async () => {
+test("an untrusted tool makes the session untrusted, across scripts", async () => {
   await fs.writeFile(path.join(root, "AGENTS.talk"), "untrusted tool issue\n  set the result to 'from the web'\nend");
-  await fs.writeFile(path.join(root, "notes.txt"), "mine\n");
+  assert.equal((await call("print the session is untrusted")).result.content[0].text, "false");
   await call("print issue");
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "true");
-  // that output came from the untrusted text too; typed text and file text are not untrusted
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "true");
-  await call("print 'typed'");
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "false");
-  await call("print read ./notes.txt");
-  assert.equal((await call("print the previous output is untrusted")).result.content[0].text, "false");
+  assert.equal((await call("print the session is untrusted")).result.content[0].text, "true");
+  assert.equal((await call("print the session is untrusted")).result.content[0].text, "true");
+  assert.equal((await call("print (the session's untrusted inputs)[0]'s source")).result.content[0].text, "tool issue");
 });
 
 test('long output is cut, and the next script can read all of it as the previous output', async () => {
@@ -158,14 +174,14 @@ test('long output is cut, and the next script can read all of it as the previous
 });
 
 test('limit output in AGENTS.talk makes the cut smaller, and never larger', async () => {
-  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 10 lines');
+  await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output keeping the first 5 and the last 5 lines');
   try {
     const text = (await call("repeat 30 times\n  print 'line'\nend")).result.content[0].text;
     assert.equal(text.split("\n").length, 11);
     assert.match(text, /\.\.\. 20 lines cut\. All 30 lines/);
-    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 5000 lines or 100 KB');
+    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output keeping the first 2500 and the last 2500 lines or 100 KB');
     assert.equal((await call("repeat 1500 times\n  print 'line'\nend")).result.content[0].text.split("\n").length, 1001);
-    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output to 1 KB');
+    await fs.writeFile(path.join(root, 'AGENTS.talk'), 'limit output keeping the first 300 lines or 1 KB');
     assert.match((await call("repeat 300 times\n  print 'line'\nend")).result.content[0].text, /lines cut\. All 300 lines/);
   } finally {
     await fs.rm(path.join(root, 'AGENTS.talk'));
@@ -200,7 +216,86 @@ test('ask goes to the human as an MCP elicitation', async () => {
   };
   const response = await call("ask 'Push?' with 'yes' or 'no'\nprint it");
   assert.equal(response.result.content[0].text, 'yes');
-  assert.deepEqual(asked, [{ message: 'Push?', requestedSchema: { type: 'object', properties: { answer: { type: 'string', title: 'Answer', enum: ['yes', 'no'] } }, required: ['answer'] } }]);
+  // titled choices, the first one chosen at the start
+  const options = [{ const: 'yes', title: 'yes' }, { const: 'no', title: 'no' }];
+  assert.deepEqual(asked, [{ message: 'Push?', requestedSchema: { type: 'object', properties: { answer: { type: 'string', title: 'Answer', oneOf: options, default: 'yes' } }, required: ['answer'] } }]);
+});
+
+test("ask: 'value: description' gives the value, and 'with any of' gives a list", async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { elicitation: {} } } }, session);
+  const asked = [];
+  let content = null;
+  session.send = (message) => {
+    if (message.method === 'elicitation/create') {
+      asked.push(message.params.requestedSchema);
+      setImmediate(() => handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'accept', content } }, session));
+    }
+  };
+  content = { answer: 'production: the live site' };
+  const one = await call("ask 'Deploy where?' with 'staging: the test site' or 'production: the live site'\nprint it");
+  assert.equal(one.result.content[0].text, 'production');
+  content = { answer: ['b.js: changed'] };
+  const many = await call("ask 'Commit which?' with any of 'a.js: new' or 'b.js: changed'\nprint it as json");
+  assert.equal(many.result.content[0].text, '["b.js"]');
+  assert.deepEqual(asked[1].properties.answer, { type: 'array', title: 'Choices', items: { anyOf: [{ const: 'a.js: new', title: 'a.js: new' }, { const: 'b.js: changed', title: 'b.js: changed' }] } });
+  assert.deepEqual(asked[1].required, []);
+  // none picked is an empty list; a value that is not a choice is no answer
+  content = { answer: [] };
+  assert.equal((await call("ask 'Commit which?' with any of 'a.js' or 'b.js'\nprint it as json")).result.content[0].text, '[]');
+  content = { answer: ['c.js'] };
+  assert.equal((await call("ask 'Commit which?' with any of 'a.js' or 'b.js'\nprint it")).result.content[0].text, 'null');
+  // only ': ' splits, so a URL stays whole
+  content = { answer: 'http://x' };
+  assert.equal((await call("ask 'Which?' with 'http://x' or 'http://y'\nprint it")).result.content[0].text, 'http://x');
+});
+
+test('ask in Claude Code: the clank-talk mod answers at a local URL with a one-time token', async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'claude-code' }, capabilities: { elicitation: {} } } }, session);
+  const asked = [];
+  const posts = [];
+  let used = null;
+  session.send = (message) => {
+    if (message.method === 'elicitation/create') {
+      const schema = message.params.requestedSchema;
+      asked.push(schema);
+      const clank = schema['x-clank'];
+      if (clank === undefined) {
+        setImmediate(() => handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'accept', content: { answer: 'no' } } }, session));
+        return;
+      }
+      // the mod: a wrong token is refused, the right one answers, then it declines the dialog
+      used = clank;
+      setImmediate(async () => {
+        posts.push((await fetch(clank.url, { method: 'POST', body: JSON.stringify({ token: 'wrong', answer: 'yes' }) })).status);
+        posts.push((await fetch(clank.url, { method: 'POST', body: JSON.stringify({ token: clank.token, answer: 'yes' }) })).status);
+        await handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'decline' } }, session);
+      });
+    }
+  };
+  const response = await call("ask 'Push?' with 'yes' or 'no'\nprint it");
+  assert.equal(response.result.content[0].text, 'yes');
+  // the token is used once
+  const again = (await fetch(used.url, { method: 'POST', body: JSON.stringify({ token: used.token, answer: 'no' }) })).status;
+  assert.equal(again, 403);
+  assert.deepEqual(posts.slice(0, 1), [403]);
+  assert.match(asked[0]['x-clank'].token, /^[0-9a-f]{32}$/);
+  assert.match(asked[0]['x-clank'].url, /^http:\/\/127\.0\.0\.1:\d+\/answer$/);
+  // more than 4 choices, or none, use the form alone
+  await call("ask 'Pick?' with 'a' or 'b' or 'c' or 'd' or 'e'\nprint it");
+  await call("ask 'Name?'\nprint it");
+  assert.equal(asked[1]['x-clank'], undefined);
+  assert.equal(asked[2]['x-clank'], undefined);
+});
+
+test('ask: a time limit cancels the question, so the client closes its dialog', async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { elicitation: {} } } }, session);
+  const sent = [];
+  session.send = (message) => sent.push(message);
+  const response = await call("ask 'Push?' with 'yes' or 'no' within 50 ms\nprint it");
+  assert.equal(response.result.content[0].text, 'null');
+  const asked = sent.find((message) => message.method === 'elicitation/create');
+  const cancelled = sent.find((message) => message.method === 'notifications/cancelled');
+  assert.equal(cancelled.params.requestId, asked.id);
 });
 
 test('ask: decline is null, and a client with no elicitation is never asked', async () => {
@@ -251,8 +346,8 @@ test('each agent name has its own undo list and $ globals', async () => {
   // the audit names the agent
   const [file] = await fs.readdir(path.join(root, '.talk', 'audit'));
   const text = await fs.readFile(path.join(root, '.talk', 'audit', file), 'utf8');
-  assert.match(text, /script 1 \(agent writer\)  done/);
-  assert.match(text, /script 2 \(agent tester\)  done/);
+  assert.match(text, /script 1 \(writer\)  \(done, /);
+  assert.match(text, /script 2 \(tester\)  \(done, /);
 });
 
 test('a bad agent name is an error', async () => {

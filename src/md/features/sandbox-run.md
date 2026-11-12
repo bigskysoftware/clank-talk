@@ -19,6 +19,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - Approved (built): a `run` with no `in a sandbox` works as now. A hook can require a sandbox: the step's `sandbox` is null without one.
 - Approved (built): each sandboxed run gets its own temp folder (`TMPDIR`), removed after the run, or when a process ends.
 - Approved (built): `HOME` is a fresh folder in that temp folder. The allowed parts of the real home (the caches, `reads of`, `writes to`) are linked into it. Why: many programs look for config in the home folder. A missing file is fine for them, but a blocked file is a fatal error (git: `unable to access '~/.gitconfig'`). Thus secrets such as `~/.npmrc` are not even visible.
+- Approved (built, 2026-11-11): a `reads of` or `writes to` line that names a secret path (`~/.ssh`, `~/.config/gh`, and the rest of the list in `sandbox.js`), or a path inside one, opens that path. The human wrote the line, so it is consent. A parent path, such as `reads of '~'`, does not open the secrets in it. Why: the docs `issue` tool needs `reads of '~/.config/gh'` for the `gh` login.
 - Approved (built): a sandboxed program gets `CLANK_TALK_SANDBOXED=1`. A sandbox cannot start inside another, so a ClankTalk inside the sandbox fails at once with a clear reason.
 - Tested: this repo's `npm test` passes in a sandbox `with local network` (the fetch tests need local servers). The real-sandbox tests skip there.
 
@@ -44,6 +45,7 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - Approved: Linux: `bubblewrap` (`bwrap`), if it is installed. If not, the error says to install it. CI tests it on Ubuntu (GitHub Actions, `.github/workflows/ci.yml`).
 - Approved (built, tested in CI on Ubuntu): bwrap hides a secret folder with an empty folder (`--tmpfs`) and a secret file, such as `.env` or `.netrc`, with `/dev/null` (`--ro-bind /dev/null`), because `--tmpfs` needs a folder. A secret that is not there is left out.
 - Approved: Windows and other OSs: an error.
+- Approved: the docs send Windows users to WSL2, where `bubblewrap` works (Claude Code uses the same: https://code.claude.com/docs/en/sandboxing.md). WSL1 does not. Known problems, from issue reports only: bind mounts under `/mnt/c`, and Windows programs (`cmd.exe`) that reach the host. Not tested by us.
 
 ## Proof before trust
 
@@ -57,3 +59,13 @@ Approved. Code: `src/js/sandbox.js` (the profile, the bwrap arguments and the se
 - Linux: hidden files, `.talk` files and `@/talk` are read only only if they exist when the program starts, and only at the top of the project. A program can make a new hidden file, or change one deeper in the tree. Landlock can close this later.
 - Linux: with no network, a server in the sandbox has its own network, so the host cannot reach it. A sandboxed `start` on Linux needs `with network`.
 - Tested on macOS (Darwin 27, Node 26), and in CI on Ubuntu and macOS with Node 22 and 26. On Ubuntu 24.04, bwrap needs `kernel.apparmor_restrict_unprivileged_userns=0`; CI sets it. In the self-test, the host checks the outside write and the home folder names after the run, because on Linux the sandbox has its own `/tmp` and a home folder with only the bound folders.
+
+## Output: keeping
+
+- Approved (built): `run ... keeping <lines>` cuts the program's output in the tool's result. Why: a limit for one noisy program is more useful than the global `limit output`, and the tool's result holds the output, not the script's print.
+- Approved (built): the forms are `keeping the first <n> lines`, `keeping the last <n> lines`, `keeping the first <n> and the last <n> lines` and `keeping lines matching pattern /x/`.
+- Approved (built): `keeping` is the last part of `run`, after `in a sandbox ...` and `within`. The human asked for it last.
+- Approved (built): one line takes the place of the cut lines: `... 1834 lines cut (all lines: the result's full) ...`. With a pattern, one line at the end: `... 7 other lines cut ...`. The result's `full` has every line: `{ code, output, full }`. The audit records the count.
+- Approved (built): `or <n> KB` after any form also limits the size. With the first and the last, each end gets half.
+- Approved (built): `limit output keeping ...` uses the same forms; see [host.md](../infrastructure/host.md). The code for both is `src/js/keeping.js`.
+- Approved (built): only `run`. `start` keeps the last 64 KB already. A subagent gives back an answer, so `keeping` there is an error.

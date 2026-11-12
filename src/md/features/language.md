@@ -94,6 +94,12 @@ Approved (from hyperscript):
 - Math: `+ - * /` and `mod`.
 - Comparison: `is`, `is not`, `is less than`, `is greater than`, `is less than or equal to`, `is greater than or equal to`. Symbols too: `== != < > <= >=`. Both forms stay.
 - Text and lists: `contains`, `does not contain`, `starts with`, `ends with`, `is in`, `is not in`, `is empty`, `is not empty`, `exists`, `does not exist`. These also work on files: on a file they use the file's text, so `the file contains 'TODO'` is the same as `the file's text contains 'TODO'`.
+- Approved (built): `is in` and `is not in` with a folder check a path, not text: `the change's path is in @/migrations/`. The folder is a path written with a `/` at the end, or a folder that exists. On the left: a file, or a text path from the project root, as in `the change's path`. A path is not in itself. The paths are compared as real paths (links followed, NFC, no case on macOS and Windows). A folder written with no `/` that does not exist is an error that says to add the `/`. Why: `starts with 'migrations/'` on a path was string work, and `starts with @/migrations/` read the file.
+- Approved (built, 2026-11-11): `does not start with` and `does not end with`, to go with `does not contain`. Why: agents wrote them, and got an error. An `in` on the same line after `replace lines ... with <text>` is an error that says to remove it, because `of` already names the file; on a new line, `in` still starts a new command.
+- Approved (built, 2026-11-11): `add <value> to <list>` puts an item at the end of a list. A variable that is not set starts as an empty list, as `increment` starts at 0. Why: `set found[length of found] to x` was the only way.
+- Approved (built, 2026-11-11): `wait until` with no `every` checks after 200 ms, then twice as long each time, up to every 5 seconds. `every <duration>` sets the pause. Why: a check every 200 ms sent about two requests a second to the npm registry.
+- Approved (built, 2026-11-11): `check <text>` and `check <text> as AGENTS.talk` parse the text and run nothing. The result is a list of `{ line, column, message }`; an empty list means it parses. The parser gets the session's tool names, and for AGENTS.talk text also its own tools. Why: an agent needed `node -e` to see how a line groups, and to try a tool before it showed it to the human. Not built: `check ... as tree`.
+- Approved (built, 2026-11-11): a tool cannot have the name of a command (`add`, `print`, ...). AGENTS.talk does not load, with an error that says to use another name. Why: the command won, so the tool could never be called.
 - Logic: `and`, `or`.
 - Conversion: `as json`, `as pretty json`, `as number`, `as text`. `as json` formats compact JSON, `as pretty json` uses 2-space indents.
 - Order, highest first: access, unary, `as`, math, comparison, logic.
@@ -170,6 +176,15 @@ in ./src/app.js
 - Approved for later: `/.../` is a regex. Pending: how to tell a regex from division.
 - Wanted: absolute paths (`/etc/hosts`). They also start with `/`, so they wait for the same regex and division decision.
 - Done: words with `-` in them. A hyphen joins a word when a letter follows it.
+
+## Errors for agents (audit review, 2026-11-10)
+
+- Approved (built): a pattern that is not valid adds a hint for the common causes: an inline flag such as `(?i)`; an escape that the `u` flag rejects, such as `\-` outside `[...]`; and a group or quantifier that broke because a quoted string took a backslash.
+- Approved (built): an error that ends in `found null` adds: "the value has nothing in it. If it came from an earlier find or fetch, that command found nothing."
+- Approved (built): the tool description asks agents to start each script with a `#` line that says what it is for. The audit shows it in the header.
+- Rejected: a rule of one task for each script. A long script for one job is fine, and the `#` line already says what it is for.
+
+- Approved (built): `pattern /regex/flags`. After the word `pattern`, a `/` starts a raw regex: no string escapes and no templates, a `/` inside is `\/`, and a `/` inside `[...]` does not end it. Flags: `i`, `m` and `s`, once each; `u` is always on, and `g` is not needed. An unclosed `/` on the line is an error. `pattern '...'` still works. Why: in a quoted string, `\(` reaches the regex as `(`, and that caused most failed patterns in the audit. Rejected: `pattern( ... )`, because a regex holds parentheses, and it has no place for flags.
 
 ## Open questions
 

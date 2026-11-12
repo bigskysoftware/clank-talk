@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { run, parse } from "../src/js/clank-talk.js";
-import { HELP, RECIPES, AREAS, referenceMarkdown, syntaxSummary, helpFor } from "../src/js/help.js";
+import { HELP, RECIPES, AREAS, referenceMarkdown, agentsTalkReferenceMarkdown, syntaxSummary, helpFor } from "../src/js/help.js";
 
 let root;
 
@@ -84,6 +84,14 @@ test('the reference has every entry, with its examples', () => {
   }
   assert.ok(md.indexOf('id="basics"') < md.indexOf('id="files"'));
   assert.ok(md.includes('`help <word>` shows one entry'));
+});
+
+test('the AGENTS.talk reference has every AGENTS.talk entry, and the table of hook steps', () => {
+  const md = agentsTalkReferenceMarkdown();
+  for (const entry of HELP.filter((item) => item.where === 'AGENTS.talk')) {
+    assert.ok(md.includes('### ' + entry.name + '\n'), entry.name);
+  }
+  assert.ok(md.includes('| `run` | program, args, sandbox, secrets |'));
 });
 
 test('each help entry is in exactly one area of the reference', () => {

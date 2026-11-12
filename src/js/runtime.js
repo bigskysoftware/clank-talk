@@ -9,8 +9,10 @@ import { parse } from "./parser.js";
 import { helpIndex, helpFor } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
+import { keepItems, withNotes } from "./keeping.js";
 import { sandboxKind, installDirs, sandboxPlan, makeHome, wrapCommand, selfTest } from "./sandbox.js";
-import * as taint from "./taint.js";
+import * as untrusted from "./untrusted.js";
+import { judgeLines, judgeText } from "./judge.js";
 import { runSubagent, anthropicModel, SubagentError, API_URL } from "./subagent.js";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -31,7 +33,7 @@ const UNDO_LIMIT = 20;
 
 // the steps a hook can watch, apart from tool names
 // git operations that change files or branches; "deny writes" denies them
-const GIT_WRITES = ["switch", "commit", "merge", "rebase", "move", "delete"];
+const GIT_WRITES = ["switch", "commit", "merge", "rebase", "move", "delete", "stash", "restore", "pull", "tag"];
 const HOOK_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete", "change", "undo", "run", "git", "fetch", "start", "stop"];
 
 // a runtime error that knows where in the source it happened
@@ -46,16 +48,18 @@ class ScriptError extends Error {
 // the host cancelled the script
 class Cancelled extends ScriptError {}
 
-// a "before" hook rejected a step; "on error" can handle this
+// a "before" hook rejected a step, or a tool rejected its call; "on error" can handle this
 class Rejected extends ScriptError {}
 
 // the step budget is used up; "on error" cannot handle this
 class StepBudget extends ScriptError {}
 
 // a file in the project; nothing is read until a property is used
+// folder: the path was written with a / at the end, such as @/migrations/
 class FileRef {
-  constructor(absolute, root) {
+  constructor(absolute, root, folder = false) {
     this.absolute = absolute;
+    this.folder = folder;
     // the path relative to the project root, with / on every platform
     this.path = nodePath.relative(root, absolute).split(nodePath.sep).join("/");
     this.name = nodePath.basename(absolute);
@@ -186,7 +190,6 @@ function lineLabel(line) {
  * @param {Array} [options.undo]                     the undo list; pass the same array to undo across runs
  * @param {Set} [options.fetchHosts]                hosts the human allowed for fetch; pass the same Set for a session
  * @param {Function} [options.lookup]               for tests: (host) => addresses, in place of a DNS lookup
- * @param {Set} [options.privateHosts]              hosts the human allowed private data to go to; pass the same Set for a session
  * @param {Object} [options.policy]                 the harness's policy: { name, source }, ClankTalk text; see src/md/features/policy.md
  * @param {string} [options.agent]                  the name of the agent that sent the script; the audit records it
  * @param {Object} [options.audit]                  the audit session { scripts, records }; with it, each run appends to .talk/audit/
@@ -205,8 +208,6 @@ export function start(source, options = {}) {
     errors: [],
     // problems that do not stop the script: { message, line, column, file }
     warnings: [],
-    // the taint labels of all that print showed; the host keeps them for "the previous output"
-    outputLabels: taint.none(),
     signal: controller.signal,
     cancel() {
       controller.abort();
@@ -297,18 +298,15 @@ async function execute(source, options, execution) {
     allowedChanges: agents.allowedChanges,
     // hosts from "allow fetch from" in AGENTS.talk, and hosts the human said yes to in this session
     allowedFetch: agents.allowedFetch,
+    trustedFetch: agents.trustedFetch,
     fetchHosts: options.fetchHosts || new Set(),
     lookup: options.lookup || lookupHost,
-    // hosts the human said yes to for private data; a host keeps the Set for a session
-    privateHosts: options.privateHosts || new Set(),
     // secrets from "allow secret" in AGENTS.talk, by name: { name, hosts, value }; value is null when not set
     secrets: secrets.secrets,
     // background processes by name; a host keeps the Map for a session, and stops them at the end
     processes: options.processes || new Map(),
     // the full print output of the last script, from the host; null before the first script
     previousOutput: options.previousOutput === undefined ? null : options.previousOutput,
-    // the labels of what the last script printed: untrusted text stays untrusted in the next script
-    previousOutputLabels: options.previousOutputLabels || taint.none(),
     // hooks from AGENTS.talk, and true while one runs (commands in a hook do not run hooks)
     hooks: agents.hooks,
     inHook: false,
@@ -321,12 +319,11 @@ async function execute(source, options, execution) {
     variables: Object.create(null),
     globals: options.globals || Object.create(null),
     result: null,
-    // taint: the open frames, and the labels of the result; see src/js/taint.js
-    taintFrames: [],
-    resultLabels: taint.none(),
-    // file labels from @/.talk/taint.json, by path; saved at the end if they changed
-    fileLabels: await taint.loadFiles(root),
-    fileLabelsChanged: false,
+    // session taint: "on" or "off", and the size that the store keeps of one input; see src/js/untrusted.js
+    taintMode: untrusted.taintMode(agents.taint, policy.policy !== null && policy.policy.rules.some((rule) => rule.type === "requireTaint"), await untrusted.commandLineMode(root)),
+    keepUntrustedBytes: agents.keepUntrustedBytes || untrusted.DEFAULT_KEEP_BYTES,
+    // the actions that ask while untrusted inputs are not approved: "taint asks before", or a light default
+    taintAsks: agents.taintAsks || DEFAULT_TAINT_ASKS,
     // the .talk file of the tool or hook now running; null for the script
     file: null,
     // the scripts that undo can take back, oldest first; a host keeps it for a session
@@ -343,6 +340,8 @@ async function execute(source, options, execution) {
     lendModel: options.lendModel || null,
     subagentUrl: options.subagentUrl || API_URL,
     useModel: agents.useModel,
+    // the judge: its model (null: the subagent model), and its lines in AGENTS.talk; see src/js/judge.js
+    judge: agents.judge,
     // how long a question waits when it has no "within"; a host can change it
     askTimeLimit: options.askTimeLimit || ASK_TIME_LIMIT,
     askTimedOut: false,
@@ -365,9 +364,21 @@ async function execute(source, options, execution) {
     // the harness's policy: name, short hash and rules, or null
     policy: policy.policy,
   };
-  // the smaller of the output limits in AGENTS.talk and the policy; the host has its own too
+  // the command line cannot see the policy, so a policy that requires taint leaves a note in .talk/
+  if (policy.policy !== null || fsSync.existsSync(nodePath.join(root, untrusted.POLICY_FILE))) {
+    try {
+      await untrusted.notePolicy(root, policy.policy !== null && policy.policy.rules.some((rule) => rule.type === "requireTaint") ? policy.policy.name : null);
+    } catch (err) {
+      execution.warnings.push({ message: "Could not write " + untrusted.POLICY_FILE + ": " + err.message, line: 1, column: 1 });
+    }
+  }
+  // '*' in allow or trust is a wide door, so each run says so; the audit has each fetch
+  for (const warning of wideFetchWarnings(agents)) {
+    execution.warnings.push({ message: warning, line: 1, column: 1 });
+  }
+  // limit output keeping ...: AGENTS.talk, then the policy; each cuts what the one before it kept, and the host cuts last
   const policyLimit = policy.policy === null ? null : policy.policy.rules.find((rule) => rule.type === "outputLimit") || null;
-  execution.outputLimit = smallerLimit(agents.outputLimit, policyLimit);
+  execution.outputLimits = [agents.outputLimit, policyLimit].filter((limit) => limit !== null);
   state.audit.scripts++;
   state.auditScript = state.audit.scripts;
 
@@ -392,18 +403,11 @@ async function execute(source, options, execution) {
 
   execution.patterns.stop();
   recordUndo(state);
-  if (state.fileLabelsChanged) {
-    try {
-      await taint.saveFiles(root, state.fileLabels);
-    } catch (err) {
-      execution.warnings.push({ message: "Could not write " + taint.FILE_LABELS + ": " + err.message, line: 1, column: 1 });
-    }
-  }
   // the host shows the changed files to the agent; undo has its own copy of the text, so only the copy for the host is redacted
-  // labelsBefore is for undo only, so the host does not get it
-  execution.changes = execution.changes.map(({ labelsBefore, ...change }) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
+  execution.changes = execution.changes.map((change) => ({ ...change, before: redact(change.before, state), after: redact(change.after, state) }));
   // errors and warnings go to the agent, so a secret's value in them shows as <secret NAME>
-  failure = failure.map((error) => ({ ...error, message: redact(error.message, state) }));
+  failure = failure.map((error) => ({ ...error, message: redact(nullHint(error.message), state) }));
+  await limitOutput(execution, state);
   for (const warning of execution.warnings) {
     warning.message = redact(warning.message, state);
   }
@@ -493,9 +497,10 @@ const SUBAGENT_UNSAFE = ["write", "append", "put", "remove", "replaceLines", "re
 // load errors: the model's key must be allowed for subagents, and each "with only" tool must exist and be safe
 function checkSubagents(agents) {
   const errors = [];
-  const model = agents.useModel;
-  if (model !== null && model.secret !== null && !agents.allowedSecrets.some((allowed) => allowed.name === model.secret && allowed.subagents)) {
-    errors.push({ message: "'use model' needs its key allowed for subagents. Add: allow secret " + model.secret + " for subagents", ...model.where });
+  for (const model of [agents.useModel, agents.judge.model]) {
+    if (model !== null && model.secret !== null && !agents.allowedSecrets.some((allowed) => allowed.name === model.secret && allowed.subagents)) {
+      errors.push({ message: "'use model' needs its key allowed for subagents. Add: allow secret " + model.secret + " for subagents", ...model.where });
+    }
   }
   for (const definition of Object.values(agents.definitions)) {
     for (const node of findNodes(definition, [])) {
@@ -612,8 +617,7 @@ function subagentModel(state, node) {
 // run '<prompt>' in a subagent with only <tools>: the answer is untrusted text
 async function runSubagentCommand(command, state) {
   checkDenied("subagents", state, command);
-  const { value: promptValue, labels: promptLabels } = await evaluateLabeled(command.program, state);
-  const prompt = redact(toText(promptValue), state);
+  const prompt = redact(toText(await evaluate(command.program, state)), state);
   const ask = subagentModel(state, command);
   const owner = "subagent " + state.auditFrom;
   const tools = command.subagent.tools.map((name) => ({ name, description: state.definitions[name].description || "A ClankTalk tool.", params: state.definitions[name].params }));
@@ -624,8 +628,6 @@ async function runSubagentCommand(command, state) {
   const timeout = AbortSignal.timeout(limit);
   const signal = AbortSignal.any([state.execution.signal, timeout]);
 
-  // every label the subagent saw goes on its answer
-  let seen = promptLabels;
   const callOne = async (name, input) => {
     if (!command.subagent.tools.includes(name)) {
       return { content: "There is no tool named " + name + ". Use: " + command.subagent.tools.join(", "), isError: true };
@@ -635,20 +637,12 @@ async function runSubagentCommand(command, state) {
     const args = definition.params.map((param) => inputText(input[param]));
     const savedFrom = state.auditFrom;
     state.auditFrom = owner;
-    // a root frame: the subagent's arguments have no labels, so its tool calls ask no taint questions
-    taint.begin(state, true);
     try {
-      if (definition.untrusted) {
-        taint.addLabel(state, taint.UNTRUSTED, "tool " + name);
-      }
-      const step = Object.create(null);
-      step.args = args;
-      step.named = Object.create(null);
+      const step = toolStep(definition, args, Object.create(null));
       await runHooks("before", [name], step, state, command);
       auditStep(state, "tool", name, args.map((arg) => toText(arg)).join(", "));
-      const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps, [], Object.create(null));
+      const result = await callTool(definition, args, Object.create(null), command, state, state.tools, state.maxSteps);
       await runHooks("after", [name], step, state, command);
-      seen = taint.union(seen, taint.current(state));
       return { content: redact(toText(showSecrets(result)), state), isError: false };
     } catch (err) {
       if (!(err instanceof ScriptError) || err instanceof Cancelled || err instanceof StepBudget) {
@@ -656,7 +650,6 @@ async function runSubagentCommand(command, state) {
       }
       return { content: redact(err.message, state), isError: true };
     } finally {
-      taint.end(state);
       state.auditFrom = savedFrom;
     }
   };
@@ -680,11 +673,11 @@ async function runSubagentCommand(command, state) {
     }
     throw err;
   }
-  // a model wrote the answer after it read tool output, so it is always untrusted
-  taint.add(state, seen);
-  taint.addLabel(state, taint.UNTRUSTED, owner);
   auditStep(state, "subagent", owner, answer.calls + (answer.calls === 1 ? " tool call" : " tool calls"));
-  return redact(answer.text, state);
+  // a model wrote the answer after it read tool output, so it is always untrusted
+  const text = redact(answer.text, state);
+  await noteUntrusted(state, owner + ": " + describe(prompt), text);
+  return text;
 }
 
 // start '<prompt>' in a subagent with only <tools> as '<name>': the same subagent, in the background
@@ -709,7 +702,7 @@ async function startSubagent(command, state) {
       return "$arg" + index;
     });
     const source = "print " + tool + (names.length > 0 ? " " + names.join(", ") : "");
-    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null, previousOutputLabels: null });
+    const result = await run(source, { ...options, globals, agent: "subagent-" + name, seen: new Map(), undo: [], onStep: null, previousOutput: null });
     if (result.errors.length > 0) {
       return { content: result.errors.map((error) => error.message).join("\n"), isError: true };
     }
@@ -1087,6 +1080,10 @@ function checkPolicy(policy, agents) {
   let sandboxRule = null;
   for (const rule of policy.rules) {
     if (rule.type === "limit") {
+      // two lines for one limit would mean one thing at load and another at run: one line only
+      if (limits[rule.what] !== undefined) {
+        errors.push({ message: "Only one 'limit " + rule.what + "' line is allowed in a policy: " + ruleAt(rule) + " is a second one. Put all the values on one line", line: 1, column: 1 });
+      }
       limits[rule.what] = rule;
     } else if (rule.type === "deny") {
       denied[rule.what] = rule;
@@ -1094,11 +1091,15 @@ function checkPolicy(policy, agents) {
       sandboxRule = rule;
     }
   }
+  // deny trust: no "trust fetch from" line
+  if (denied.trust && agents.trustedFetch.length > 0) {
+    errors.push({ message: "This trusts fetched text, and " + ruleAt(denied.trust) + " denies trust", ...agents.trustWhere });
+  }
   const outside = (shown, rule) => {
     return "'" + shown + "' is outside the policy: " + ruleAt(rule) + " limits " + rule.what + " to " + rule.values.join(", ");
   };
   for (const { definition, where } of agents.allows) {
-    // allow secret: inside "deny secrets", "limit secrets to" and "limit fetch to"
+    // allow secret: inside "deny secrets", "limit secrets to" and "limit fetch from"
     if (definition.type === "allowSecret") {
       if (denied.secrets) {
         errors.push({ message: "This uses secrets, and " + ruleAt(denied.secrets) + " denies secrets", ...where });
@@ -1107,16 +1108,16 @@ function checkPolicy(policy, agents) {
       }
       if (limits.fetch) {
         for (const host of definition.hosts) {
-          if (!isFetchHostInside(host, limits.fetch.values)) {
-            errors.push({ message: outside("allow secret " + definition.name + " for fetch to '" + host + "'", limits.fetch), ...where });
+          if (!isFetchHostInside(ruleHost(host), limits.fetch.values)) {
+            errors.push({ message: outside("allow secret " + definition.name + " for fetch to " + shownRule(host), limits.fetch), ...where });
           }
         }
       }
     }
     if (definition.type === "allowFetch" && limits.fetch) {
       for (const host of definition.hosts) {
-        if (!isFetchHostInside(host, limits.fetch.values)) {
-          errors.push({ message: outside("allow fetch from '" + host + "'", limits.fetch), ...where });
+        if (!isFetchHostInside(ruleHost(host), limits.fetch.values)) {
+          errors.push({ message: outside("allow fetch from " + shownRule(host), limits.fetch), ...where });
         }
       }
     }
@@ -1168,7 +1169,7 @@ function plainPath(shown) {
   return shown.replace(/^@\//, "").replace(/^\.\//, "").replace(/\/+$/, "");
 }
 
-// a host or a *. pattern from "allow fetch from" is inside the policy's "limit fetch to"
+// a host or a *. pattern from "allow fetch from" is inside the policy's "limit fetch from"
 function isFetchHostInside(host, limits) {
   if (host.startsWith("*.")) {
     return limits.some((limit) => limit.startsWith("*.") && host.slice(1).endsWith(limit.slice(1)));
@@ -1241,7 +1242,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], allowedSecrets: [], useModel: null, keepAudit: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], trustedFetch: [], trustWhere: null, allowedSecrets: [], harnessTools: [], untrustedHarnessTools: [], requireClankTalk: false, useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1284,6 +1285,20 @@ async function loadAgentsTalk(root, hostTools) {
     if (definition.type.startsWith("allow") && file.name === AGENTS_TALK) {
       result.allows.push({ definition, where });
     }
+      // require clank-talk and allow harness tools: for the harness, which blocks its other tools; see src/md/features/harness-tools.md
+      if (definition.type === "requireClankTalk" || definition.type === "allowHarnessTools") {
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'" + (definition.type === "requireClankTalk" ? "require clank-talk" : "allow harness tools") + "' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (definition.type === "requireClankTalk") {
+          result.requireClankTalk = true;
+        } else {
+          result.harnessTools.push(...definition.names);
+          if (definition.untrusted) {
+            result.untrustedHarnessTools.push(...definition.names);
+          }
+        }
+        continue;
+      }
       if (definition.type === "allowEnv") {
         if (file.name === AGENTS_TALK) {
           result.allowedEnv.push(...definition.names);
@@ -1320,21 +1335,60 @@ async function loadAgentsTalk(root, hostTools) {
         }
         continue;
       }
+      // taint on | off | required, and keep untrusted inputs up to <n> MB; see src/md/features/taint.md
+      if (definition.type === "taint" || definition.type === "keepUntrusted" || definition.type === "taintAsks") {
+        const shown = { taint: "taint", keepUntrusted: "keep untrusted inputs", taintAsks: "taint asks before" }[definition.type];
+        const field = { taint: "taint", keepUntrusted: "keepUntrustedBytes", taintAsks: "taintAsks" }[definition.type];
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'" + shown + "' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (result[field] !== null) {
+          result.errors.push({ message: "Only one '" + shown + "' line is allowed", ...where });
+        } else {
+          result[field] = { taint: definition.mode, keepUntrusted: definition.bytes, taintAsks: definition.asks }[definition.type];
+        }
+        continue;
+      }
       if (definition.type === "useModel") {
+        const judging = definition.purpose === "judging";
         if (file.name !== AGENTS_TALK) {
           result.errors.push({ message: "'use model' is only allowed in " + AGENTS_TALK, ...where });
-        } else if (result.useModel !== null) {
-          result.errors.push({ message: "Only one 'use model' line is allowed", ...where });
+        } else if ((judging ? result.judge.model : result.useModel) !== null) {
+          result.errors.push({ message: "Only one 'use model ... for " + definition.purpose + "' line is allowed", ...where });
+        } else if (judging) {
+          result.judge.model = { model: definition.model, secret: definition.secret, where };
         } else {
           result.useModel = { model: definition.model, secret: definition.secret, where };
         }
         continue;
       }
+      // the judge lines; see src/md/features/taint.md
+      if (["judgeApproves", "judgeAutomatically", "judgePrompt"].includes(definition.type)) {
+        const field = { judgeApproves: "approves", judgeAutomatically: "automatically", judgePrompt: "prompt" }[definition.type];
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "The judge lines are only allowed in " + AGENTS_TALK, ...where });
+        } else if (result.judge[field] !== false && result.judge[field] !== null) {
+          result.errors.push({ message: "Only one line of each kind is allowed for the judge", ...where });
+        } else {
+          result.judge[field] = definition.type === "judgePrompt" ? definition.prompt : true;
+        }
+        continue;
+      }
       if (definition.type === "allowSecret") {
-        if (file.name === AGENTS_TALK) {
+        if (definition.hosts.includes("*")) {
+          result.errors.push({ message: "'allow secret' cannot send a secret to every host ('*'). Name the hosts.", ...where });
+        } else if (file.name === AGENTS_TALK) {
           result.allowedSecrets.push({ name: definition.name, hosts: definition.hosts, run: definition.run, subagents: definition.subagents, where });
         } else {
           result.errors.push({ message: "'allow secret' is only allowed in " + AGENTS_TALK, ...where });
+        }
+        continue;
+      }
+      if (definition.type === "trustFetch") {
+        if (file.name === AGENTS_TALK) {
+          result.trustedFetch.push(...definition.hosts);
+          result.trustWhere = result.trustWhere || where;
+        } else {
+          result.errors.push({ message: "'trust fetch from' is only allowed in " + AGENTS_TALK, ...where });
         }
         continue;
       }
@@ -1355,7 +1409,7 @@ async function loadAgentsTalk(root, hostTools) {
           // @/ and ./ both start from the root, where AGENTS.talk is
           const rest = shown.startsWith("@/") ? shown.slice(2) : shown;
           const absolute = nodePath.resolve(root, rest);
-          // .talk/ holds the audit and the taint labels: no line can open it
+          // .talk/ holds the audit and the untrusted inputs: no line can open it
           if (isProtectedPath(nodePath.relative(root, absolute).split(nodePath.sep).join("/") + "/")) {
             result.errors.push({ message: "Cannot allow changes to " + shown + ": .talk/ and talk/ hold the audit and the tools, and no line can open them", ...where });
             continue;
@@ -1443,29 +1497,42 @@ async function loadTalkFile(absolute, root, chain, files, errors) {
   }
 }
 
-// two output limits, { lines, bytes } with null for none: the smaller of each part
-function smallerLimit(a, b) {
-  if (a === null) {
-    return b;
+// limit output keeping ...: the print output that the agent sees; the previous output keeps all of it
+// a pattern that runs too long is a warning, and the host's own cut still applies
+const LIMIT_OUTPUT_TEXT = 5 * 1024 * 1024;
+
+async function limitOutput(execution, state) {
+  if (execution.outputLimits.length === 0 || execution.output.length === 0) {
+    return;
   }
-  if (b === null) {
-    return a;
+  let text = execution.output.join("\n");
+  // the cut works on at most the last 5 MB, as the previous output keeps; more would cost too much memory
+  if (text.length > LIMIT_OUTPUT_TEXT) {
+    text = text.slice(text.length - LIMIT_OUTPUT_TEXT);
   }
-  const smaller = (x, y) => (x === null ? y : y === null ? x : Math.min(x, y));
-  return { lines: smaller(a.lines, b.lines), bytes: smaller(a.bytes, b.bytes) };
+  const total = text.split("\n").length;
+  const note = (n) => "... " + n + " lines cut. All " + total + " lines are in: the previous output";
+  const keeps = execution.outputLimits.map((limit) => ({ keep: { first: limit.first, last: limit.last, bytes: limit.bytes }, pattern: limit.pattern }));
+  try {
+    execution.shown = (await keepText(text, keeps, state, execution.outputLimits[0], note)).text;
+  } catch (err) {
+    // a pattern that fails still cuts: the first, the last and the KB of each line, and the last 400 lines for a
+    // pattern alone; the limit never fails open
+    const plain = keeps.map(({ keep }) => ({ keep: { ...keep, last: keep.first === null && keep.last === null ? 400 : keep.last }, pattern: null }));
+    execution.shown = (await keepText(text, plain, state, execution.outputLimits[0], note)).text;
+    execution.warnings.push({ message: "'limit output' could not use its pattern (" + err.message + "), so it kept the last lines", line: 1, column: 1 });
+  } finally {
+    execution.patterns.stop();
+  }
 }
 
 function finish(execution, status, errors) {
   execution.status = status;
   execution.errors = errors;
   const result = { status, output: execution.output, errors, warnings: execution.warnings, steps: execution.steps, changes: execution.changes };
-  // only when print showed labeled text; the host keeps them for "the previous output"
-  if (execution.outputLabels.size > 0) {
-    result.outputLabels = execution.outputLabels;
-  }
-  // only when AGENTS.talk or the policy sets one; the host uses it to cut long output
-  if (execution.outputLimit) {
-    result.outputLimit = execution.outputLimit;
+  // only when AGENTS.talk or the policy has 'limit output': the print output after that cut
+  if (execution.shown !== undefined) {
+    result.shown = execution.shown;
   }
   return result;
 }
@@ -1498,26 +1565,8 @@ async function runCommands(commands, state, tools, maxSteps) {
     }
     takeStep(command, state, maxSteps);
     let signal;
-    // each command has a root taint frame; a new result takes its labels
     try {
-      taint.begin(state, true);
-      const resultBefore = state.result;
-      try {
-        signal = await runCommand(command, state, tools, maxSteps);
-        if (state.result !== resultBefore) {
-          state.resultLabels = taint.current(state);
-        } else {
-          state.resultLabels = taint.union(state.resultLabels, taint.current(state));
-        }
-      } catch (failed) {
-        // the message of an error can hold the values of its command, so the error keeps their labels
-        if (failed instanceof ScriptError) {
-          failed.labels = taint.union(failed.labels || taint.none(), taint.current(state));
-        }
-        throw failed;
-      } finally {
-        taint.end(state);
-      }
+      signal = await runCommand(command, state, tools, maxSteps);
     } catch (caught) {
       let err = caught;
       // a secret in the wrong place: the error points at this command, and names it
@@ -1570,7 +1619,7 @@ function canHandle(err, state) {
 // gives "continue" or "stop" (the default)
 async function runHandler(err, state, tools, maxSteps) {
   const error = Object.create(null);
-  // the handler sees no secret's value, and the message keeps the labels of the failed command
+  // the handler sees no secret's value
   error.message = redact(err.message, state);
   error.line = err.line;
   error.column = err.column;
@@ -1578,9 +1627,6 @@ async function runHandler(err, state, tools, maxSteps) {
     error.file = err.file;
   }
   setOwn(state.variables, "error", error);
-  const labels = err.labels || taint.none();
-  taint.setSlot(state.variables, "error", labels);
-  taint.attach(error, labels);
   state.handling = true;
   try {
     const signal = await runCommands(state.handler.body, state, tools, maxSteps);
@@ -1610,7 +1656,6 @@ async function runCommand(command, state, tools, maxSteps) {
   if (command.type === "print") {
     // a secret shows as <secret NAME>, and a secret's value in other text too
     const value = showSecrets(await evaluate(command.value, state));
-    state.execution.outputLabels = taint.union(state.execution.outputLabels, taint.current(state));
     // print shows a list of lines with their numbers, as an editor does
     if (isListOfLines(value)) {
       state.execution.output.push(redact(value.map((line) => lineLabel(line) + line.text).join("\n"), state));
@@ -1640,12 +1685,10 @@ async function runCommand(command, state, tools, maxSteps) {
   }
 
   if (command.type === "for") {
-    const { value: list, labels } = await evaluateLabeled(command.list, state);
+    const list = await evaluate(command.list, state);
     const items = loopItems(list, command);
     for (let index = 0; index < items.length; index++) {
-      // each item has the labels of the list
       setOwn(scopeFor(command.name, state), command.name, items[index]);
-      taint.setSlot(scopeFor(command.name, state), command.name, labels);
       if (command.index !== null) {
         setOwn(scopeFor(command.index, state), command.index, index);
       }
@@ -1713,6 +1756,10 @@ async function runCommand(command, state, tools, maxSteps) {
   }
   if (command.type === "ask") {
     state.result = await askHuman(command, state);
+    return null;
+  }
+  if (command.type === "taintReview") {
+    state.result = await taintReview(command, state);
     return null;
   }
   if (command.type === "undo") {
@@ -1853,6 +1900,35 @@ async function runCommand(command, state, tools, maxSteps) {
     return;
   }
 
+  // check <text> [as AGENTS.talk]: the parse errors, as a list of { line, column, message }; empty if it parses
+  if (command.type === "check") {
+    const text = toText(notNull(await evaluate(command.value, state), "check needs text. Give it a value", command.value));
+    // the parser needs the tool names: the ones that the session knows, and for AGENTS.talk text, its own tools
+    const names = Object.keys(state.tools || {}).concat(Object.keys(state.definitions || {}));
+    if (command.agents) {
+      const first = parse(text, { definitions: true });
+      for (const definition of (first.script && first.script.definitions) || []) {
+        if (definition.type === "tool") {
+          names.push(definition.name);
+        }
+      }
+    }
+    const parsed = parse(text, command.agents ? { definitions: true, tools: names } : { tools: names });
+    state.result = parsed.errors.map((error) => ({ line: error.line, column: error.column, message: error.message }));
+    return;
+  }
+
+  // add <value> to <list>: a variable that is not set yet starts as an empty list
+  if (command.type === "add") {
+    const unset = command.target.type === "variable" && !Object.hasOwn(scopeFor(command.target.name, state), command.target.name);
+    const current = unset ? [] : await evaluate(command.target, state);
+    if (!Array.isArray(current)) {
+      throw new ScriptError("add needs a list, found " + describe(current) + ". To join text, use +", command.target);
+    }
+    await assign(command.target, [...current, await evaluate(command.value, state)], state);
+    return;
+  }
+
   if (command.type === "increment" || command.type === "decrement") {
     // a variable that is not set yet starts at 0, so it is not an unknown variable here
     const unset = command.target.type === "variable" && !Object.hasOwn(scopeFor(command.target.name, state), command.target.name);
@@ -1868,31 +1944,19 @@ async function runCommand(command, state, tools, maxSteps) {
 
   if (command.type === "toolCall") {
     const args = [];
-    // each argument keeps its labels inside the tool
-    const argLabels = [];
     for (const arg of command.args) {
-      const { value, labels } = await evaluateLabeled(arg, state);
-      args.push(value);
-      argLabels.push(labels);
+      args.push(await evaluate(arg, state));
     }
     const named = Object.create(null);
-    const namedLabels = Object.create(null);
     for (const arg of command.named) {
-      const { value, labels } = await evaluateLabeled(arg.value, state);
-      named[arg.name] = value;
-      namedLabels[arg.name] = labels;
+      named[arg.name] = await evaluate(arg.value, state);
     }
 
-    const step = Object.create(null);
-    step.args = args;
-    step.named = named;
     const definition = state.definitions[command.name];
-    // an untrusted tool's result is untrusted; the label goes on before the hooks and the audit, so both show it
-    if (definition !== undefined && definition.untrusted) {
-      taint.addLabel(state, taint.UNTRUSTED, "tool " + command.name);
-    }
+    const step = toolStep(definition, args, named);
     await runHooks("before", [command.name], step, state, command);
-    auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).join(", "));
+    // the audit shows the arguments by position, then by name
+    auditStep(state, "tool", command.name, args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name])))).join(", "));
 
     if (definition !== undefined) {
       // "within" on the call limits every run inside the tool; the shorter limit wins
@@ -1901,7 +1965,7 @@ async function runCommand(command, state, tools, maxSteps) {
         state.timeLimit = shorter(state.timeLimit, await durationMs(command.within, state));
       }
       try {
-        state.result = await callTool(definition, args, named, command, state, tools, maxSteps, argLabels, namedLabels);
+        state.result = await callTool(definition, args, named, command, state, tools, maxSteps);
       } finally {
         state.timeLimit = savedLimit;
       }
@@ -1927,35 +1991,8 @@ async function runCommand(command, state, tools, maxSteps) {
 
 // ----- expressions -----
 
-// every expression has a taint frame: it collects the labels of what the expression reads
-// see src/js/taint.js
 async function evaluate(node, state) {
-  taint.begin(state, false);
-  try {
-    const value = await evaluateNode(node, state);
-    taint.withValue(state, value, canLabel(value));
-    return value;
-  } finally {
-    taint.end(state);
-  }
-}
-
-// a value and its labels
-async function evaluateLabeled(node, state) {
-  taint.begin(state, false);
-  try {
-    const value = await evaluate(node, state);
-    return { value, labels: taint.current(state) };
-  } finally {
-    taint.end(state);
-  }
-}
-
-const TAINT_CHECKS = ["is private", "is not private", "is untrusted", "is not untrusted"];
-
-// a list or object is data that can take labels; a file reference, a pattern or a secret is not
-function canLabel(value) {
-  return !(value instanceof FileRef || value instanceof Pattern || value instanceof Secret);
+  return await evaluateNode(node, state);
 }
 
 async function evaluateNode(node, state) {
@@ -2049,13 +2086,13 @@ async function evaluateNode(node, state) {
     }
     return kept;
   }
-  // pattern '<regexp>': a JavaScript regexp, with the u flag
+  // pattern /<regexp>/flags or pattern '<regexp>': a JavaScript regexp, with the u flag
   if (type === "pattern") {
     const source = toText(await evaluate(node.source, state));
     try {
-      return new Pattern(source);
+      return new Pattern(source, node.flags || "");
     } catch (err) {
-      throw new ScriptError("Not a valid pattern: " + err.message, node);
+      throw new ScriptError("Not a valid pattern: " + err.message + patternHint(err.message), node);
     }
   }
   if (type === "null") {
@@ -2083,13 +2120,11 @@ async function evaluateNode(node, state) {
     return secretValue(node, state);
   }
   if (type === "result") {
-    taint.add(state, state.resultLabels);
     return state.result;
   }
   if (type === "variable") {
     const scope = scopeFor(node.name, state);
     if (Object.hasOwn(scope, node.name)) {
-      taint.add(state, taint.slot(scope, node.name));
       return scope[node.name];
     }
     // a $ global that is not set yet is null, so "if $last is null" works on the first run
@@ -2126,7 +2161,7 @@ async function evaluateNode(node, state) {
     state.result = saved;
     return value;
   }
-  // fetch as a value: (fetch url as response)'s status
+  // fetch as a value: the status of fetch url as response
   if (type === "fetch") {
     return await runFetch(node, state);
   }
@@ -2135,19 +2170,25 @@ async function evaluateNode(node, state) {
     if (record === undefined) {
       return null;
     }
-    return new ProcessInfo(record, state);
+    return await processInfo(record, state);
   }
   if (type === "previousOutput") {
-    taint.addLabel(state, taint.PRIVATE);
-    taint.add(state, state.previousOutputLabels);
     return state.previousOutput;
   }
   if (type === "processes") {
-    return processList(state);
+    return await processList(state);
+  }
+  // the session: is untrusted while an untrusted input is not approved; see src/md/features/taint.md
+  if (type === "session") {
+    // taint is for the whole project: the inputs of all sessions that are not approved
+    const entries = state.taintMode === "off" ? [] : await untrusted.pendingAll(state.root);
+    const session = Object.create(null);
+    session.untrusted = entries.length > 0;
+    session["untrusted inputs"] = entries.map(({ entry }) => ({ source: entry.source, time: entry.time }));
+    return session;
   }
   // the audit: this session's records, oldest first, as plain values
   if (type === "audit") {
-    taint.addLabel(state, taint.PRIVATE);
     const list = [];
     for (const record of state.audit.records) {
       list.push({ ...record });
@@ -2190,11 +2231,10 @@ async function evaluateNode(node, state) {
     return evaluateUnary(node, value);
   }
   if (type === "check") {
-    // is private, is untrusted: a check of the value's labels, not of the value
-    if (TAINT_CHECKS.includes(node.operator)) {
-      const { labels } = await evaluateLabeled(node.value, state);
-      const label = node.operator.endsWith("private") ? taint.PRIVATE : taint.UNTRUSTED;
-      return node.operator.startsWith("is not") ? !taint.has(labels, label) : taint.has(labels, label);
+    // the session is untrusted: the parser allows it only on the session
+    if (node.operator === "is untrusted" || node.operator === "is not untrusted") {
+      const session = await evaluate(node.value, state);
+      return node.operator === "is untrusted" ? session.untrusted : !session.untrusted;
     }
     // "x exists" asks if a variable is set, so an unset variable is not an error here
     const isWhether = node.operator === "exists" || node.operator === "does not exist";
@@ -2242,13 +2282,24 @@ async function evaluateNode(node, state) {
     if (node.operator !== "+" && (left instanceof Secret || right instanceof Secret)) {
       throw new SecretUse(left instanceof Secret ? left : right, "'" + node.operator + "'");
     }
-    // <text> matches pattern '<regexp>'
+    // <text> matches pattern /<regexp>/
     if (node.operator === "matches") {
       if (!(right instanceof Pattern)) {
-        throw new ScriptError("matches needs a pattern, such as: matches pattern '^v[0-9]+', found " + describe(right), node.right);
+        throw new ScriptError("matches needs a pattern, such as: matches pattern /^v[0-9]+/, found " + describe(right), node.right);
       }
-      const answer = await patternJob({ kind: "test", source: right.source, text: toText(await asText(left, state, node)) }, state, node);
+      const answer = await patternJob({ kind: "test", source: right.source, flags: right.flags, text: toText(await asText(left, state, node)) }, state, node);
       return answer.matches;
+    }
+    // is in a folder: a path check, so it reads no file
+    if ((node.operator === "is in" || node.operator === "is not in") && right instanceof FileRef) {
+      if (await isFolder(right)) {
+        const inside = await inFolder(left, { absolute: right.absolute, root: state.root }, node);
+        return node.operator === "is in" ? inside : !inside;
+      }
+      // with no / at the end and nothing there, the script most likely meant a folder
+      if (!(await fs.stat(right.absolute).then(() => true, () => false))) {
+        throw new ScriptError("There is no folder " + right.path + ". To check a folder, write it with a / at the end, such as @/" + right.path + "/", node.right);
+      }
     }
     // + joins a file as its path, and a line as its text; 'text of' gives a file's text
     if (node.operator === "+") {
@@ -2265,9 +2316,22 @@ async function evaluateNode(node, state) {
   throw new ScriptError("Unknown expression type '" + type + "'", node);
 }
 
+// the step that a hook for a tool sees: args, named, and each parameter by its name (null if not given)
+function toolStep(definition, args, named) {
+  const step = Object.create(null);
+  step.args = args;
+  step.named = named;
+  if (definition !== undefined) {
+    definition.params.forEach((param, index) => {
+      step[param] = Object.hasOwn(named, param) ? named[param] : index < args.length ? args[index] : null;
+    });
+  }
+  return step;
+}
+
 // run a tool from AGENTS.talk, with its own local variables
 // gives back the tool's result at the end of the tool
-async function callTool(definition, args, named, command, state, tools, maxSteps, argLabels, namedLabels) {
+async function callTool(definition, args, named, command, state, tools, maxSteps) {
   if (args.length > definition.params.length) {
     throw new ScriptError("Tool '" + definition.name + "' takes " + definition.params.length + " arguments, found " + args.length, command);
   }
@@ -2275,24 +2339,16 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   for (let index = 0; index < definition.params.length; index++) {
     const param = definition.params[index];
     setOwn(locals, param, index < args.length ? args[index] : null);
-    if (argLabels && index < argLabels.length) {
-      taint.setSlot(locals, param, argLabels[index]);
-    }
   }
   for (const name of Object.keys(named)) {
     if (!definition.params.includes(name)) {
       throw new ScriptError("Tool '" + definition.name + "' has no argument named '" + name + "'", command);
     }
     setOwn(locals, name, named[name]);
-    if (namedLabels) {
-      taint.setSlot(locals, name, namedLabels[name]);
-    }
   }
 
   const savedVariables = state.variables;
   const savedResult = state.result;
-  const savedResultLabels = state.resultLabels;
-  state.resultLabels = taint.none();
   const savedHandler = state.handler;
   const savedHandling = state.handling;
   state.variables = locals;
@@ -2304,12 +2360,32 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   // steps inside the tool are "from" the tool in the audit
   const savedFrom = state.auditFrom;
   state.auditFrom = definition.name;
+  // inside an untrusted tool, a started program has untrusted output; see processInfo
+  const savedUntrustedTool = state.untrustedTool;
+  if (definition.untrusted) {
+    state.untrustedTool = definition.name;
+  }
+  // what the tool prints goes to the agent too, so an untrusted tool's print output goes to the store with its result
+  const printedFrom = state.execution.output.length;
   try {
     await runCommands(definition.body, state, tools, maxSteps);
-    // the call takes the labels of the tool's result
-    taint.add(state, state.resultLabels);
+    // an untrusted tool's result goes to the store, and makes the session untrusted
+    if (definition.untrusted) {
+      const shownArgs = args.map((arg) => toText(showSecrets(arg))).concat(Object.keys(named).map((name) => name + ": " + toText(showSecrets(named[name]))));
+      const printed = state.execution.output.slice(printedFrom);
+      await noteUntrusted(state, "tool " + definition.name + (shownArgs.length > 0 ? " (" + shownArgs.join(", ") + ")" : ""), (printed.length > 0 ? printed.join("\n") + "\n" : "") + toText(showSecrets(state.result)));
+    }
     return state.result;
   } catch (err) {
+    // an untrusted tool's error can hold its text, and the agent sees the error, so it goes to the store too
+    if (definition.untrusted && err instanceof ScriptError && !(err instanceof Cancelled) && !(err instanceof StepBudget)) {
+      const printed = state.execution.output.slice(printedFrom);
+      await noteUntrusted(state, "tool " + definition.name + " (error)", (printed.length > 0 ? printed.join("\n") + "\n" : "") + err.message, command);
+    }
+    // a reject points at the tool call, so the agent sees where
+    if (err instanceof Rejected) {
+      throw new Rejected(err.message, command);
+    }
     // an error inside the tool points into AGENTS.talk
     if (err instanceof ScriptError && !err.file) {
       err.file = definition.file || AGENTS_TALK;
@@ -2318,11 +2394,11 @@ async function callTool(definition, args, named, command, state, tools, maxSteps
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
-    state.resultLabels = savedResultLabels;
     state.handler = savedHandler;
     state.file = savedFile;
     state.handling = savedHandling;
     state.auditFrom = savedFrom;
+    state.untrustedTool = savedUntrustedTool;
   }
 }
 
@@ -2359,7 +2435,9 @@ async function runProgram(command, state) {
   checkDenied("run", state, command);
   checkSandboxRequired("run", sandbox, state, command);
   await runHooks("before", ["run"], step, state, command);
-  await askUntrusted(state, "Run " + program, args.join(" "), command);
+  if (sandbox === null || sandbox.network) {
+    await askUntrusted(state, "network runs", "Run " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
+  }
 
   const env = programEnv(command, state);
   const found = await resolveProgram(program, env, state, command);
@@ -2371,7 +2449,13 @@ async function runProgram(command, state) {
   let result;
   const started = Date.now();
   if (sandbox === null) {
-    result = await spawnProgram(found, args, state.cwd, env, limit, state, command);
+    // a program with no sandbox can change .talk/: keep hashes and the end of the audit, and check after the run
+    const before = await untrusted.snapshot(state.root);
+    try {
+      result = await spawnProgram(found, args, state.cwd, env, limit, state, command);
+    } finally {
+      await checkTalkFolder(state, before, program, command);
+    }
   } else {
     const wrapped = await sandboxCommand(found, args, sandbox, env, false, state, command);
     try {
@@ -2381,16 +2465,62 @@ async function runProgram(command, state) {
     }
   }
 
-  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + secretNote(command.secrets));
   // the output can hold a secret's value, for example from "env"
   result.output = redact(result.output, state);
-  taint.addLabel(state, taint.PRIVATE);
+  const cut = command.keeping ? await keepRunOutput(result, command.keeping, state, command) : 0;
+  auditStep(state, "run", [program, ...args].join(" "), sandboxText(sandbox) + "code " + result.code + ", " + ((Date.now() - started) / 1000).toFixed(1) + " s" + (cut > 0 ? ", " + cut + " lines cut" : "") + secretNote(command.secrets));
 
   // after hooks see the result
   state.result = result;
   await runHooks("after", ["run"], step, state, command);
   return result;
 }
+// run ... keeping: cut the program's output to the lines the tool wants; one line takes the place of the cut lines
+// the result's full keeps all of it; gives the number of lines cut; see src/md/features/sandbox-run.md
+async function keepRunOutput(result, keeping, state, command) {
+  result.full = result.output;
+  const count = async (node, unit) => {
+    if (node === null) {
+      return null;
+    }
+    const n = toNumber(await evaluate(node, state), node);
+    if (!Number.isInteger(n) || n < 0) {
+      throw new ScriptError("keeping needs a whole number of " + unit + ", 0 or more, found " + n, node);
+    }
+    return n;
+  };
+  const kb = await count(keeping.bytes, "KB");
+  const keep = { first: await count(keeping.first, "lines"), last: await count(keeping.last, "lines"), matches: null, bytes: kb === null ? null : kb * 1024 };
+  const other = keeping.pattern !== null ? " other" : "";
+  const cut = await keepText(result.output, [{ keep, pattern: keeping.pattern }], state, command, (n) => "... " + n + other + " lines cut (all lines: the result's full) ...");
+  result.output = cut.text;
+  return cut.cut;
+}
+
+// cut a text with one or more keeps, each one on what the one before it kept: [{ keep, pattern }]
+// pattern is null or a node that gives a pattern; with a pattern, one note goes at the end, else one at each gap
+// a text that ends with a line break still does
+async function keepText(text, keeps, state, node, note) {
+  const ends = text.endsWith("\n");
+  let items = (ends ? text.slice(0, -1) : text).split("\n").map((line, index) => ({ index, text: line }));
+  const total = items.length;
+  let atEnd = false;
+  for (const { keep, pattern } of keeps) {
+    let matches = null;
+    if (pattern !== null) {
+      const value = await evaluate(pattern, state);
+      if (!(value instanceof Pattern)) {
+        throw new ScriptError("keeping lines matching needs a pattern, such as: keeping lines matching pattern /FAIL/, found " + describe(value), pattern);
+      }
+      matches = (await patternJob({ kind: "lines", source: value.source, flags: value.flags, lines: items.map((item) => item.text) }, state, node)).indexes;
+      atEnd = true;
+    }
+    items = keepItems(items, { ...keep, matches });
+  }
+  const kept = withNotes(items, total, note, atEnd);
+  return { text: kept.lines.join("\n") + (ends && kept.lines.length > 0 ? "\n" : ""), cut: kept.cut };
+}
+
 // the sandbox's temp folder goes after the program; a program can leave a file there that cannot be removed,
 // and that is a warning, not a failed run
 async function removeSandboxTmp(tmp, state) {
@@ -2586,12 +2716,16 @@ async function runGit(command, state) {
   } else if (GIT_WRITES.includes(command.operation)) {
     checkDenied("writes", state, command);
   }
+  // a pull uses the network
+  if (command.operation === "pull") {
+    checkDenied("fetch", state, command);
+  }
   await runHooks("before", ["git"], step, state, command);
-  // untrusted text in a commit message or a branch name
-  if (step.message !== undefined) {
-    await askUntrusted(state, "Commit", step.message, command);
-  } else if (step.branch !== undefined) {
-    await askUntrusted(state, "Use a branch name", step.branch, command);
+  // in an untrusted session, a commit and a push ask the human
+  if (command.operation === "commit") {
+    await askUntrusted(state, "commit", "Commit '" + (step.message === undefined ? "" : step.message) + "'", command);
+  } else if (command.operation === "push") {
+    await askUntrusted(state, "push", step.tag === undefined ? "Push to origin" : "Push tag " + step.tag + " to origin", command);
   }
 
   const env = gitEnv(process.env);
@@ -2609,8 +2743,40 @@ async function runGit(command, state) {
   if (command.operation === "rebase") {
     await checkRebase(step.branch, state, env, command);
   }
-  if (command.operation === "push") {
-    await checkPushRemote(state, env, command);
+  if (command.operation === "push" || command.operation === "pull") {
+    await checkPushRemote(state, env, command, command.operation === "pull");
+  }
+  // pull: the current branch; remember where it was, to find the changed files after
+  let pulledFrom = null;
+  if (command.operation === "pull") {
+    const current = await gitCheck(["branch", "--show-current"], state, env, command);
+    if (current === "") {
+      throw new ScriptError("git pull needs a branch. Switch to a branch first", command);
+    }
+    step.branch = current;
+    args.push(current);
+    pulledFrom = await gitCheck(["rev-parse", "HEAD"], state, env, command);
+  }
+  // pull: fetch first, so the change hooks can see what the pull will change; then merge without the network
+  let runArgs = args;
+  if (command.operation === "pull") {
+    const fetched = await spawnProgram("git", [...guardArgs(true), "fetch", "--no-recurse-submodules", "origin", step.branch], state.root, gitEnv(process.env, true), state.timeLimit, state, command);
+    if (fetched.code !== 0) {
+      throw new ScriptError("git pull failed: " + fetched.output.trim(), command);
+    }
+    runArgs = ["merge", "--ff-only", "FETCH_HEAD"];
+  }
+  // a git write that changes files runs the change hooks for each of them first, so a rule for a folder covers git too
+  await gitChangeHooks(command, step, state, env);
+  // restore: the change hooks, and the text before, for undo
+  const restored = [];
+  if (command.operation === "restore") {
+    for (const file of step.refs) {
+      const change = changeStep("restore", file, {});
+      await changeHooks("before", change, state, command);
+      restored.push({ file, change, before: await currentText(file.path, state) });
+    }
+    delete step.refs;
   }
 
   // commit adds the named files first, so new files can be committed too;
@@ -2640,24 +2806,38 @@ async function runGit(command, state) {
   }
 
   const forPush = command.operation === "push";
-  const result = await spawnProgram("git", [...guardArgs(forPush), ...args], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
+  const result = await spawnProgram("git", [...guardArgs(forPush), ...runArgs], state.root, gitEnv(process.env, forPush), state.timeLimit, state, command);
   if (result.code !== 0 && command.operation === "rebase") {
     await stopRebase(state, env, command);
   }
   if (result.code !== 0) {
     throw new ScriptError("git " + command.operation + " failed: " + result.output.trim(), command);
   }
-  auditStep(state, "git", args.join(" "), "");
-  // git move: the labels move with the file
-  if (command.operation === "move" && taint.moveFile(state.fileLabels, step.from, step.to)) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", step.to, "moved from " + step.from);
+  // the audit shows git as the script wrote it; the JSON audit keeps the full arguments
+  const shown = gitShown(command.operation, step, args);
+  auditStep(state, "git", shown.target, shown.details, { args: args.join(" ") });
+  // restore: each file is a change, so undo can take it back; the script saw the new text, so a later write is not stale
+  for (const { file, change, before } of restored) {
+    const after = await currentText(file.path, state);
+    if (after !== before) {
+      state.execution.changes.push({ path: file.path, before, after });
+    }
+    if (after !== null) {
+      state.seen.set(await fs.realpath(file.absolute), after);
+    }
+    await changeHooks("after", change, state, command, after === before ? "no change" : "put back as in the last commit");
+  }
+  // pull: code from other people; the changed files go to the store, so the project is untrusted
+  if (pulledFrom !== null) {
+    const changed = await gitCheck(["diff", "--name-only", pulledFrom, "HEAD"], state, env, command);
+    if (changed !== "") {
+      await noteUntrusted(state, "git pull origin " + step.branch, "The pull changed these files:\n" + changed, command);
+    }
   }
   // a .env file in git must not show in a diff either, since scripts cannot read it
   if (command.operation === "diff" || command.operation === "show") {
     result.output = hideSecretDiffs(result.output);
   }
-  taint.addLabel(state, taint.PRIVATE);
   state.result = result.output;
   await runHooks("after", ["git"], step, state, command);
   return result.output;
@@ -2704,6 +2884,44 @@ function gitExample(command, name) {
   return "git merge " + name;
 }
 
+// the files that a git write will change, before it runs: the change hooks run for each of them, and a reject
+// stops git before it changes anything; see src/md/features/git.md
+async function gitChangeHooks(command, step, state, env) {
+  const op = command.operation;
+  // paths relative to the root, with no renames, so a rename shows both the old and the new path
+  const paths = async (args) => {
+    const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
+    if (result.code !== 0) {
+      throw new ScriptError("git " + op + " failed: " + result.output.trim(), command);
+    }
+    return result.output.split("\n").filter((line) => line !== "");
+  };
+  const diff = (...range) => paths(["diff", "--name-only", "--no-renames", "--relative", ...range, "--"]);
+  let changed = [];
+  if (op === "move") {
+    changed = [step.from, step.to];
+  } else if (op === "switch" && !command.create) {
+    // a branch that is only on origin: git switch makes it from origin/<name>
+    const local = await spawnProgram("git", [...guardArgs(), "rev-parse", "--verify", "--quiet", "refs/heads/" + step.branch], state.root, env, state.timeLimit, state, command);
+    changed = await diff("HEAD", local.code === 0 ? step.branch : "origin/" + step.branch);
+  } else if (op === "merge") {
+    changed = await diff("HEAD", step.branch);
+  } else if (op === "rebase") {
+    changed = await diff("HEAD..." + step.branch);
+  } else if (op === "pull") {
+    changed = await diff("HEAD", "FETCH_HEAD");
+  } else if (op === "stash" && command.pop) {
+    changed = await paths(["stash", "show", "--name-only", "--no-renames", "--relative"]);
+  } else if (op === "stash") {
+    changed = await diff("HEAD");
+  }
+  for (const path of changed) {
+    const file = new FileRef(nodePath.resolve(state.root, path), state.root);
+    const fields = op === "move" ? { from: step.from, to: step.to } : {};
+    await changeHooks("before", changeStep(op === "move" ? "move" : "git " + op, file, fields), state, command);
+  }
+}
+
 // git with the hardened arguments, for the checks around an operation
 async function gitCheck(args, state, env, command) {
   const result = await spawnProgram("git", [...guardArgs(), ...args], state.root, env, state.timeLimit, state, command);
@@ -2713,8 +2931,9 @@ async function gitCheck(args, state, env, command) {
 // a remote that is a folder runs its own hooks on a push, and the hardened settings do not reach it;
 // a folder inside the project can hold hooks that the agent wrote, so a push to it is refused
 // a folder outside the project is the human's; see src/md/features/git.md
-async function checkPushRemote(state, env, command) {
-  const result = await spawnProgram("git", [...guardArgs(), "remote", "get-url", "--push", "--all", "origin"], state.root, env, state.timeLimit, state, command);
+// a pull checks the fetch URLs: git runs the remote's upload hooks on a local folder too
+async function checkPushRemote(state, env, command, forPull = false) {
+  const result = await spawnProgram("git", [...guardArgs(), "remote", "get-url", ...(forPull ? [] : ["--push"]), "--all", "origin"], state.root, env, state.timeLimit, state, command);
   if (result.code !== 0) {
     return;
   }
@@ -2727,7 +2946,7 @@ async function checkPushRemote(state, env, command) {
     const absolute = nodePath.resolve(state.root, folder);
     const real = await fs.realpath(absolute).catch(() => absolute);
     if (isInside(absolute, state.root) || isInside(real, realRoot)) {
-      throw new ScriptError("git push cannot go to a remote inside the project, because it runs that repo's hooks, and a script can write them: " + url, command);
+      throw new ScriptError((forPull ? "git pull cannot use" : "git push cannot go to") + " a remote inside the project, because it runs that repo's hooks, and a script can write them: " + url, command);
     }
   }
 }
@@ -2812,7 +3031,16 @@ async function gitArgs(command, state, step) {
     return ["branch", "--delete", name];
   }
   // the current branch, to a branch with the same name on origin; never force
+  // git push tag <name>: one tag that is here, to origin; never force, so a tag on origin is never moved
   if (op === "push") {
+    if (command.tag) {
+      const name = toText(notNull(await evaluate(command.tag, state), "The tag name is null. Give it a value", command.tag));
+      if (!isSafeBranchName(name)) {
+        throw new ScriptError("Not a safe tag name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.tag);
+      }
+      step.tag = name;
+      return ["push", "--no-verify", "origin", "refs/tags/" + name + ":refs/tags/" + name];
+    }
     return ["push", "--no-verify", "origin", "HEAD"];
   }
   // git mv, so the history follows the file: one file, with the checks of a write for both paths
@@ -2932,6 +3160,63 @@ async function gitArgs(command, state, step) {
     }
     return args;
   }
+  // stash: tracked files only, so untracked files (such as .talk/) stay where they are; see src/md/features/git.md
+  if (op === "stash") {
+    return command.pop ? ["stash", "pop"] : ["stash", "push", "--quiet"];
+  }
+  if (op === "stashes") {
+    return ["stash", "list"];
+  }
+  if (op === "tags") {
+    return ["tag", "--list"];
+  }
+  // a light tag on the current commit; git push does not send tags
+  if (op === "tag") {
+    const name = toText(notNull(await evaluate(command.value, state), "The tag name is null. Give it a value", command.value));
+    if (!isSafeBranchName(name)) {
+      throw new ScriptError("Not a safe tag name: " + describe(name) + ". Use letters, digits, -, _, / and .", command.value);
+    }
+    step.tag = name;
+    return ["tag", name];
+  }
+  // blame: read only, with the checks of a read; .env files hold secrets
+  if (op === "blame") {
+    const file = await evaluate(command.value, state);
+    if (!(file instanceof FileRef)) {
+      throw new ScriptError("git blame needs a file, found " + describe(file), command.value);
+    }
+    const { relative } = await realTarget(file, state, command.value);
+    if (isSecretFile(file.path) || isSecretFile(relative)) {
+      throw new ScriptError("A script cannot read .env files, because they hold secrets: " + file.path, command.value);
+    }
+    if ((await realPath(file, state, command.value)) === null) {
+      throw new ScriptError("File not found: " + file.path, command.value);
+    }
+    step.file = file.path;
+    return ["blame", "--no-textconv", "--", file.path];
+  }
+  // restore: put files back as they are in the last commit, with the checks of a write; undo can take it back
+  if (op === "restore") {
+    const value = flatFiles(await evaluate(command.value, state));
+    const files = Array.isArray(value) ? value : [value];
+    if (files.length === 0) {
+      throw new ScriptError("git restore found no files to restore", command.value);
+    }
+    for (const file of files) {
+      await checkWritable(file, state, command.value);
+      const stats = await fs.stat(file.absolute).catch(() => null);
+      if (stats !== null && stats.isDirectory()) {
+        throw new ScriptError("git restore needs files, not a folder: " + file.path, command.value);
+      }
+    }
+    step.files = files.map((file) => file.path);
+    step.refs = files;
+    return ["restore", "--worktree", "--", ...step.files];
+  }
+  // pull: the current branch from origin, fast-forward only, with the hardening of a push
+  if (op === "pull") {
+    return ["pull", "--ff-only", "--no-rebase", "--no-recurse-submodules", "origin"];
+  }
   throw new ScriptError("Unknown git operation: " + op, command);
 }
 
@@ -3037,7 +3322,7 @@ let sandboxTest = null;
 // for the audit: "in a sandbox with network, " or ""
 function sandboxText(sandbox) {
   if (sandbox === null) {
-    return "";
+    return "no sandbox, ";
   }
   const options = [];
   if (sandbox.network) {
@@ -3052,7 +3337,7 @@ function sandboxText(sandbox) {
   for (const path of sandbox.reads) {
     options.push("reads of " + path);
   }
-  return "in a sandbox" + (options.length > 0 ? " with " + options.join(", ") : "") + ", ";
+  return "sandbox" + (options.length > 0 ? ", " + options.join(", ") : "") + ", ";
 }
 
 // "in a sandbox with ...": the values, or null for no sandbox; hooks see them as the step's sandbox
@@ -3093,6 +3378,9 @@ async function sandboxCommand(program, args, sandbox, env, listen, state, node) 
   if (support.kind === null) {
     throw new ScriptError("Cannot run in a sandbox: " + support.reason + ". Nothing ran", node);
   }
+  // on Linux, the sandbox protects a hidden folder only if it exists when the program starts,
+  // so .talk/ (the audit and the untrusted inputs) must exist first
+  await fs.mkdir(nodePath.join(state.root, ".talk"), { recursive: true });
   if (support.kind === "linux" && listen && !sandbox.network) {
     throw new ScriptError("On Linux, a sandboxed start needs 'with network', or the host cannot reach the server. Nothing ran", node);
   }
@@ -3123,7 +3411,10 @@ async function sandboxCommand(program, args, sandbox, env, listen, state, node) 
 // ----- wait -----
 
 const WAIT_UNTIL_LIMIT = 30_000;
+// wait until with no "every": the first check after 200 ms, then twice as long each time, up to 5 seconds,
+// so a fast local check is fast, and a long wait on a web page does not send a request every 200 ms
 const WAIT_UNTIL_EVERY = 200;
+const WAIT_UNTIL_SLOWEST = 5_000;
 
 // wait for a time; cancel ends the wait at once
 const MAX_TIMER = 2 ** 31 - 1;
@@ -3167,6 +3458,8 @@ async function waitUntil(command, state) {
   limit = shorter(state.timeLimit, limit);
   const started = Date.now();
   let lastError = null;
+  const every = command.every ? await durationMs(command.every, state) : null;
+  let pause = every === null ? WAIT_UNTIL_EVERY : every;
   while (true) {
     takeStep(command, state, state.maxSteps);
     try {
@@ -3180,11 +3473,14 @@ async function waitUntil(command, state) {
       }
       lastError = err.message;
     }
-    if (Date.now() - started + WAIT_UNTIL_EVERY > limit) {
+    if (Date.now() - started + pause > limit) {
       const last = lastError === null ? "" : ". The last error: " + lastError;
       throw new ScriptError("wait until did not come true within " + limit + "ms" + last, command);
     }
-    await sleep(WAIT_UNTIL_EVERY, state, command);
+    await sleep(pause, state, command);
+    if (every === null) {
+      pause = Math.min(pause * 2, WAIT_UNTIL_SLOWEST);
+    }
   }
 }
 
@@ -3202,11 +3498,6 @@ class ProcessInfo {
     this.code = record.code;
     // the output can hold a secret's value
     this.output = redact(record.output, state);
-    taint.addLabel(state, taint.PRIVATE);
-    // a subagent's answer is always untrusted
-    if (record.subagent) {
-      taint.addLabel(state, taint.UNTRUSTED, record.subagent);
-    }
   }
 }
 
@@ -3232,7 +3523,9 @@ async function startProcess(command, state) {
   checkDenied("start", state, command);
   checkSandboxRequired("start", sandbox, state, command);
   await runHooks("before", ["start"], step, state, command);
-  await askUntrusted(state, "Start " + program, args.join(" "), command);
+  if (sandbox === null || sandbox.network) {
+    await askUntrusted(state, "network runs", "Start " + [program, ...args].join(" ") + (sandbox === null ? " with no sandbox" : " with network"), command);
+  }
 
   let env = programEnv(command, state);
   let spawnProgramName = await resolveProgram(program, env, state, command);
@@ -3253,7 +3546,8 @@ async function startProcess(command, state) {
       fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
     });
   }
-  const record = { name, child, status: "running", code: null, output: "" };
+  // a program that an untrusted tool starts: its output is untrusted, see processInfo
+  const record = { name, child, status: "running", code: null, output: "", untrustedFrom: state.untrustedTool || null };
   const add = (chunk) => {
     record.output += chunk;
     if (record.output.length > PROCESS_OUTPUT_BYTES) {
@@ -3296,7 +3590,7 @@ async function stopProcess(command, state) {
     await endProcess(record);
     auditStep(state, "stop", name, "");
   }
-  return new ProcessInfo(record, state);
+  return await processInfo(record, state);
 }
 
 // end the process group, and wait up to 2 seconds before a hard kill
@@ -3375,12 +3669,24 @@ export function stopAllProcesses(processes) {
   }
 }
 
-function processList(state) {
+async function processList(state) {
   const list = [];
   for (const record of state.processes.values()) {
-    list.unshift(new ProcessInfo(record, state));
+    list.unshift(await processInfo(record, state));
   }
   return list;
+}
+
+// a process value for the script; the agent sees a subagent's answer, so new output of it goes to the store
+async function processInfo(record, state) {
+  const info = new ProcessInfo(record, state);
+  // a subagent's answer, or the output of a program that an untrusted tool started
+  const source = record.subagent || (record.untrustedFrom ? "process " + record.name + " (from tool " + record.untrustedFrom + ")" : null);
+  if (source !== null && info.output.length > (record.storedLength || 0)) {
+    await noteUntrusted(state, source, info.output);
+    record.storedLength = info.output.length;
+  }
+  return info;
 }
 
 // ----- fetch -----
@@ -3455,7 +3761,10 @@ async function runFetch(command, state) {
   step.method = method;
   step.secrets = secrets;
   await runHooks("before", ["fetch"], step, state, command);
-  await askPrivate(state, url, command);
+  // in an untrusted session, a fetch with a secret asks the human
+  if (secrets.length > 0) {
+    await askUntrusted(state, "secrets", "Send secret " + secrets.join(", ") + " to " + url.host, command);
+  }
 
   let limit = shorter(state.timeLimit, FETCH_TIME_LIMIT);
   if (command.within !== null) {
@@ -3466,8 +3775,17 @@ async function runFetch(command, state) {
   // follow redirects by hand, so each new host is checked too
   let current = url;
   let response = null;
+  // the secrets stay with the request until a redirect to another origin drops the headers
+  let carriesSecrets = secrets.length > 0;
+  // after the first redirect, the server chose the URL, so an error can hold its text: that error goes to the store
+  let redirected = false;
+  try {
   for (let hops = 0; ; hops++) {
     await checkFetchHost(current, state, command);
+    // a redirect on the same origin keeps the headers, so a URL pattern for a secret is checked again
+    if (hops > 0 && carriesSecrets) {
+      checkSecretHosts(secrets, current, state, command);
+    }
     try {
       response = await fetch(current, { method, headers, body, redirect: "manual", signal });
     } catch (err) {
@@ -3487,7 +3805,14 @@ async function runFetch(command, state) {
       throw new ScriptError("fetch stopped after " + FETCH_MAX_REDIRECTS + " redirects: " + url.href, command);
     }
     const previous = current;
-    current = parseUrl(new URL(location, current).href, command);
+    redirected = true;
+    let next;
+    try {
+      next = new URL(location, current).href;
+    } catch (err) {
+      throw new ScriptError("fetch got a redirect that is not a valid URL: " + describe(location), command);
+    }
+    current = parseUrl(next, command);
     // a redirect can send the request on to another place, so the audit records each one
     auditStep(state, "redirect", previous.href, response.status + " to " + current.href);
     // on a redirect to another origin (scheme, host or port), the script's headers stay behind,
@@ -3496,6 +3821,7 @@ async function runFetch(command, state) {
     const becomesGet = response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST");
     if (current.origin !== previous.origin) {
       headers = {};
+      carriesSecrets = false;
       // any other redirect keeps the body, for example a 307, or a 301 after a PUT
       if (body !== undefined && !becomesGet) {
         throw new ScriptError("fetch will not send the body on to another host: " + previous.origin + " redirects to " + current.origin, command);
@@ -3506,12 +3832,24 @@ async function runFetch(command, state) {
       body = undefined;
     }
   }
+  } catch (err) {
+    if (redirected && err instanceof ScriptError && !(err instanceof Cancelled)) {
+      await noteUntrusted(state, url.href + " (an error after a redirect)", err.message, command);
+    }
+    throw err;
+  }
 
   // a server can send a secret's value back, so the response text shows <secret NAME>
   const text = redact(await readLimited(response, current, command), state);
   step.status = response.status;
-  // text from the web is untrusted: it must not drive an action without a question
-  taint.addLabel(state, taint.UNTRUSTED, current.href);
+  // text from the web is untrusted: it must not drive an action without a question,
+  // unless AGENTS.talk trusts the URL that the text came from, after all redirects
+  const currentHost = current.hostname.toLowerCase().replace(/\.+$/, "");
+  if (state.trustedFetch.some((rule) => fetchRuleAllows(rule, current, currentHost))) {
+    auditStep(state, "trusted", current.href, "trust fetch from");
+  } else {
+    await noteUntrusted(state, current.href, text);
+  }
 
   let result;
   if (command.as === "response") {
@@ -3585,9 +3923,10 @@ function checkSecretHosts(secrets, url, state, node) {
   const host = url.hostname.toLowerCase().replace(/\.+$/, "");
   for (const name of secrets) {
     const entry = state.secrets.get(name);
-    if (!isAllowedFetchHost(host, entry.hosts)) {
+    if (!entry.hosts.some((rule) => fetchRuleAllows(rule, url, host))) {
       const allowed = entry.hosts.length === 0 ? "a run or start in a tool that is provided it" : entry.hosts.join(", ");
-      throw new ScriptError("A secret cannot go to " + host + ": " + name + ". It can go only to " + allowed + ".", node);
+      const target = entry.hosts.some(isUrlRule) ? url.origin + url.pathname : host;
+      throw new ScriptError("A secret cannot go to " + target + ": " + name + ". It can go only to " + allowed + ".", node);
     }
   }
 }
@@ -3602,30 +3941,51 @@ async function checkFetchHost(url, state, node) {
     throw new ScriptError("fetch refused: " + host + " is outside the policy '" + state.policy.name + "' (" + ruleAt(limit) + ")", node);
   }
   const allowLine = "To allow it, a human can add this line to AGENTS.talk:\n  allow fetch from '" + host + "'";
+  // a trusted URL is allowed too: a source that the human trusts must not ask; see src/md/features/taint.md
+  const rules = state.allowedFetch.concat(state.trustedFetch);
   // a private host needs its own line in AGENTS.talk; a *. pattern is not enough
   if (isPrivateHost(host)) {
-    if (state.allowedFetch.includes(host)) {
+    if (rules.some((rule) => ruleHost(rule) === host && fetchRuleAllows(rule, url, host))) {
       return;
     }
     throw new ScriptError("fetch refused: " + host + " is a local or private address.\n" + allowLine, node);
   }
   // a public name can point to a private address, so look at the addresses too
   // limit: the connection does its own lookup, so a name that changes its answer in between is not caught
-  if (!state.allowedFetch.includes(host)) {
+  if (!rules.some((rule) => ruleHost(rule) === host)) {
     for (const address of await state.lookup(host)) {
       if (isPrivateHost(address)) {
         throw new ScriptError("fetch refused: " + host + " points to a local or private address (" + address + ").\n" + allowLine, node);
       }
     }
   }
-  if (isAllowedFetchHost(host, state.allowedFetch) || state.fetchHosts.has(host)) {
+  if (rules.some((rule) => fetchRuleAllows(rule, url, host)) || state.fetchHosts.has(host)) {
     return;
   }
-  const answer = await askState(state, "Fetch from " + host + "?", ["yes", "no"], null);
-  if (answer !== "yes") {
-    throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
+  // in an untrusted session, one question covers the session and the new host; a yes allows the host for the session
+  // otherwise: yes once, yes for the session, or no
+  if (!(await askUntrusted(state, "new hosts", "Fetch from " + host, node))) {
+    const answer = await askState(state, "Fetch from " + host + "?", ["yes, once", "yes, for this session", "no"], null);
+    if (answer === "yes, once") {
+      return;
+    }
+    if (answer !== "yes, for this session") {
+      throw new ScriptError("The human did not approve a fetch from " + host + askReason(state) + ".\n" + allowLine, node);
+    }
   }
   state.fetchHosts.add(host);
+}
+
+// the warnings for '*' in "allow fetch from" and "trust fetch from"; the taint command shows them too
+export function wideFetchWarnings(agents) {
+  const warnings = [];
+  if (agents.trustedFetch.includes("*")) {
+    warnings.push("AGENTS.talk trusts text from all public hosts (trust fetch from '*'): fetched text does not taint the session.");
+  }
+  if (agents.allowedFetch.includes("*")) {
+    warnings.push("AGENTS.talk allows fetch from all public hosts (allow fetch from '*').");
+  }
+  return warnings;
 }
 
 // the addresses of a name, in the URL parser's form, so isPrivateHost can read them
@@ -3653,6 +4013,85 @@ function isAllowedFetchHost(host, allowed) {
     }
   }
   return false;
+}
+
+// a fetch rule from AGENTS.talk is a host ('api.github.com', '*.github.com')
+// or a URL pattern (http://localhost:5173/, https://*.github.com/repos/**); see src/md/features/fetch.md
+function isUrlRule(rule) {
+  return rule.includes("://");
+}
+
+// the host of a rule: https://*.github.com/x gives *.github.com
+function ruleHost(rule) {
+  return isUrlRule(rule) ? new URL(rule).hostname : rule;
+}
+
+// a rule as AGENTS.talk writes it: a host in quotes, a URL with none
+function shownRule(rule) {
+  return isUrlRule(rule) ? rule : "'" + rule + "'";
+}
+
+// the rule allows the URL; host is the URL's host in lower case, with no dot at the end
+// a URL pattern must have the same scheme and port; in its host, *. is one more part
+function fetchRuleAllows(rule, url, host) {
+  // '*' is every public host; a private host needs its own line, so a trusted page cannot reach it
+  if (rule === "*") {
+    return !isPrivateHost(host);
+  }
+  if (!isUrlRule(rule)) {
+    return isAllowedFetchHost(host, [rule]);
+  }
+  const pattern = new URL(rule);
+  if (pattern.protocol !== url.protocol || pattern.port !== url.port) {
+    return false;
+  }
+  const patternHost = pattern.hostname;
+  if (patternHost.startsWith("*.")) {
+    const rest = patternHost.slice(1);
+    const first = host.slice(0, host.length - rest.length);
+    if (!host.endsWith(rest) || first === "" || first.includes(".")) {
+      return false;
+    }
+  } else if (patternHost !== host) {
+    return false;
+  }
+  return urlPathMatches(pattern.pathname, url.pathname);
+}
+
+// a path that ends in / allows all paths below it; * is any text in one part, ** is any number of parts
+// the URL parser already removed . and .. parts from both paths
+function urlPathMatches(pattern, path) {
+  const wanted = pattern.split("/").slice(1);
+  if (pattern.endsWith("/")) {
+    wanted[wanted.length - 1] = "**";
+  }
+  return pathPartsMatch(wanted, path.split("/").slice(1));
+}
+
+function pathPartsMatch(wanted, given) {
+  if (wanted.length === 0) {
+    return given.length === 0;
+  }
+  if (wanted[0] === "**") {
+    for (let skip = 0; skip <= given.length; skip++) {
+      if (pathPartsMatch(wanted.slice(1), given.slice(skip))) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (given.length === 0 || !pathPartMatches(wanted[0], given[0])) {
+    return false;
+  }
+  return pathPartsMatch(wanted.slice(1), given.slice(1));
+}
+
+function pathPartMatches(wanted, part) {
+  if (!wanted.includes("*")) {
+    return wanted === part;
+  }
+  const source = wanted.split("*").map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  return new RegExp("^" + source + "$", "u").test(part);
 }
 
 // localhost, and IP addresses that are not plain public ones: loopback, private, link-local,
@@ -3723,41 +4162,269 @@ async function askHuman(command, state) {
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
   }
-  return await askState(state, question, choices, limit);
+  const answer = await askState(state, question, choices, limit, null, command.many);
+  if (answer === null) {
+    return null;
+  }
+  return command.many ? answer.map(choiceValue) : choiceValue(answer);
+}
+
+// a choice 'staging: the test site' gives 'staging'; the human sees all of it
+// only ': ' splits, so 'http://x' stays whole; see src/md/features/ask.md
+function choiceValue(text) {
+  const at = text.indexOf(": ");
+  return at > 0 ? text.slice(0, at) : text;
 }
 
 // a question to the human waits at most this long, unless "within" says otherwise;
 // a client that cannot show the dialog (for example on a phone) must not hang the script
 const ASK_TIME_LIMIT = 2 * 60 * 1000;
 
-// ----- taint questions; see src/md/features/taint.md -----
+// ----- session taint; see src/md/features/taint.md and src/js/untrusted.js -----
 
-// untrusted text in an action: ask the human each time; no answer, or no, is an error
-// labels are the command's labels so far, which hold the labels of its arguments
-async function askUntrusted(state, action, text, node) {
-  const labels = taint.current(state);
-  if (!taint.has(labels, taint.UNTRUSTED)) {
+// what asks by default: the actions that do harm outside the machine; more questions make people say yes without reading
+const DEFAULT_TAINT_ASKS = ["push", "secrets"];
+
+// the agent saw untrusted text: save it in the store, so the session is untrusted until the human approves it
+// node is the command, for an error; a process read has none
+async function noteUntrusted(state, source, text, node = { line: 1, column: 1 }) {
+  if (state.taintMode === "off") {
     return;
   }
-  const question = redact(taint.untrustedQuestion(action, labels, text), state);
-  const answer = await askState(state, question, ["yes", "no"], null);
-  if (answer !== "yes") {
-    throw new ScriptError("The human did not approve untrusted text from " + taint.originsText(labels, taint.UNTRUSTED) + " here" + askReason(state) + ".", node);
+  const where = untrusted.storePath(state.session);
+  let entry;
+  try {
+    entry = await untrusted.record(state.root, state.session, { source: redact(source, state), text: redact(text, state), time: untrusted.localTime(), keepBytes: state.keepUntrustedBytes });
+  } catch (err) {
+    throw new ScriptError("Could not save untrusted input in " + where + ": " + err.message, node);
+  }
+  // the same source and text as an input that is there: no new copy; an approved one does not taint again
+  if (entry.same !== undefined) {
+    auditStep(state, "untrusted", source, "the same as " + entry.session + "/" + entry.entry.n + ", " + entry.same);
+    return;
+  }
+  auditStep(state, "untrusted", source, "saved as " + where + entry.file);
+  if (entry.cut) {
+    state.execution.warnings.push({ message: "warning: untrusted input " + entry.n + " is " + sizeText(entry.size) + "; the store kept the first " + sizeText(state.keepUntrustedBytes), line: 1, column: 1 });
+  }
+  if (state.judge.automatically) {
+    await judgeNow(state, entry, redact(text, state));
   }
 }
 
-// private data in a fetch: ask the human once for each host in a session
-async function askPrivate(state, url, node) {
-  const labels = taint.current(state);
-  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
-  if (!taint.has(labels, taint.PRIVATE) || state.privateHosts.has(host)) {
+// "judge untrusted inputs automatically": the judge reads the new input; a failure is a warning, and the input stays
+async function judgeNow(state, entry, text) {
+  let verdict;
+  try {
+    const ask = judgeModel(state.judge.model || state.useModel, state.lendModel, state.secrets, state.subagentUrl);
+    verdict = await judgeText({ ask, prompt: state.judge.prompt, source: entry.source, text, signal: state.execution.signal });
+  } catch (err) {
+    state.execution.warnings.push({ message: "warning: the judge could not read untrusted input " + entry.n + ": " + redact(err.message, state), line: 1, column: 1 });
     return;
   }
-  const answer = await askState(state, "Send private data to " + host + "?", ["yes", "no"], null);
-  if (answer !== "yes") {
-    throw new ScriptError("The human did not approve sending private data to " + host + askReason(state) + ".", node);
+  const approved = await untrusted.setVerdict(state.root, state.session, entry.n, verdict, state.judge.approves);
+  auditStep(state, "judge", entry.source, verdict.result + (verdict.reason ? ": " + verdict.reason : "") + (approved ? ", approved" : ""));
+}
+
+// the model of the judge: lent by the harness, or from "use model" with a key; throws a plain Error
+function judgeModel(use, lendModel, secrets, url) {
+  if (lendModel) {
+    return lendModel(use === null ? null : use.model);
   }
-  state.privateHosts.add(host);
+  if (use === null || use.secret === null) {
+    throw new Error("the judge needs a model and a key in AGENTS.talk: use model 'claude-haiku-5-5' for judging with secret ANTHROPIC_API_KEY");
+  }
+  const entry = secrets.get(use.secret);
+  if (entry === undefined || entry.value === null) {
+    throw new Error("no value for secret " + use.secret + ". Put it in the environment, in .env.local or in .env");
+  }
+  return anthropicModel({ url, key: entry.value, model: use.model });
+}
+
+// for the harness: is there an AGENTS.talk, does it require ClankTalk, and which other tools does it allow
+// see src/md/features/harness-tools.md; errors are AGENTS.talk's own, so a harness can fail closed
+export async function projectHarness(root) {
+  const resolved = nodePath.resolve(root);
+  const exists = fsSync.existsSync(nodePath.join(resolved, AGENTS_TALK));
+  const agents = await loadAgentsTalk(resolved, {});
+  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: agents.harnessTools, untrusted: agents.untrustedHarnessTools, errors: agents.errors.map((error) => error.message) };
+}
+
+// an allowed harness tool ran while ClankTalk was on: an audit record, and for an untrusted tool, an untrusted input
+// the harness decides "untrusted" from projectHarness's list; see src/md/features/harness-tools.md
+// gives the ref of the stored input, such as claude-code-4f2a/3, or null
+export async function recordHarnessTool(root, { session, tool, input, output, untrusted: isUntrusted }) {
+  const resolved = nodePath.resolve(root);
+  const agents = await loadAgentsTalk(resolved, {});
+  const text = typeof output === "string" ? output : JSON.stringify(output) ?? "";
+  const shownInput = oneLine(JSON.stringify(input) ?? "").slice(0, 300);
+  let ref = null;
+  const mode = untrusted.taintMode(agents.taint, false, await untrusted.commandLineMode(resolved));
+  if (isUntrusted && mode !== "off") {
+    const found = await untrusted.record(resolved, session, { source: tool + " " + shownInput, text, time: untrusted.localTime(), keepBytes: agents.keepUntrustedBytes || untrusted.DEFAULT_KEEP_BYTES });
+    ref = found.same ? found.session + "/" + found.entry.n : session + "/" + found.n;
+  }
+  const now = new Date();
+  const folder = nodePath.join(resolved, ".talk", "audit");
+  await fs.mkdir(folder, { recursive: true });
+  let name = localDate(now) + ".log";
+  let block;
+  if (agents.auditFormat === "json") {
+    name = localDate(now) + ".jsonl";
+    block = JSON.stringify({ type: "harnessTool", time: now.toISOString(), session, tool, input, size: text.length, untrusted: ref }) + "\n";
+  } else {
+    block = "== " + clock(now) + "  harness tool " + oneLine(tool) + "  (session " + oneLine(session) + ") ==\n  " + shownInput + "\n--\n  result: " + text.length + " characters" + (ref === null ? "" : "; untrusted input " + ref) + "\n\n";
+  }
+  await fs.appendFile(nodePath.join(folder, name), block);
+  await untrusted.wroteOwn(nodePath.join(folder, name));
+  return ref;
+}
+
+// the '*' warnings for the taint command, which reads AGENTS.talk on its own
+export async function projectFetchWarnings(root) {
+  return wideFetchWarnings(await loadAgentsTalk(nodePath.resolve(root), {}));
+}
+
+// for "npx clank-talk taint judge": the judge of the project, from AGENTS.talk and the secrets
+// gives { judge(source, text), approves } or { error }
+export async function projectJudge(root, options = {}) {
+  const agents = await loadAgentsTalk(nodePath.resolve(root), {});
+  if (agents.errors.length > 0) {
+    return { error: "AGENTS.talk has errors: " + agents.errors.map((error) => error.message).join("; ") };
+  }
+  const secrets = await loadSecrets(nodePath.resolve(root), agents.allowedSecrets);
+  let ask;
+  try {
+    ask = judgeModel(agents.judge.model || agents.useModel, options.lendModel || null, secrets.secrets, options.url || API_URL);
+  } catch (err) {
+    return { error: "The judge cannot run: " + err.message };
+  }
+  return { approves: agents.judge.approves, judge: (source, text) => judgeText({ ask, prompt: agents.judge.prompt, source, text }), lines: (source, text) => judgeLines({ ask, source, text }) };
+}
+
+// at most this many characters, with "..." at the end of a longer text
+function cutText(text, most) {
+  return text.length > most ? text.slice(0, most - 3) + "..." : text;
+}
+
+// after a run with no sandbox: if it changed the taint files, put them back, audit it, make the session untrusted, and fail
+async function checkTalkFolder(state, before, program, node) {
+  const { changed, restored } = await untrusted.check(state.root, before);
+  if (changed.length === 0) {
+    return;
+  }
+  const back = restored.length === 0 ? "" : "; put back " + restored.join(", ");
+  auditStep(state, "restore", ".talk/", program + " changed " + changed.join(", ") + back);
+  // the audit as it was before the run, so the human can compare it with the file now
+  if (before.audit !== null) {
+    state.execution.output.push(redact("--- the last " + before.audit.lines.length + " lines of " + before.audit.file + " before the run ---\n" + before.audit.lines.join("\n"), state));
+  }
+  if (state.taintMode !== "off") {
+    await noteUntrusted(state, "run " + program + " changed .talk/", "The program changed these files, and ClankTalk put them back:\n" + changed.join("\n"), node);
+  }
+  throw new ScriptError("The program " + program + " changed files in .talk/, which scripts and programs must not change: " + changed.join(", ") + "." + (restored.length === 0 ? "" : " ClankTalk put back " + restored.join(", ") + ".") + (before.audit === null ? "" : " The output shows the audit from before the run.") + " Run the program in a sandbox", node);
+}
+
+// a hint for the common causes of a pattern that is not valid; see src/md/features/language.md
+function patternHint(message) {
+  if (/\(\?[imsx-]+[):]/.test(message)) {
+    return ".\nJavaScript has no (?i) or other inline flags. For a match with no case, use a character class such as [Tt]aint.";
+  }
+  if (message.endsWith("Invalid escape")) {
+    return ".\nWith the u flag, an escape that is not needed is an error, such as \\- outside [...]: write - alone.";
+  }
+  if (/Unterminated group|Nothing to repeat|Incomplete quantifier|Lone quantifier/.test(message)) {
+    return ".\nIn a quoted string, a backslash is an escape of the string, so \\( reaches the pattern as (. For a pattern with backslashes, write it raw: pattern /test\\(/.";
+  }
+  return "";
+}
+
+// "found null" in an error: say what null means here
+function nullHint(message) {
+  if (!/found null$/.test(message)) {
+    return message;
+  }
+  return message + ": the value has nothing in it.\nIf it came from an earlier find or fetch, that command found nothing.";
+}
+
+// 1536 bytes is "2 KB", 5242880 is "5 MB"
+function sizeText(bytes) {
+  return bytes >= 1024 * 1024 ? Math.ceil(bytes / (1024 * 1024)) + " MB" : Math.ceil(bytes / 1024) + " KB";
+}
+
+// in an untrusted session, a risky action asks the human; no answer, or no, is an error
+// gives true if it asked and the human said yes, false if it did not ask
+// kind is one of TAINT_ASKS; only the kinds in "taint asks before" (or the default) ask
+async function askUntrusted(state, kind, action, node) {
+  if (state.taintMode === "off" || !state.taintAsks.includes(kind)) {
+    return false;
+  }
+  // taint is for the whole project: the inputs of all sessions that are not approved
+  const entries = await untrusted.pendingAll(state.root);
+  if (entries.length === 0) {
+    return false;
+  }
+  const shown = action.length > 120 ? action.slice(0, 117) + "..." : action;
+  // the question names at most 5 inputs, and "approve" approves only those; a source is cut, with no control characters
+  const named = entries.slice(0, 5);
+  const sources = named.map(({ entry }) => cutText(untrusted.printable(entry.source), 80)).join(", ") + (entries.length > 5 ? ", and " + (entries.length - 5) + " more" : "");
+  const count = entries.length === 1 ? "1 untrusted input is" : entries.length + " untrusted inputs are";
+  const question = redact(shown + "? " + count + " not approved: " + sources + ". Review them with: npx clank-talk taint", state);
+  const answer = await askState(state, question, ["approve and untaint", "yes, this time only", "no"], null);
+  if (answer === "approve and untaint") {
+    const refs = [];
+    for (const session of new Set(named.map((item) => item.session))) {
+      const numbers = await untrusted.approve(state.root, session, named.filter((item) => item.session === session).map((item) => item.entry.n));
+      refs.push(...numbers.map((n) => session + "/" + n));
+    }
+    auditStep(state, "approve", untrusted.STORE + "/", "untrusted inputs " + refs.join(", "));
+    return true;
+  }
+  if (answer === "yes, this time only") {
+    return true;
+  }
+  throw new ScriptError("The human did not approve this while untrusted inputs are not approved: " + shown + askReason(state) + ".", node);
+}
+
+// a form shows at most this many inputs; the human can run taint review again for the rest
+const REVIEW_INPUTS = 20;
+
+// taint review: a form with a table of the inputs that are not approved, and a box to approve each one
+// only the human answers the form; gives the number of inputs approved; see src/md/features/taint.md
+async function taintReview(command, state) {
+  const entries = await untrusted.pendingAll(state.root);
+  if (entries.length === 0) {
+    return 0;
+  }
+  if (state.ask === null) {
+    throw new ScriptError("taint review failed: there is no way to show a form to the human here. Ask them to run: npx clank-talk taint", command);
+  }
+  const shown = entries.slice(0, REVIEW_INPUTS);
+  const refs = shown.map(({ session, entry }) => session + "/" + entry.n);
+  const rows = [["ref", "time", "size", "judge", "source"]];
+  shown.forEach(({ entry }, k) => {
+    // the source can hold text that the agent chose, so it is in quotes: it cannot pass for a column or a row
+    rows.push([refs[k], entry.time, sizeText(entry.size), entry.verdict ? entry.verdict.result : "-", '"' + cutText(untrusted.printable(entry.source), 80) + '"']);
+  });
+  // short lines: the client cuts a long line
+  const more = entries.length > shown.length ? "\nAnd " + (entries.length - shown.length) + " more: run taint review again." : "";
+  const question = redact("Approve the untrusted inputs that you trust.\n\n" + untrusted.table(rows).join("\n") + "\n\nRead one with: npx clank-talk taint show <ref>" + more, state);
+  const fields = refs.map((ref, k) => ({ name: "input" + k, title: "approve " + ref }));
+  const answer = await askState(state, question, [], null, fields);
+  if (answer === null) {
+    throw new ScriptError("taint review got no answer" + askReason(state) + ". Nothing was approved.", command);
+  }
+  const refsApproved = [];
+  for (const session of new Set(shown.map((item) => item.session))) {
+    const numbers = shown.filter((item, k) => item.session === session && answer["input" + k]).map((item) => item.entry.n);
+    if (numbers.length > 0) {
+      refsApproved.push(...(await untrusted.approve(state.root, session, numbers, "the review")).map((n) => session + "/" + n));
+    }
+  }
+  if (refsApproved.length > 0) {
+    auditStep(state, "approve", untrusted.STORE + "/", "untrusted inputs " + refsApproved.join(", "));
+  }
+  return refsApproved.length;
 }
 
 // why an approval did not come: no way to ask, or no answer in time; empty for a plain "no"
@@ -3772,8 +4439,10 @@ function askReason(state) {
 }
 
 // ask through the host, with a time limit in ms (null: the default); used by ask, git push and fetch
+// with fields ([{ name, title }]), the host shows a form of yes or no boxes and gives { name: true or false }
 // state.askTimedOut tells the caller that nobody answered in time
-async function askState(state, question, choices, limit) {
+// many: the human can pick several of the choices, and the answer is a list of them
+async function askState(state, question, choices, limit, fields = null, many = false) {
   state.askTimedOut = false;
   if (state.ask === null) {
     return null;
@@ -3783,14 +4452,26 @@ async function askState(state, question, choices, limit) {
   }
   let timer = null;
   let answer = null;
+  // the end of the script or the time limit stops the question, so the host can close its dialog
+  const stop = new AbortController();
+  const stopAsk = () => stop.abort();
+  state.execution.signal?.addEventListener("abort", stopAsk);
   try {
-    const asking = state.ask({ question, choices, signal: state.execution.signal });
+    const request = { question, choices, signal: stop.signal };
+    if (fields !== null) {
+      request.fields = fields;
+    }
+    if (many) {
+      request.many = true;
+    }
+    const asking = state.ask(request);
     if (limit === null) {
       answer = await asking;
     } else {
       const timeout = new Promise((resolve) => {
         timer = setTimeout(() => {
           state.askTimedOut = true;
+          stop.abort();
           resolve(null);
         }, limit);
       });
@@ -3801,12 +4482,19 @@ async function askState(state, question, choices, limit) {
     answer = null;
   } finally {
     clearTimeout(timer);
+    state.execution.signal?.removeEventListener("abort", stopAsk);
   }
 
-  if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
+  if (many) {
+    // a list of the choices; none picked is an empty list, and anything else is no answer
+    answer = Array.isArray(answer) && answer.every((item) => choices.includes(item)) ? choices.filter((choice) => answer.includes(choice)) : null;
+  } else if (fields !== null) {
+    // a form: only the true boxes count
+    answer = answer !== null && typeof answer === "object" ? Object.fromEntries(fields.map((field) => [field.name, answer[field.name] === true])) : null;
+  } else if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
     answer = null;
   }
-  let answerText = "answer: " + answer;
+  let answerText = "answer: " + (fields !== null && answer !== null ? fields.filter((field) => answer[field.name]).map((field) => field.title).join(", ") || "none" : many && answer !== null ? answer.join(", ") || "none" : answer);
   if (answer === null) {
     answerText = state.askTimedOut ? "no answer within " + Math.round(limit / 1000) + " s" : "no answer";
   }
@@ -3831,20 +4519,11 @@ function localDate(date) {
 }
 
 // one step that touches the world: kind (read, write, run, ...), target (a path, a program, a url), details
-// a step notes the labels of what its command read, such as (private)
-// all file text is private, so a read or a file change notes only untrusted
-const FILE_STEPS = ["read", "write", "append", "replace", "put", "remove", "move", "delete"];
-function auditStep(state, kind, target, details) {
-  let labels = taint.current(state);
-  // a taint step says its labels in its details
-  if (kind === "taint") {
-    labels = taint.none();
-  } else if (FILE_STEPS.includes(kind)) {
-    labels = taint.without(labels, taint.PRIVATE);
-  }
-  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact((details || "") + taint.note(labels), state), from: state.auditFrom };
-  if (labels.size > 0) {
-    record.labels = taint.forHook(labels);
+// extra: more fields for the JSON audit only, such as the full git arguments
+function auditStep(state, kind, target, details, extra = {}) {
+  const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact(details || "", state), from: state.auditFrom };
+  for (const name of Object.keys(extra)) {
+    record[name] = redact(String(extra[name]), state);
   }
   state.auditSteps.push(record);
   state.audit.records.push(record);
@@ -3872,12 +4551,10 @@ function cut(text, width) {
   return text.length > width ? text.slice(0, width - 3) + "..." : text;
 }
 
+// a step from inside a tool or a subagent is indented under it, so "from" is not needed
 function auditLine(record) {
-  let details = record.details;
-  if (record.from !== "script") {
-    details += (details === "" ? "" : ", ") + "from " + record.from;
-  }
-  return (record.time + "  " + record.kind.padEnd(8) + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(details)).trimEnd();
+  const kind = record.from !== "script" ? "  " + record.kind.padEnd(6) : record.kind.padEnd(8);
+  return (record.time + "  " + kind + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(record.details)).trimEnd();
 }
 
 // the audit keeps this many days by default; see src/md/features/audit.md
@@ -3912,13 +4589,22 @@ async function rotateAudit(state, folder, now) {
     const match = /^(\d{4}-\d{2}-\d{2})\.(log|jsonl)$/.exec(name);
     if (match !== null && match[1] < oldest) {
       await fs.rm(nodePath.join(folder, name), { force: true });
+      untrusted.deletedOwn(nodePath.join(folder, name));
       deleted++;
     }
   }
   if (deleted > 0) {
     auditStep(state, "audit", ".talk/audit/", "deleted " + deleted + (deleted === 1 ? " file" : " files") + " older than " + state.auditKeepDays + (state.auditKeepDays === 1 ? " day" : " days"));
   }
+  // the untrusted inputs go with the audit; see src/md/features/taint.md
+  const sessions = await untrusted.prune(state.root, oldest);
+  if (sessions.length > 0) {
+    auditStep(state, "audit", untrusted.STORE + "/", "deleted " + sessions.length + (sessions.length === 1 ? " session" : " sessions") + " older than " + state.auditKeepDays + (state.auditKeepDays === 1 ? " day" : " days") + ": " + sessions.join(", "));
+  }
 }
+
+// the last session written to each audit file, for the session line
+const auditSessions = new Map();
 
 // append this script's block to the day's file in .talk/audit/; scripts cannot change @/.talk/
 // a failure to write is a warning, so the audit never breaks a script
@@ -3941,13 +4627,21 @@ async function writeAudit(state, source, status, errors) {
         text += JSON.stringify({ type: "step", ...record }) + "\n";
       }
     } else {
-      // (main) means no agent name was given: the main agent, or a subagent that did not pass its name
-      const who = state.agent === null ? " (main)" : " (agent " + state.agent + ")";
-      const session = state.session === null ? "" : "  session " + state.session;
+      // a session line when the session changes in this file; the header then has no session name
+      const file = nodePath.join(folder, name);
+      if (state.session !== null && auditSessions.get(file) !== state.session) {
+        auditSessions.set(file, state.session);
+        text += "-- session " + oneLine(state.session) + " --\n";
+      }
+      // an agent name only for an agent that passed one, such as a subagent; the main agent has none
+      const who = state.agent === null ? "" : " (" + oneLine(state.agent) + ")";
       const under = state.policy === null ? "" : "  (policy " + state.policy.name + " " + state.policy.hash + ")";
-      text += "== " + clock(now) + session + "  script " + state.auditScript + who + "  " + status + "  " + state.execution.steps + " steps" + under + " ==\n";
+      // a first line "# Fix the cart total" is the script's purpose: it goes in the header, not twice
+      const lines = source.trim().split("\n");
+      const purpose = lines.length > 0 && lines[0].startsWith("#") ? oneLine(lines.shift().replace(/^#+\s*/, "")) : "";
+      text += "== " + clock(now) + "  script " + state.auditScript + who + (purpose === "" ? "" : "  " + purpose) + "  (" + status + ", " + state.execution.steps + (state.execution.steps === 1 ? " step)" : " steps)") + under + " ==\n";
       // the script is indented, so no line of it can look like a header (==) or the end of the script (--)
-      text += source.trim().split("\n").map((line) => ("  " + oneLine(line)).trimEnd()).join("\n") + "\n--\n";
+      text += lines.map((line) => ("  " + oneLine(line)).trimEnd()).join("\n") + "\n--\n";
       for (const record of state.auditSteps) {
         text += auditLine(record) + "\n";
       }
@@ -3957,6 +4651,8 @@ async function writeAudit(state, source, status, errors) {
       text += "\n";
     }
     await fs.appendFile(nodePath.join(folder, name), text);
+    // a write of ClankTalk's own: the check around a run with no sandbox does not count it
+    await untrusted.wroteOwn(nodePath.join(folder, name));
     // "audit also to" in the policy: a copy outside the project, where project tools cannot reach it
     for (const rule of state.policy === null ? [] : state.policy.rules) {
       if (rule.type === "auditAlso") {
@@ -3986,8 +4682,7 @@ function recordUndo(state) {
     }
     const item = byPath.get(change.path);
     if (item === undefined) {
-      // labelsBefore: the file's taint entry before the script, so undo can put it back
-      byPath.set(change.path, { path: change.path, before: change.before, after: change.after, labelsBefore: change.labelsBefore || null });
+      byPath.set(change.path, { path: change.path, before: change.before, after: change.after });
     } else {
       item.after = change.after;
     }
@@ -4046,7 +4741,6 @@ async function runUndo(command, state) {
   // check everything first: each file must be as the script left it,
   // or as a newer item puts it back; if one is not, nothing changes
   const final = new Map();
-  const finalLabels = new Map();
   const changed = [];
   for (const item of items) {
     let now;
@@ -4059,7 +4753,6 @@ async function runUndo(command, state) {
       changed.push(item.path);
     }
     final.set(item.path, item.before);
-    finalLabels.set(item.path, item.labelsBefore || null);
   }
   if (changed.length > 0) {
     throw new ScriptError("Cannot undo: these files changed after the script: " + changed.join(", ") + ". Nothing was changed", command);
@@ -4072,7 +4765,7 @@ async function runUndo(command, state) {
   try {
     for (const [path, text] of final) {
       was.push({ path, text: await currentText(path, state) });
-      await restoreFile(path, text, state, command, finalLabels.get(path));
+      await restoreFile(path, text, state, command);
       restored.push(path);
     }
   } catch (err) {
@@ -4126,9 +4819,55 @@ async function currentText(path, state) {
   }
 }
 
+// a git step for the audit, in the script's words: { target, details }
+function gitShown(op, step, args) {
+  if (op === "switch") {
+    return { target: "switch to " + (args.includes("--create") ? "new branch " : "") + step.branch, details: "" };
+  }
+  if (op === "commit") {
+    return { target: "commit '" + step.message + "'", details: step.files.length + (step.files.length === 1 ? " file" : " files") };
+  }
+  if (op === "merge") {
+    return { target: "merge " + step.branch, details: "fast-forward" };
+  }
+  if (op === "rebase") {
+    return { target: "rebase onto " + step.branch, details: "" };
+  }
+  if (op === "delete") {
+    return { target: "delete branch " + step.branch, details: "" };
+  }
+  if (op === "move") {
+    return { target: "move " + step.from + " to " + step.to, details: "" };
+  }
+  if (op === "stash") {
+    return { target: args[1] === "pop" ? "stash pop" : "stash", details: "" };
+  }
+  if (op === "stashes" || op === "tags") {
+    return { target: op, details: "" };
+  }
+  if (op === "tag") {
+    return { target: "tag " + step.tag, details: "" };
+  }
+  if (op === "blame") {
+    return { target: "blame " + step.file, details: "" };
+  }
+  if (op === "restore") {
+    return { target: "restore " + step.files.join(", "), details: step.files.length + (step.files.length === 1 ? " file" : " files") };
+  }
+  if (op === "pull") {
+    return { target: "pull origin " + step.branch, details: "fast-forward" };
+  }
+  if (op === "push" && step.tag !== undefined) {
+    return { target: "push tag " + step.tag, details: "" };
+  }
+  // status, branch, branches, push, diff, log, show: the operation, and what the script named, with no flags
+  const named = args.slice(1).filter((arg) => !arg.startsWith("-") && arg !== "HEAD" && arg !== "origin");
+  return { target: [op, ...named].join(" "), details: "" };
+}
+
 // put a file back to its old text; null removes a file that the script made
 // the same checks as a write, and the "undo" and "change" hooks
-async function restoreFile(path, text, state, node, labelsBefore) {
+async function restoreFile(path, text, state, node) {
   const file = new FileRef(nodePath.resolve(state.root, path), state.root);
   checkInsideRoot(file.absolute, state, node, path);
   checkDenied("writes", state, node);
@@ -4150,17 +4889,6 @@ async function restoreFile(path, text, state, node, labelsBefore) {
     state.seen.set(await fs.realpath(file.absolute), text);
   }
   state.execution.changes.push({ path: file.path, before, after: text, undo: true });
-  // undo puts back old text, and the labels that text had, so undo cannot remove a label
-  const entry = state.fileLabels[file.path];
-  if (labelsBefore && text !== null && labelsBefore.hash === taint.hashText(text)) {
-    state.fileLabels[file.path] = { ...labelsBefore };
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "restored: " + taint.describe(taint.entryLabels(labelsBefore)));
-  } else if (entry !== undefined && (text === null || entry.hash !== taint.hashText(text))) {
-    taint.deleteFile(state.fileLabels, file.path);
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "cleared");
-  }
   await changeHooks("after", step, state, node);
 }
 
@@ -4192,15 +4920,82 @@ function changeStep(kind, file, fields) {
 }
 
 // a file change runs the hooks for its kind (write, replace, ...) and the "change" hooks
-async function changeHooks(when, step, state, node) {
+// details: what the change did, for the audit; changeDetails gives it for most kinds
+async function changeHooks(when, step, state, node, details) {
   if (when === "after") {
-    let details = "undo saved";
-    if (step.kind === "undo") {
-      details = step.text === null ? "removed" : "put back";
-    }
-    auditStep(state, step.kind, step.path, details);
+    auditStep(state, step.kind, step.path, details !== undefined ? details : changeDetails(step, state));
   }
   await runHooks(when, [step.kind, "change"], step, state, node);
+}
+
+// what a file change did, for the audit: "12 lines, new file", "lines 40-52 with 4 lines", "3 lines after line 120"
+// each change saves its undo, so the audit does not say so
+function changeDetails(step, state) {
+  const lines = (n) => n + (n === 1 ? " line" : " lines");
+  const range = (from, to) => (from === to ? "line " + from : "lines " + from + "-" + to);
+  if (step.kind === "undo") {
+    return step.text === null ? "removed" : "put back";
+  }
+  if (step.kind === "write") {
+    const change = lastChange(state, step.path);
+    return lines(linesIn(step.text)) + (change !== null && change.before === null ? ", new file" : "");
+  }
+  if (step.kind === "append") {
+    return lines(linesIn(step.text)) + " at the end";
+  }
+  if (step.kind === "put") {
+    return lines(linesIn(step.text)) + " " + step.where + " line " + step.line;
+  }
+  if (step.kind === "remove") {
+    return range(step.from, step.to);
+  }
+  if (step.kind === "replace" && step.from !== undefined) {
+    return range(step.from, step.to) + " with " + lines(linesIn(step.text));
+  }
+  if (step.kind === "move") {
+    return "to " + step.to;
+  }
+  return "";
+}
+
+// the number of lines in a text; a line break at the end does not start a line
+function linesIn(text) {
+  if (text === null || text === undefined || text === "") {
+    return 0;
+  }
+  const count = text.split("\n").length;
+  return text.endsWith("\n") ? count - 1 : count;
+}
+
+// the last change to a file in this script, or null
+function lastChange(state, path) {
+  for (let i = state.execution.changes.length - 1; i >= 0; i--) {
+    if (state.execution.changes[i].path === path) {
+      return state.execution.changes[i];
+    }
+  }
+  return null;
+}
+
+// the lines of the new text that a change touched: "line 40", "lines 40-52", or "" for no change
+function changedRange(before, after) {
+  const a = (before || "").split("\n");
+  const b = (after || "").split("\n");
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) {
+    start++;
+  }
+  if (start === a.length && start === b.length) {
+    return "";
+  }
+  let endA = a.length - 1;
+  let endB = b.length - 1;
+  while (endA >= start && endB >= start && a[endA] === b[endB]) {
+    endA--;
+    endB--;
+  }
+  const last = Math.max(endB, start);
+  return start === last ? "line " + (start + 1) : "lines " + (start + 1) + "-" + (last + 1);
 }
 
 // run the hooks for a step, in the order they are defined
@@ -4210,9 +5005,6 @@ async function runHooks(when, names, step, state, node) {
   if (state.inHook) {
     return;
   }
-  // the step's labels: what the command read so far; the step's fields carry them too
-  step.labels = taint.forHook(taint.current(state));
-  taint.attach(step, taint.current(state));
   for (const hook of state.hooks) {
     if (hook.when === when && names.includes(hook.name)) {
       await runHook(hook, step, state, node);
@@ -4224,7 +5016,6 @@ async function runHooks(when, names, step, state, node) {
 async function runHook(hook, step, state, node) {
   const savedVariables = state.variables;
   const savedResult = state.result;
-  const savedResultLabels = state.resultLabels;
   const savedHandler = state.handler;
   const savedHandling = state.handling;
   // the hook gets a copy of the step, so it cannot change what runs; see src/md/features/hooks.md
@@ -4252,7 +5043,6 @@ async function runHook(hook, step, state, node) {
   } finally {
     state.variables = savedVariables;
     state.result = savedResult;
-    state.resultLabels = savedResultLabels;
     state.handler = savedHandler;
     state.handling = savedHandling;
     state.inHook = false;
@@ -4262,7 +5052,6 @@ async function runHook(hook, step, state, node) {
 }
 
 // a deep copy of lists and plain objects; files, lines and secrets cannot change, so they stay as they are
-// the copy keeps the taint labels of the value
 function copyValue(value) {
   let copy = value;
   if (Array.isArray(value)) {
@@ -4275,7 +5064,6 @@ function copyValue(value) {
   } else {
     return value;
   }
-  taint.attach(copy, taint.labelsOf(value));
   return copy;
 }
 
@@ -4356,7 +5144,6 @@ function scopeFor(name, state) {
 }
 
 // set a variable, a property or an index
-// the variable or object takes the labels of the command so far, which hold the value's labels
 async function assign(target, value, state) {
   if (target.type === "result") {
     state.result = value;
@@ -4365,7 +5152,6 @@ async function assign(target, value, state) {
   if (target.type === "variable") {
     const scope = scopeFor(target.name, state);
     setOwn(scope, target.name, value);
-    taint.setSlot(scope, target.name, taint.current(state));
     return;
   }
 
@@ -4399,8 +5185,6 @@ async function assign(target, value, state) {
   } catch (err) {
     throw new ScriptError("Cannot set '" + name + "'", target);
   }
-  // a list or object keeps one set of labels for all its items
-  taint.attach(object, taint.current(state));
 }
 
 // true if value is target, or holds it at any depth
@@ -4555,6 +5339,12 @@ function evaluateBinary(node, left, right) {
   if (op === "ends with") {
     return left !== null && right !== null && toText(left).endsWith(toText(right));
   }
+  if (op === "does not start with") {
+    return !(left !== null && right !== null && toText(left).startsWith(toText(right)));
+  }
+  if (op === "does not end with") {
+    return !(left !== null && right !== null && toText(left).endsWith(toText(right)));
+  }
 
   throw new ScriptError("Unknown operator '" + op + "'", node);
 }
@@ -4588,7 +5378,7 @@ function convert(node, value) {
 // symlinks are followed. Nothing outside the root can be read.
 
 // operators that use the text of a file or a line
-const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "is in", "is not in"];
+const TEXT_OPERATORS = ["contains", "does not contain", "starts with", "ends with", "does not start with", "does not end with", "is in", "is not in"];
 
 // contains and is in on a list compare items, so a file in the list stays a file
 function inList(op, left, right) {
@@ -4662,7 +5452,65 @@ async function resolvePath(text, state, node) {
 
   const absolute = nodePath.resolve(base, rest);
   checkInsideRoot(absolute, state, node, text);
-  return new FileRef(absolute, state.root);
+  return new FileRef(absolute, state.root, rest.endsWith("/"));
+}
+
+// <path or file> is in <folder>: true if the path is inside the folder, at any depth
+// a text path is from the project root, as in the change's path; see src/md/features/language.md
+// both paths are compared as real paths, so a link or a change of letter case cannot get past a hook
+async function inFolder(left, folder, node) {
+  if (left === null) {
+    return false;
+  }
+  let absolute;
+  if (left instanceof FileRef) {
+    absolute = left.absolute;
+  } else if (typeof left === "string") {
+    absolute = nodePath.resolve(folder.root, left);
+  } else {
+    throw new ScriptError("'is in' a folder needs a path or a file, found " + describe(left), node.left);
+  }
+  const path = await canonicalPath(absolute);
+  const inside = await canonicalPath(folder.absolute);
+  return path !== inside && isInside(path, inside);
+}
+
+// macOS and Windows file systems ignore letter case by default, so paths there are compared in lower case
+const FOLD_CASE = process.platform === "darwin" || process.platform === "win32";
+
+// a path to compare: links followed for the part that exists, Unicode in one form (NFC), and lower case where
+// the file system ignores case
+async function canonicalPath(absolute) {
+  let existing = absolute;
+  const rest = [];
+  let real = null;
+  while (real === null) {
+    try {
+      real = nodePath.join(await fs.realpath(existing), ...rest);
+    } catch (err) {
+      const parent = nodePath.dirname(existing);
+      if (parent === existing) {
+        real = absolute;
+      } else {
+        rest.unshift(nodePath.basename(existing));
+        existing = parent;
+      }
+    }
+  }
+  const normal = real.normalize("NFC");
+  return FOLD_CASE ? normal.toLowerCase() : normal;
+}
+
+// a path written with a / at the end, or a folder that exists
+async function isFolder(file) {
+  if (file.folder) {
+    return true;
+  }
+  try {
+    return (await fs.stat(file.absolute)).isDirectory();
+  } catch (err) {
+    return false;
+  }
 }
 
 // the parts of a glob before its first wildcard, such as dist/lib for dist/lib/**/*.js
@@ -4813,15 +5661,6 @@ async function readText(file, state, node) {
   state.seen.set(real, raw);
   const text = withoutBom(raw);
   step.text = text;
-  // file text is private: it must not leave the machine without a question
-  taint.addLabel(state, taint.PRIVATE);
-  // a file that a script wrote with untrusted text is still untrusted
-  const known = taint.forFileText(state.fileLabels, file.path, text);
-  taint.add(state, known.labels);
-  if (known.dropped) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "dropped: changed outside ClankTalk");
-  }
   auditRead(state, file.path);
   await runHooks("after", ["read"], step, state, node);
   return text;
@@ -4950,34 +5789,7 @@ async function writeText(file, text, append, state, node) {
   }
   await fs.writeFile(real, after, "utf8");
   state.seen.set(await fs.realpath(real), after);
-  state.execution.changes.push({ path: file.path, before, after, labelsBefore: labelEntryFor(state, file.path, before) });
-  // an append keeps what is in the file, so it keeps the file's labels too
-  let labels = taint.current(state);
-  if (append && before !== null) {
-    labels = taint.union(labels, taint.forFileText(state.fileLabels, file.path, before).labels);
-  }
-  fileLabelsAfter(state, file.path, after, labels);
-}
-
-// a copy of a file's taint entry, if it holds for this text; undo uses it to put the labels back
-function labelEntryFor(state, path, text) {
-  const entry = state.fileLabels[path];
-  if (entry === undefined || text === null || entry.hash !== taint.hashText(text)) {
-    return null;
-  }
-  return { ...entry, labels: entry.labels.map((item) => ({ label: item.label, from: [...item.from] })) };
-}
-
-// remember the untrusted labels of a file's new text, and audit a change
-function fileLabelsAfter(state, path, text, labels) {
-  const where = { time: new Date().toISOString().slice(0, 16).replace("T", " "), session: state.session, script: state.auditScript };
-  const change = taint.afterWrite(state.fileLabels, path, text, labels, where);
-  if (change === null) {
-    return;
-  }
-  state.fileLabelsChanged = true;
-  const entry = state.fileLabels[path];
-  auditStep(state, "taint", path, change === "set" ? taint.describe(taint.entryLabels(entry)) : "cleared");
+  state.execution.changes.push({ path: file.path, before, after });
 }
 
 // the checks before a script changes a file: one file, writes not denied, not protected, not hidden
@@ -5019,11 +5831,7 @@ async function deleteFile(file, state, node) {
   const text = await fs.readFile(real, "utf8");
   await fs.rm(file.absolute);
   state.seen.delete(real);
-  state.execution.changes.push({ path: file.path, before: text, after: null, labelsBefore: labelEntryFor(state, file.path, text) });
-  if (taint.deleteFile(state.fileLabels, file.path)) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", file.path, "cleared");
-  }
+  state.execution.changes.push({ path: file.path, before: text, after: null });
   await changeHooks("after", step, state, node);
 }
 
@@ -5044,25 +5852,24 @@ async function moveFile(from, to, state, node) {
   }
   const step = changeStep("move", from, { to: to.path });
   await changeHooks("before", step, state, node);
+  // the target is a change too, so a hook for a folder also sees a move into it
+  const target = changeStep("move", to, { from: from.path, to: to.path });
+  await runHooks("before", ["move", "change"], target, state, node);
   const text = await fs.readFile(real, "utf8");
   await makeParentFolders(to, state, node);
   await fs.rename(real, to.absolute);
   state.seen.delete(real);
   state.seen.set(await fs.realpath(to.absolute), text);
   // two changes, so undo puts the text back at the old path, and removes the new one
-  state.execution.changes.push({ path: from.path, before: text, after: null, labelsBefore: labelEntryFor(state, from.path, text) });
-  state.execution.changes.push({ path: to.path, before: null, after: text, labelsBefore: null });
-  // the labels move with the file
-  if (taint.moveFile(state.fileLabels, from.path, to.path)) {
-    state.fileLabelsChanged = true;
-    auditStep(state, "taint", to.path, "moved from " + from.path);
-  }
+  state.execution.changes.push({ path: from.path, before: text, after: null });
+  state.execution.changes.push({ path: to.path, before: null, after: text });
   await changeHooks("after", step, state, node);
+  await runHooks("after", ["move", "change"], target, state, node);
 }
 
 // is this file AGENTS.talk, by name (any case) or by being the same file on disk (a link to it)?
 // a protected path, relative to the root: any .talk file, anything in talk/ (extensions),
-// or anything in .talk/ (the audit and taint labels); no allow line can open these
+// or anything in .talk/ (the audit and the untrusted inputs); no allow line can open these
 // letter case does not matter, because some file systems ignore it
 function isProtectedPath(relative) {
   const lower = relative.toLowerCase();
@@ -5079,6 +5886,15 @@ async function isProtected(file, state, node) {
   const { real, relative } = await realTarget(file, state, node);
   if (isProtectedPath(relative)) {
     return true;
+  }
+  // if .talk/ is a link (a program with no sandbox can make one), its real target is protected too
+  try {
+    const talk = await fs.realpath(nodePath.join(state.root, ".talk"));
+    if (real === talk || real.startsWith(talk + nodePath.sep)) {
+      return true;
+    }
+  } catch (err) {
+    // no .talk/: nothing to add
   }
   try {
     const target = await fs.stat(real);
@@ -5191,7 +6007,9 @@ async function replaceInFile(file, old, replacement, state, command) {
   if (replacements.length > 0 && text !== before) {
     await writeText(file, text, false, state, command);
   }
-  await changeHooks("after", step, state, command);
+  const count = replacements.length === 1 ? "1 match" : replacements.length + " matches";
+  const where = changedRange(before, text);
+  await changeHooks("after", step, state, command, replacements.length === 0 ? "no match" : count + (where === "" ? "" : ", " + where));
   return replacements;
 }
 
@@ -5214,7 +6032,7 @@ async function replaceIn(text, old, replacement, state, node) {
   if (!(old instanceof Pattern)) {
     return replaceAll(text, old, replacement);
   }
-  const answer = await patternJob({ kind: "replace", source: old.source, text, replacement }, state, node);
+  const answer = await patternJob({ kind: "replace", source: old.source, flags: old.flags, text, replacement }, state, node);
   const replacements = [];
   for (const found of answer.replacements) {
     const before = text.slice(0, found.index);
@@ -5466,7 +6284,7 @@ async function matchingLines(text, lines, state, node) {
   if (!(text instanceof Pattern)) {
     return lines.filter((line) => line.text.includes(text));
   }
-  const answer = await patternJob({ kind: "lines", source: text.source, lines: lines.map((line) => line.text) }, state, node);
+  const answer = await patternJob({ kind: "lines", source: text.source, flags: text.flags, lines: lines.map((line) => line.text) }, state, node);
   return answer.indexes.map((index) => lines[index]);
 }
 

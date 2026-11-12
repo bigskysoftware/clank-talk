@@ -1,0 +1,13 @@
+{
+  "name": "clank-talk",
+  "owner": {
+    "name": "Big Sky Software"
+  },
+  "plugins": [
+    {
+      "name": "clank-talk",
+      "source": "./src/js/harnesses/claude-code"
+    }
+  ],
+  "description": "ClankTalk for Claude Code: its questions in Claude Code's own question dialog"
+}

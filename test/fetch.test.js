@@ -56,6 +56,9 @@ before(async () => {
   await new Promise((resolve) => otherServer.listen(0, "127.0.0.1", resolve));
   otherBase = "http://127.0.0.1:" + otherServer.address().port;
   await fs.writeFile(path.join(root, "AGENTS.talk"), "allow fetch from '127.0.0.1'");
+  // these tests fetch many times in one session: taint is off, as "npx clank-talk taint off" sets it
+  await fs.mkdir(path.join(root, ".talk"), { recursive: true });
+  await fs.writeFile(path.join(root, ".talk", "taint-state.json"), '{ "taint": "off" }\n');
 });
 
 after(async () => {
@@ -97,7 +100,7 @@ test("a redirect is followed only to an allowed host", async () => {
   assert.equal(message, "fetch refused: localhost is a local or private address.\nTo allow it, a human can add this line to AGENTS.talk:\n  allow fetch from 'localhost'");
 });
 
-test("a new public host asks the human, once per session", async () => {
+test("a new public host asks the human: yes once, or yes for the session", async () => {
   const fetchHosts = new Set();
   const asked = [];
   const no = async (request) => {
@@ -106,14 +109,17 @@ test("a new public host asks the human, once per session", async () => {
   };
   assert.match((await errors("fetch 'https://example.invalid/'", { ask: no, fetchHosts }))[0], /^The human did not approve a fetch from example.invalid\./);
   assert.match((await errors("fetch 'https://example.invalid/'"))[0], /there is no way to ask them here/);
-  const yes = async (request) => {
-    asked.push(request.question);
-    return "yes";
+  const answer = (text) => async (request) => {
+    asked.push(request.question + " " + request.choices.join(" / "));
+    return text;
   };
   // the human says yes; the host does not exist, so the fetch itself fails
-  assert.match((await errors("fetch 'https://example.invalid/'", { ask: yes, fetchHosts }))[0], /^fetch failed: /);
-  assert.match((await errors("fetch 'https://example.invalid/'", { ask: yes, fetchHosts }))[0], /^fetch failed: /);
-  assert.deepEqual(asked, ["Fetch from example.invalid?", "Fetch from example.invalid?"]);
+  assert.match((await errors("fetch 'https://example.invalid/'", { ask: answer("yes, once"), fetchHosts }))[0], /^fetch failed: /);
+  assert.equal(fetchHosts.has("example.invalid"), false);
+  assert.match((await errors("fetch 'https://example.invalid/'", { ask: answer("yes, for this session"), fetchHosts }))[0], /^fetch failed: /);
+  assert.match((await errors("fetch 'https://example.invalid/'", { ask: answer("no"), fetchHosts }))[0], /^fetch failed: /);
+  const question = "Fetch from example.invalid? yes, once / yes, for this session / no";
+  assert.deepEqual(asked, ["Fetch from example.invalid?", question, question]);
 });
 
 test("a public name that points to a private address is refused", async () => {

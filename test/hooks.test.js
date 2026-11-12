@@ -57,6 +57,32 @@ test("change covers every kind of file change", async () => {
   assert.equal(await fs.readFile(path.join(root, "prod.cfg"), "utf8"), "A=1\n");
 });
 
+test("is in a folder checks the path, not the text: the migrations hook", async () => {
+  await agentsTalk("before change\n  if the change's path is in @/migrations/\n    reject 'A human writes the migrations'\n  end\nend");
+  await fs.mkdir(path.join(root, "migrations", "old"), { recursive: true });
+  assert.deepEqual((await errors("write 'x' to @/migrations/001.sql")).map((e) => e.message), ["A human writes the migrations"]);
+  assert.deepEqual((await errors("write 'x' to @/migrations/old/002.sql")).map((e) => e.message), ["A human writes the migrations"]);
+  assert.deepEqual(await output("write 'x' to @/migrations-notes.txt"), []);
+  assert.deepEqual(await output("write 'x' to @/src.sql"), []);
+});
+
+test("is in a folder: files, text paths, a folder that exists, and is not in", async () => {
+  await fs.mkdir(path.join(root, "src", "lib"), { recursive: true });
+  await fs.writeFile(path.join(root, "src", "lib", "a.js"), "");
+  const checks = [
+    "print @/src/lib/a.js is in @/src/",
+    "print 'src/lib/a.js' is in @/src/",
+    "print 'src/lib/a.js' is in @/src",
+    "print 'srcx/a.js' is in @/src/",
+    "print 'src' is in @/src/",
+    "print 'src/lib/a.js' is not in @/src/",
+    "print null is in @/src/",
+    "print @/src/**/*.js",
+  ];
+  assert.deepEqual(await output(checks.join("\n")), ["true", "true", "true", "false", "false", "false", "false", '["src/lib/a.js"]']);
+  assert.match((await errors("print 3 is in @/src/"))[0].message, /^'is in' a folder needs a path or a file, found /);
+});
+
 test("after hooks see the step and the result", async () => {
   await agentsTalk("after write\n  print 'wrote ' + the write's path\nend\nafter run_tests\n  print 'code ' + the result's code\nend\ntool run_tests\n  set the result to {code: 0}\nend");
   assert.deepEqual(await output("write 'x' to ./a.txt\nrun_tests"), ["wrote a.txt", "code 0"]);
@@ -79,6 +105,24 @@ test("a hook for a tool reads the step as the <tool>'s args", async () => {
   const [e] = await errors("deploy 'prod'");
   assert.equal(e.message, "no prod");
   assert.deepEqual(await output("deploy 'dev'\nprint it"), ["dev"]);
+});
+
+test("reject in a tool stops the tool, and the caller gets the message at the call", async () => {
+  await agentsTalk("tool deploy with target\n  if target is 'prod'\n    reject 'Not today, robot'\n  end\n  set the result to 'deployed ' + target\nend\ntool outer\n  deploy 'prod'\nend");
+  assert.deepEqual(await errors("print 1\ndeploy 'prod'"), [{ message: "Not today, robot", line: 2, column: 1 }]);
+  assert.deepEqual(await output("deploy 'dev'\nprint it"), ["deployed dev"]);
+  assert.deepEqual(await errors("outer"), [{ message: "Not today, robot", line: 1, column: 1 }]);
+  assert.deepEqual(await output("on error\n  print 'caught: ' + the error's message\n  continue\nend\ndeploy 'prod'"), ["caught: Not today, robot"]);
+});
+
+test("a hook for a tool reads each parameter by its name, by position or by name", async () => {
+  await agentsTalk("before deploy\n  if the deploy's target is 'prod'\n    reject 'no prod: ' + the deploy's region\n  end\nend\ntool deploy with target, region\n  set the result to target\nend");
+  assert.equal((await errors("deploy 'prod', 'eu'"))[0].message, "no prod: eu");
+  assert.equal((await errors("deploy with region: 'us', target: 'prod'"))[0].message, "no prod: us");
+  assert.equal((await errors("deploy 'prod'"))[0].message, "no prod: null");
+  assert.deepEqual(await output("deploy 'dev'\nprint it"), ["dev"]);
+  await agentsTalk("tool deploy with args\n  set the result to 1\nend");
+  assert.match((await errors("print 1"))[0].message, /^A tool parameter cannot be named 'args'/);
 });
 
 test("a hook cannot call a tool that runs a program, also through another tool", async () => {
@@ -124,6 +168,6 @@ test("hook rules", async () => {
   await agentsTalk("before banana\nend");
   assert.equal((await errors("print 1"))[0].message, "Unknown step 'banana' for a hook. Use read, write, append, replace, put, remove, move, delete, change, undo, run, git, fetch, start, stop, or a tool name");
   await agentsTalk("after write\n  reject 'x'\nend");
-  assert.equal((await errors("print 1"))[0].message, "'reject' is only allowed in a 'before' hook");
-  assert.equal((await errors("reject 'x'"))[0].message, "'reject' is only allowed in a 'before' hook");
+  assert.equal((await errors("print 1"))[0].message, "'reject' is only allowed in a 'before' hook or a tool");
+  assert.equal((await errors("reject 'x'"))[0].message, "'reject' is only allowed in a 'before' hook or a tool");
 });

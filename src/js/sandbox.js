@@ -118,6 +118,7 @@ export async function sandboxPlan(options) {
     reads: [],
     writes: [],
     secrets: [],
+    opened: [],
     allowedChanges: options.allowedChanges || [],
     network: Boolean(options.network),
     localNetwork: Boolean(options.localNetwork),
@@ -132,15 +133,23 @@ export async function sandboxPlan(options) {
   for (const path of CACHE_READS) {
     plan.reads.push(nodePath.join(home, path));
   }
+  const named = [];
   for (const path of options.reads || []) {
-    plan.reads.push(await realOrSame(expandHome(path, home)));
+    const real = await realOrSame(expandHome(path, home));
+    plan.reads.push(real);
+    named.push({ path: real, write: false });
   }
   for (const path of options.writes || []) {
-    plan.writes.push(await realOrSame(expandHome(path, home)));
+    const real = await realOrSame(expandHome(path, home));
+    plan.writes.push(real);
+    named.push({ path: real, write: true });
   }
   for (const path of SECRETS) {
     plan.secrets.push(nodePath.join(home, path));
   }
+  // a "reads of" or "writes to" line that names a secret path, or a path inside one, opens that path,
+  // because the human wrote it; a parent path, such as ~, does not open the secrets in it
+  plan.opened = named.filter(({ path }) => plan.secrets.some((secret) => path === secret || path.startsWith(secret + "/")));
   for (const path of [plan.root, plan.tmp, home, ...plan.reads, ...plan.writes]) {
     checkPathText(path);
   }
@@ -250,6 +259,13 @@ export function macosProfile(plan) {
   }
   secrets.push("(regex #\"^" + root + "/(.*/)?\\.env\")");
   lines.push("(deny file-read* " + secrets.join(" ") + ")");
+  // a secret path that AGENTS.talk names in "reads of" or "writes to": the last rule that matches wins
+  for (const { path, write } of plan.opened || []) {
+    lines.push("(allow file-read* (subpath \"" + path + "\"))");
+    if (write) {
+      lines.push("(allow file-write* (subpath \"" + path + "\"))");
+    }
+  }
 
   if (plan.network) {
     lines.push("(allow network*)");
@@ -306,6 +322,10 @@ export async function bwrapArgs(plan, cwd) {
   // secrets: hide them, even inside an allowed folder
   for (const path of plan.secrets) {
     args.push(...(await hideArgs(path)));
+  }
+  // a secret path that AGENTS.talk names: bound again after the hiding, so it wins
+  for (const { path, write } of plan.opened || []) {
+    args.push(write ? "--bind-try" : "--ro-bind-try", path, path);
   }
   args.push("--chdir", cwd);
   return args;

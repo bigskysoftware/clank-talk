@@ -5,6 +5,7 @@
   "comment": "Follows src/js/tokenizer.js. Paths and urls are close, not exact: a glob with [ ] can end early here.",
   "patterns": [
     { "include": "#comment" },
+    { "include": "#regex" },
     { "include": "#raw-string" },
     { "include": "#string-single" },
     { "include": "#string-double" },
@@ -16,6 +17,11 @@
     { "include": "#keywords" }
   ],
   "repository": {
+    "regex": {
+      "comment": "pattern /regex/flags: raw, it ends at a / that has no backslash and is not in [...]",
+      "match": "\\b(pattern)\\s+(/(?:\\\\.|\\[(?:\\\\.|[^\\]\\\\])*\\]|[^/\\\\\\n])*/[ims]*)",
+      "captures": { "1": { "name": "keyword.other.clanktalk" }, "2": { "name": "string.regexp.clanktalk" } }
+    },
     "comment": {
       "name": "comment.line.number-sign.clanktalk",
       "match": "#.*$"
@@ -80,7 +86,7 @@
         },
         {
           "name": "keyword.other.command.clanktalk",
-          "match": "\\b(print|set|increment|decrement|read|write|append|replace|find|put|remove|run|start|fetch|ask|undo|help|tool|import|before|after|allow|git|audit)\\b"
+          "match": "\\b(print|set|add|check|increment|decrement|read|write|append|replace|find|put|remove|run|start|fetch|ask|undo|help|tool|import|before|after|allow|git|audit|reject|taint|keeping)\\b"
         },
         {
           "name": "constant.language.clanktalk",

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { clankTalkExtension } from "../src/js/harnesses/pi-host.js";
+import { taintCommand } from "../src/js/taint-cli.js";
 
 // a fake pi: it keeps what the extension registers
 function fakePi() {
@@ -13,6 +14,10 @@ function fakePi() {
   };
   pi.registerTool = (tool) => {
     pi.tools[tool.name] = tool;
+  };
+  pi.commands = {};
+  pi.registerCommand = (name, command) => {
+    pi.commands[name] = command;
   };
   pi.setActiveTools = (names) => {
     pi.active = names;
@@ -35,6 +40,8 @@ let pi;
 
 before(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-"));
+  // with an AGENTS.talk, ClankTalk is on: the only tool
+  await fs.writeFile(path.join(root, "AGENTS.talk"), "");
   pi = fakePi();
   clankTalkExtension(pi, Type);
   await pi.handlers.session_start({}, { cwd: root });
@@ -94,6 +101,87 @@ test("ask goes to a pi dialog, and with no UI the answer is null", async () => {
   assert.equal((await call("ask 'Is this a test?' with 'yes' or 'no'\nprint it")).content[0].text, "null");
   ui.select = async () => undefined;
   assert.equal((await call("ask 'Is this a test?' with 'yes' or 'no'\nprint it", ctx)).content[0].text, "null");
+  // a choice shows all of its text, and the answer is the part before ': '
+  ui.select = async (question, choices) => choices[1];
+  assert.equal((await call("ask 'Deploy where?' with 'staging: the test site' or 'production: the live site'\nprint it", ctx)).content[0].text, "production");
+  // with any of: one yes or no dialog for each choice
+  const confirmed = [];
+  ui.confirm = async (title) => {
+    confirmed.push(title);
+    return title.startsWith("b.js");
+  };
+  assert.equal((await call("ask 'Commit which?' with any of 'a.js: new' or 'b.js: changed'\nprint it as json", ctx)).content[0].text, '["b.js"]');
+  assert.deepEqual(confirmed, ["a.js: new?", "b.js: changed?"]);
+});
+
+test("taint review shows one yes or no dialog for each input", async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-review-"));
+  await fs.writeFile(path.join(project, "AGENTS.talk"), "untrusted tool issue with id\n  set the result to 'issue ' + id\nend\n");
+  try {
+    const other = fakePi();
+    clankTalkExtension(other, Type);
+    await other.handlers.session_start({}, { cwd: project });
+    const asked = [];
+    const ui = {
+      confirm: async (title, message) => {
+        asked.push([title, message]);
+        return asked.length === 2;
+      },
+    };
+    const ctx = { cwd: project, hasUI: true, ui };
+    await other.tools.clank_talk.execute("id-3", { script: "issue 1\nissue 2" }, undefined, undefined, ctx);
+    const result = await other.tools.clank_talk.execute("id-4", { script: "taint review\nprint it" }, undefined, undefined, ctx);
+    assert.equal(result.content[0].text, "1");
+    assert.deepEqual(asked.map(([title]) => title.replace(/pi-[^/]+/, "S")), ["approve S/1?", "approve S/2?"]);
+    assert.match(asked[0][1], /^Approve the untrusted inputs that you trust\.\n\nref +time/);
+    await other.handlers.session_shutdown({}, {});
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
+});
+
+test("/taint runs the full-screen review over pi, and the footer counts the inputs", async () => {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-taint-"));
+  await fs.writeFile(path.join(project, "AGENTS.talk"), "untrusted tool issue with id\n  set the result to 'issue ' + id\nend\n");
+  try {
+    const spawned = [];
+    const other = fakePi();
+    clankTalkExtension(other, Type, { spawn: (program, args, options) => { spawned.push({ program, args, stdio: options.stdio }); return { status: 0 }; } });
+    const status = [];
+    const steps = [];
+    const tui = { stop: () => steps.push("stop"), start: () => steps.push("start"), requestRender: () => steps.push("render") };
+    const ui = {
+      setStatus: (key, text) => status.push([key, text]),
+      custom: async (factory) => {
+        let value;
+        factory(tui, {}, {}, (result) => { value = result; });
+        return value;
+      },
+    };
+    const ctx = { cwd: project, hasUI: true, ui };
+    await other.handlers.session_start({}, ctx);
+    assert.deepEqual(status.at(-1), ["clank-talk", "clank-talk: on, untainted"]);
+    await other.tools.clank_talk.execute("id-5", { script: "issue 1" }, undefined, undefined, ctx);
+    await other.handlers.tool_execution_end({ toolName: "clank_talk" }, ctx);
+    assert.deepEqual(status.at(-1), ["clank-talk", "clank-talk: on, tainted 1"]);
+    await other.commands.taint.handler("", ctx);
+    assert.deepEqual(steps, ["stop", "start", "render"]);
+    assert.equal(spawned.length, 1);
+    assert.equal(spawned[0].program, process.execPath);
+    assert.match(spawned[0].args[0], /bin[\\/]clank-talk\.js$/);
+    assert.deepEqual(spawned[0].args.slice(1), ["taint", "--tui", "--root", project]);
+    assert.equal(spawned[0].stdio, "inherit");
+    // the human approves in the review; the footer then shows no count
+    await taintCommand(["approve", "--all"], project, () => {});
+    await other.handlers.agent_end({}, ctx);
+    assert.deepEqual(status.at(-1), ["clank-talk", "clank-talk: on, untainted"]);
+    // with no UI, /taint does nothing
+    await other.commands.taint.handler("", { cwd: project, hasUI: false });
+    assert.equal(spawned.length, 1);
+    await other.handlers.session_shutdown({}, {});
+  } finally {
+    await fs.rm(project, { recursive: true, force: true });
+  }
 });
 
 test("a bad agent name is an error", async () => {
@@ -118,7 +206,7 @@ test("the description lists the tools from AGENTS.talk, after session_start", as
 test("--clank-policy sets a harness policy, and a wrong hash refuses every call", async () => {
   const project = await fs.mkdtemp(path.join(os.tmpdir(), "clank-pi-policy-"));
   const policyFile = path.join(project, "p.talk");
-  await fs.writeFile(policyFile, "policy 'p'\nlimit output to 3 lines");
+  await fs.writeFile(policyFile, "policy 'p'\nlimit output keeping the last 3 lines");
   try {
     const other = fakePi();
     clankTalkExtension(other, Type);

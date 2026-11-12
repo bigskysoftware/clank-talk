@@ -2,6 +2,7 @@
 
 allow env PATH, HOME
 allow fetch from 'localhost', '127.0.0.1'
+allow fetch from 'registry.npmjs.org', 'clank.talk'
 allow changes to @/.github/
 
 # Runs the full test suite.
@@ -13,4 +14,47 @@ end
 # Stop it with: stop process 'site'
 tool site_server
   start 'npm run serve-site' as 'site' in a sandbox
+end
+
+# Packs the package, installs it in an empty folder, and runs the CLI and the
+# MCP server from it. It publishes nothing.
+tool package_test
+  run 'npm run package-test' in a sandbox with writes to '~/.npm'
+    within 5 minutes
+end
+
+# Builds the docs site into _site/.
+tool build_site
+  run 'npm run build-site' in a sandbox
+end
+
+# Reads the GitHub API (GET only), such as repos/bigskysoftware/clank-talk/pages.
+# The output can hold text from other people, so it is untrusted.
+untrusted tool gh_api with path
+  run 'gh' with 'api', path in a sandbox with network,
+    reads of '~/.config/gh'
+end
+
+# Lists the commits that hold text that looks like a secret, in all of the history.
+# It gives commit ids only, never the secret text.
+tool secret_scan
+  run 'git' with 'log', '--all', '-p', '--no-ext-diff', '--no-textconv', '--format=commit %h'
+    in a sandbox keeping lines matching pattern /^commit |sk-ant-[A-Za-z0-9_-]{20}|ghp_[A-Za-z0-9]{30}|github_pat_[A-Za-z0-9_]{30}|npm_[A-Za-z0-9]{30}|AKIA[0-9A-Z]{16}|BEGIN [A-Z ]*PRIVATE KEY-----/
+  set commit to null
+  set found to []
+  for line in lines of it's output
+    if line starts with 'commit '
+      set commit to line
+    else if not (line starts with '...') and commit is not null and found does not contain commit
+      set found[length of found] to commit
+    end
+  end
+  set the result to found
+end
+
+# Searches the pi docs on this machine for a word.
+tool pi_docs with word
+  run 'grep' with '-rn', '-i', word, '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs'
+    in a sandbox with reads of '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs'
+    keeping the first 60 lines
 end

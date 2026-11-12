@@ -81,7 +81,7 @@ end
 
 ### Policy
 
-- Approved (built): a harness policy can limit secrets: `limit secrets to <names>`, `deny secrets`, and `limit fetch to` also covers `allow secret ... for fetch to`. See [policy.md](policy.md).
+- Approved (built): a harness policy can limit secrets: `limit secrets to <names>`, `deny secrets`, and `limit fetch from` also covers `allow secret ... for fetch to`. See [policy.md](policy.md).
 
 ## Decisions
 

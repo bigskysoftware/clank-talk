@@ -24,7 +24,7 @@ The runtime records every step that touches the world outside the script, so a h
 - Approved (built): one file for each day, in `.talk/audit/`: `.talk/audit/2026-11-09.log`. Scripts cannot change `@/.talk/`, and the sandbox cannot write it, so the agent cannot change its own audit. Only the runtime writes it.
 - Approved: the audit is always on.
 - Approved (built): we recommend `.talk/` in `.gitignore`: the audit is a log, not source. The README and the docs say so, and this repo does it.
-- Approved (built): two folders. `talk/` is the suggested folder for extensions: shared `.talk` tool files that AGENTS.talk imports. It is visible, because people review it. `.talk/` holds internals: the audit (`.talk/audit/`) and the taint labels (`.talk/taint.json`). It is hidden, because people rarely open it. Scripts cannot change either folder.
+- Approved (built): two folders. `talk/` is the suggested folder for extensions: shared `.talk` tool files that AGENTS.talk imports. It is visible, because people review it. `.talk/` holds internals: the audit (`.talk/audit/`) and the untrusted inputs (`.talk/untrusted/`). It is hidden, because people rarely open it. Scripts cannot change either folder.
 - Approved (built): no `allow changes to` line can open `.talk/` or `talk/`: it is a load error. Globs skip `.talk/`, as they skip `.git/`.
 - Approved (built): rotation. The host keeps 3 days of audit files by default. `keep audit for 7 days` in AGENTS.talk keeps more or fewer. Once a day, when it writes the first block, the host deletes day files older than that: only names such as `2026-11-10.log` and `2026-11-10.jsonl`. The audit notes it: `audit  .talk/audit/  deleted 2 files older than 3 days`.
 - Approved (built): a policy sets the fewest days: `keep audit for at least 30 days`. An AGENTS.talk line with fewer days is a load error. With no AGENTS.talk line, the host keeps the larger of 3 days and the policy's days. The policy's `audit also to` copy is never rotated.
@@ -52,3 +52,12 @@ The runtime records every step that touches the world outside the script, so a h
 - Approved: `the audit` is the list of this session's records, newest last: `time`, `script`, `kind`, `target`, `details`, `from`. An agent can sum up what it did.
 - Approved (built): the host keeps the session (`options.audit`: the script count and the records). The file is written only for a host session, and the MCP host always passes one, so the audit is always on in real use. The runtime library alone, and tests, write no file.
 - Approved (built): a read is recorded once for each file in a script. If the audit file cannot be written, the script still runs, and gets a warning.
+
+## Readability (audit review, 2026-11-10)
+
+- Approved (built): the header puts the script's purpose after its number: `== 21:05:18  script 12  Fix the cart total  (done, 6 steps) ==`. The purpose is a first line `# ...` of the script, and it is not printed again in the script.
+- Approved (built): the session name and `(main)` leave the header. A line `-- session claude-code-4f2a --` comes before the first script of a session in a file. An agent that passed a name still shows it: `script 2 (tester)`.
+- Approved (built): an edit says what it did, not `undo saved`: `3 lines, new file`, `1 line at the end`, `1 line after line 1`, `lines 2-3 with 3 lines`, `lines 1-2`, `2 matches, lines 40-52`, `no match`, `to <path>` for a move.
+- Approved (built): git shows what the script wrote, with no hardening flags: `commit 'Add a'  1 file`, `switch to new branch fix-x`, `merge fix-x  fast-forward`. The JSON audit keeps the full arguments in `args`.
+- Approved (built): a step from inside a tool or a subagent is indented under it, with no `from ...`. The sandbox text is shorter: `sandbox, local network, code 0, 3.7 s`, or `no sandbox, ...`.
+- Rejected: one line for all the reads of one command. Each read keeps its own line.

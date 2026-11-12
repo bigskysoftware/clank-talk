@@ -21,7 +21,7 @@ afterEach(async () => {
 const POLICY = [
   "policy 'acme-secure'",
   "require sandbox for run, start",
-  "limit fetch to 'api.github.com', '*.acme.internal'",
+  "limit fetch from 'api.github.com', '*.acme.internal'",
   "limit env to PATH, HOME",
   "limit changes to @/.github/",
   "deny git push",
@@ -93,7 +93,7 @@ test("AGENTS.talk allows outside the policy are load errors that name both lines
 test("allow secret lines must be inside the policy", async () => {
   const policy = [
     "policy 'acme'",
-    "limit fetch to 'api.github.com'",
+    "limit fetch from 'api.github.com'",
     "limit secrets to GITHUB_TOKEN",
   ].join("\n");
   await fs.writeFile(path.join(root, "AGENTS.talk"), [
@@ -128,7 +128,7 @@ test("a tool in AGENTS.talk that uses a denied thing, or runs with no sandbox, i
 });
 
 test("at run time, the script cannot do what the policy denies, and a fetch outside the limit does not ask", async () => {
-  const policy = { name: "acme.talk", source: "policy 'ro'\nlimit fetch to 'api.github.com'\ndeny writes" };
+  const policy = { name: "acme.talk", source: "policy 'ro'\nlimit fetch from 'api.github.com'\ndeny writes" };
   const ask = async () => {
     throw new Error("must not ask");
   };
@@ -144,4 +144,13 @@ test("audit also to: a copy of the audit outside the project", async () => {
   assert.equal(result.status, "done");
   const [file] = await fs.readdir(copy);
   assert.match(await fs.readFile(path.join(copy, file), "utf8"), /\(policy p [0-9a-f]{8}\) ==/);
+});
+
+test("a policy uses the AGENTS.talk words: taint required and limit fetch from; the old forms name the new ones", async () => {
+  const errorsWith = async (line) => (await run("print 1", { root, policy: { name: "p.talk", source: "policy 'p'\n" + line } })).errors.map((e) => e.message);
+  assert.deepEqual(await errorsWith("taint required"), []);
+  assert.deepEqual(await errorsWith("limit fetch from 'example.com'"), []);
+  assert.match((await errorsWith("require taint"))[0], /'require taint' is now 'taint required'/);
+  assert.match((await errorsWith("limit fetch to 'example.com'"))[0], /'limit fetch to' is now 'limit fetch from'/);
+  assert.match((await errorsWith("taint off"))[0], /A policy can only have 'taint required'/);
 });

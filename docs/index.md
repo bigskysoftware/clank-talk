@@ -45,8 +45,8 @@ git delete branch 'fix-total'
 ```talk
 site_server
 set home to http://localhost:8000/
-wait until (fetch home as response)'s
-  status is 200 within 20 seconds
+wait until the status of fetch home as response
+  is 200 within 20 seconds
 
 print process 'site'
 ```
@@ -71,7 +71,7 @@ print process 'site'
 <div class="install-code">
 <button class="install-copy" type="button">Copy</button>
 <pre data-agent="claude"><code># add the server
-claude mcp add clank-talk -- npx -y -p clank-talk@0.2 clank-talk-mcp
+claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
 # start Claude Code with ClankTalk as its only tool
 claude --tools "" --allowedTools mcp__clank-talk</code></pre>
 <pre data-agent="cursor" hidden><code>// .cursor/mcp.json
@@ -79,20 +79,21 @@ claude --tools "" --allowedTools mcp__clank-talk</code></pre>
   "mcpServers": {
     "clank-talk": {
       "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
+      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
     }
   }
 }</code></pre>
 <pre data-agent="codex" hidden><code># ~/.codex/config.toml
 [mcp_servers.clank-talk]
 command = "npx"
-args = ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]</code></pre>
-<pre data-agent="pi" hidden><code># coming soon: a ClankTalk extension for pi</code></pre>
+args = ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]</code></pre>
+<pre data-agent="pi" hidden><code># install the ClankTalk package for this project
+pi install -l git:github.com/bigskysoftware/clank-talk</code></pre>
 <pre data-agent="other" hidden><code>{
   "mcpServers": {
     "clank-talk": {
       "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.2", "clank-talk-mcp"]
+      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
     }
   }
 }</code></pre>
@@ -133,7 +134,7 @@ end
 </div>
 <script src="js/compare.js"></script>
 
-## A Controllable Runtime
+## A Controlled, Observable Runtime
 
 Giving an agent a shell is pretty crazy when you think
 about it. ClankTalk gives it a controlled & observable runtime instead:
@@ -148,7 +149,7 @@ write 'hello' to ../../etc/hosts
 # error: outside the project root
 ```
 
-## You Define the Tools
+## Define Your Agent's Tools
 
 You can define new tools in `AGENTS.talk` for your agents that allow you to minimize the surface area
 needed to get work done.  Agents aren't allowed to touch `.talk` files or hidden files by default.
@@ -169,7 +170,7 @@ tool run_tests
 end
 ```
 
-## Secrets
+## Secret Secrets
 
 Allow your agents to use secrets without seeing them in a controlled manner. 
 
@@ -186,19 +187,7 @@ print auth contains 'ghp'
 # error: a secret cannot go into 'contains'
 ```
 
-## Taint Tracking
-
-Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agents environment, and to control how things work
-after that happens.
-
-```talk triage.talk
-set issue to fetch https://example.com/issues/42
-git commit [./src/cart.js] with issue
-# asks you: Commit with untrusted text from
-#   https://example.com/issues/42: ...?
-```
-
-## A Security Policy
+## Coherent Security Policy
 
 You can define a sophisticated security policy for your project (or company!)
 
@@ -263,9 +252,23 @@ git commit [./src/config.js] with 'More retries'
 git push
 ```
 
+## Taint Tracking
+
+Taint tracking allows you to follow when outside, untrusted and "tainted" text has entered into the agent's environment, and to control how things work
+after that happens.
+
+```talk triage.talk
+fetch https://example.com/issues/42
+git push
+# asks you: Push to origin? 1 untrusted input
+#   is not approved: https://example.com/issues/42
+```
+
+ClankTalk taints the whole session, not just the text, and keeps a copy of each untrusted input your agent read.  You can review and approve them from your terminal, with `npx clank-talk taint`, or right in your harness, with `taint review`.
+
 ## Agent & Harness Agnostic
 
-ClankTalk is an [MCP](https://modelcontextprotocol.io) server, so it works with _any_ agent in _any_ harness. 
+ClankTalk is implemented as an [MCP](https://modelcontextprotocol.io) server, so it works with _any_ agent in _any_ harness. 
 
 You can turn off your other tools and ClankTalk becomes
 the only way your agent can interact with your system.

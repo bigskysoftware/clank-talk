@@ -2,10 +2,147 @@
 
 Values carry labels that say where they came from. The runtime moves the labels through operations, and the audit records them.
 
-Built: the labels, the sources, how labels move, the checks, `untrusted tool`, hook `labels`, the audit notes, the questions at the sinks, and file labels in `.talk/taint.json`.
+Built: session taint, part (a): the flag, the store, the questions, `taint on|off|required`, `keep untrusted inputs up to`, `taint required` in a policy (first written `require taint`), and the session checks for hooks. The value labels below are removed.
+Built: part (b), the command line: `bin/clank-talk.js`, `src/js/taint-cli.js`.
+Built: part (c), the judge: `src/js/judge.js`.
 Docs: a section in docs/docs.md (prose to come), `help untrusted`, `help recipes`, and a rule in the MCP tool description.
 
-Code: `src/js/taint.js`, with small hooks in `src/js/runtime.js`.
+Code: `src/js/untrusted.js`, with small calls in `src/js/runtime.js`.
+
+## Session taint
+
+Replaces the labels on values below. Why: labels follow values inside one script, but an injection goes through the model's context, and the agent can type the text back with no label. The labels cost about 280 lines, 81 calls in the runtime, and a check in each new feature. A flag on the session matches the real threat, and it is much smaller.
+
+### The flag
+
+- Approved (built): after the agent sees untrusted text, the session is untrusted. Sources: fetch, an `untrusted tool`, a subagent (its answer, also from `process` and `stop`).
+- Approved (built): the session stays untrusted while at least one untrusted input is not approved, in any session of the project. Why: a resumed conversation gets a new session, but the injection is still in the model's context (code review 2). The syntax stays `the session is untrusted`.
+- Approved (built): the flag comes from the store on disk, so it holds across scripts and host restarts. A run with no session name uses the folder `default`.
+- Approved (built): if the store cannot be written, the step fails. Why: an input that is not saved cannot make the session untrusted.
+
+### On and off
+
+- Approved (built): AGENTS.talk sets the default: `taint on` (the default with no line), `taint off`, or `taint required`.
+- Approved (built in the runtime; the command is part (b)): the command line can change it: `npx clank-talk taint on`, `npx clank-talk taint off`. This choice wins over `taint on` and `taint off` in AGENTS.talk. It is kept in `.talk/taint-state.json`, which scripts cannot change.
+- Approved: `taint required` keeps it on. `taint off` on the command line then fails: "AGENTS.talk has 'taint required'. To turn taint off, remove that line." (Built in the runtime: the state file is ignored.)
+- Approved (built): a policy can hold `taint required`, the same line as in AGENTS.talk. The old form `require taint` is an error that names the new form.
+- Approved: `npx clank-talk taint` shows the state and where it comes from: "on (from AGENTS.talk)", "off (from the command line)".
+
+### Which actions ask
+
+- Approved (built): while the session is untrusted, by default only a push and a fetch with a secret ask the human. Why: each question is a decision, and after many of them people say yes without reading, or turn taint off.
+- Approved (built): `taint asks before push, secrets, commit, network runs, new hosts` in AGENTS.talk lists all that asks; the list replaces the default. `taint asks before nothing` asks nothing, and the store and the flag stay. `network runs` is a `run` or `start` with network or with no sandbox; `new hosts` is a fetch to a host not in `allow fetch from`. Earlier, all five asked.
+- Approved (built): a `run` or `start` with no sandbox asks too, because it has the network. `with local network` does not ask.
+- Approved (built): a sandboxed `run` or `start` with no network does not ask. File edits do not ask.
+- Approved (built): the question names the inputs that are not approved, at most 5: "Push origin? 2 untrusted inputs are not approved: tool issue (42), https://... Review them with: npx clank-talk taint".
+- Approved (built): the answers: `approve and untaint` (approves only the inputs that the question named), `yes, this time only` (the session stays untrusted), `no`. No answer is no.
+- Approved: a host in `allow fetch from` stays trusted in an untrusted session: a GET, a POST or a body to it asks nothing. Why: the human chose these hosts. Rejected: a question for a body or a method other than GET.
+- Approved (built, 2026-11-11): `trust fetch from <host or URL>, ...` in AGENTS.talk: a response from a matching URL is not an untrusted input, so it does not taint; the audit records a `trusted` step. The same patterns as `allow fetch from`: a URL with a path covers only that path. The URL is the one after all redirects. Changed (2026-11-11): it also allows the URL; see the next line. A policy can forbid it with `deny trust`. Why: polling our own npm registry page and site tainted the session each time. Approved: a separate line, not part of `allow`, so a trusted source stands out.
+- Approved (built, 2026-11-11): a trusted URL is also allowed: a fetch of it asks nothing, with no `allow fetch from` line. A private host still needs a line that names it. Why: a source that the human trusts must not ask. Rejected: two lines for one source.
+- Approved (built, 2026-11-11): `trust fetch from '*'` trusts and allows every public host. Each run gives a warning, and `npx clank-talk taint` and the TUI title show it. The audit has a `trusted` step for each fetch. `'*'` does not cover private hosts, or public names that point to them: they need a line that names the host. Why: some projects read the web all the time, and a clear, audited choice is better than approvals that nobody reads. Rejected: `'*'` for private hosts too, because a trusted page can then make the agent fetch a router or a cloud metadata URL.
+- Approved (built): a fetch to a new host in an untrusted session asks one question, the session question. A yes (either form) also allows the host for the session, as the host question does.
+- Approved (built): a `run` or `start` with no sandbox asks too.
+
+### The store
+
+- Approved (built, 2026-11-11): an input with the same source and the same text as a stored input, in any session of the project, is not stored again. If that input is waiting, the session stays tainted by it. If it is approved, the new copy does not taint, because the human approved that exact text. The index keeps a sha256 of the text. The audit says `the same as <session>/<n>, approved` (or `waiting`). Why: a `wait until` that fetched the npm registry stored 400 copies of one page.
+- Approved (built): each untrusted input is saved in `@/.talk/untrusted/<session>/`: `index.json` (number, time, source, size, cut, approved), and `<n>.txt` with the source, the time, and the text. Secrets show as `<secret NAME>`. Scripts cannot change `.talk/`.
+- Approved (built): the source: the final URL after redirects for a fetch; the name and arguments for a tool; the tool and prompt for a subagent.
+- Approved (built): at most 1 MB for each input by default. A larger input keeps its first 1 MB, and gives a warning in the script output: "warning: untrusted input 3 is 5 MB; the store kept the first 1 MB". The list (part b) shows it too.
+- Approved (built): `keep untrusted inputs up to 5 MB` (or `KB`) in AGENTS.talk sets the size.
+- Approved (built): the `keep audit` rules apply to the store. Once a day, with the audit rotation, a session whose newest input is older than the kept days is deleted, and the audit notes it. A broken store is kept for the human. The cleanup runs only when the audit is written to `.talk/audit/`.
+- Approved (built): the audit records each input (`untrusted`, with the file), and each approval (`approve`, with the input numbers).
+
+### The command line
+
+- Approved (built): a new `clank-talk` command, next to `clank-talk-mcp`. Only the human runs it: the agent has no shell in ClankTalk. It takes `--root`, and else `CLANK_TALK_ROOT` or the current folder, as the MCP server does.
+- Approved (built): `npx clank-talk taint` shows the state and where it comes from, and lists all inputs: ref, time, status, size, judge verdict, source.
+- Approved (built): a ref is `<session>/<n>`, such as `claude-code-4f2a/3`. A bare `<n>` is in the newest session.
+- Approved (built): `taint show <ref>`, `taint approve <ref> ...`, `taint approve --all` (clears all taints), `taint approve --clean`, `taint on`, `taint off`. A bad ref approves nothing. An approval records who approved (`the question` or `the command line`) and when.
+- Approved (built): `taint --line` prints one short line for a status bar: `taint off` (taint is off), `untainted` (taint is on, and all inputs are approved) or `tainted <n>` (n inputs to review). Claude Code shows it with a `statusLine` command in `.claude/settings.local.json`.
+- Approved (built): `taint --tui` opens a full-screen review in the terminal. The left pane lists the inputs that are not approved. The right pane shows the current input: its source, time, the verdict of the judge, and its text. It reads the store again every 2 seconds.
+- Approved (built, 2026-11-11): `/taint` in Claude Code, from the `clank-talk` plugin (`src/js/harnesses/claude-code/`), opens a pane: the inputs that are not approved (`j`/`k` or a click picks one), the source, time, size and judge of the picked input, and the start of its text. Keys, shown at the top (a plugin key is one lowercase letter or digit, and Shift does not count): `j`/`k` next and previous input, `g` first input, `h`/`l` text up and down by half a screen, `t`/`b` text top and bottom, `a` approve, `u` unapprove, `e` approve all, `m` text view or raw, `o` open in the browser, `s` show or hide the approved inputs, `r` read again, `q` or Esc close. The list shows at most 8 rows around the current input. The text has line numbers, and it gets the rows that the rest leaves. Claude Code places the pane: docked beside a fullscreen transcript (at most 45% wide), else inline above the prompt; a plugin cannot choose. The last approval closes the pane, with a toast. The pane runs `npx clank-talk taint --json`, `show`, `approve` and `unapprove` in the project, so the rules stay in the command line; in the ClankTalk repo itself it runs `bin/clank-talk.js`. Only the person's own Enter opens it (`origin.kind` is `composer`); a command from the model, a plugin or a channel that Claude Code cannot attest is refused. Why: Claude Code cannot give a full-screen program the terminal, and `!` has no terminal. Rejected: a text list with `/taint approve 3`, and a status line only.
+- Approved (built, 2026-11-11): `/taint clear` (Claude Code and pi) and `npx clank-talk taint clear` approve every input that is not approved, ask nothing, and say which: `Approved 3 inputs: <source>, <source>, <source> (2 more).` The inputs stay in the store; the approval names `taint clear` (in pi, `/taint clear`). Why: a quick path for the human, who typed it, so the model cannot run it. Rejected: a confirm dialog (slower), and no command. The word is `clear`, though it approves and deletes nothing.
+- Approved (built, 2026-11-11): `taint show --body <ref>` gives the text alone, and `taint show --page <ref>` the text view (HTML as text, then what it hides; JSON pretty), as the TUI's `m`.
+- Approved (built, 2026-11-11): `taint show --html <ref>` writes a static page, `.talk/untrusted/<session>/<n>.html`, and opens it with the system's opener (`open`, `xdg-open`, `explorer.exe`). The page has no script and approves nothing. It shows the ref, status, time, source and judge, then the text view, the raw text with line numbers, and for HTML the rendered page in an iframe with `sandbox=""` and a CSP that blocks scripts and all loads. Why: a local server needs a token in its URL, and the model can read process arguments with Bash; a static file has nothing to steal. Limit: CSS can still hide or fake text in the rendered view, so the text view comes first.
+- Approved (built, 2026-11-11): `o` in `taint --tui` (and so in pi's `/taint`) writes the same read-only page as `taint show --html`, and opens it in the browser.
+- Approved (built, 2026-11-11): `npx clank-talk taint --json` prints the state and the inputs as one JSON object: `taint`, `why`, `warnings`, and `inputs` (`ref`, `time`, `status`, `approved`, `size`, `judge`, `source`). The judge's reason and the source are printable, as in the list.
+- Approved (built): vi keys. j/k, g/G, ctrl-d/ctrl-u and ctrl-f/ctrl-b move in the focused pane. tab, l and h change the pane. `/`, n and N search the focused pane, with smartcase. The text pane marks the matches. `?` shows the keys.
+- Approved (built): space marks an input. V starts a selection, j/k extend it, V marks it, esc stops it. esc with no selection clears the marks.
+- Approved (built): `a` approves the selection, else the marks, else the current input. `A` approves all shown inputs after a y. `J` asks the judge about the same inputs, and shows each verdict. `.` shows the approved inputs. `r` reads the store again. q quits.
+- Proposed (built): the text pane wraps at spaces, and colors HTML (tags, attributes, values, comments) and JSON (keys, strings, numbers, literals). A space on each side of the bar between the panes stops a terminal from making one link of the two panes.
+- Proposed (built): `m` changes the view. For HTML: the raw text, or the page view. For JSON: the raw text, or pretty JSON. The raw view comes first.
+- Proposed (built): the page view shows the text that a browser shows, then a list of all the text that the page hides: comments, scripts, styles, `template` and `noscript`, hidden elements (`hidden`, `aria-hidden`, a hiding style or class), and text attributes (`alt`, `title`, `aria-label`, `placeholder`, `value`, `content`, `data-*` and more). Why: an attack can hide in these places, and a page view with no list hides it from the human too.
+- Approved (built): line numbers in the text pane, on by default. `#` turns them on or off. A wrapped line has a blank gutter.
+- Approved (built): `u` undoes the last approval made in the TUI. `U` unapproves the selection or the current input (`.` shows the approved inputs). `taint unapprove <ref> ...` does the same on the command line. An unapproved input taints the session again.
+- Approved (built): in the text pane, `J` asks the judge for the sketchy lines of the current input, in the view that the human sees (raw, page or pretty). The judge gets the text with line numbers, between random markers, with no tools. A flagged line gets a red `!` in the gutter. `]` and `[` go to the next and the last flagged line, and show its reason. The header counts the flags.
+- Approved (built): the flags are advice only. They never approve, they stay in memory while the TUI is open, and each view has its own flags. An answer that is not valid flags nothing, and says so. The judge for lines uses its own prompt, not `judge with prompt`.
+- Approved (built): it uses no library: node readline keys and ANSI codes. Untrusted text goes through `printable`, so it cannot send escape codes to the terminal. An approval records `approvedBy: "the taint review"`.
+- Approved (built): with no terminal (no TTY), it fails and names `npx clank-talk taint`. The agent cannot run it: it has no terminal.
+- Approved (built): `taint judge <ref> ...` reads those inputs again; `taint judge --all` reads the inputs that have no verdict and are not approved.
+- Limits, to document: the boundary holds only if the agent has no other shell (turn off the harness tools), each `run` is sandboxed (a program with no sandbox can change `.talk/`), and no tool in AGENTS.talk runs `clank-talk taint`.
+
+### The judge
+
+- Approved (built): a model call with no tools reads one input, and gives `clean`, `suspect` or `unsure`, with a reason of at most 200 characters. The verdict is saved in the index, next to the input.
+- Approved (built): the answer is one line of JSON: `{"verdict": ..., "reason": ...}`. An answer that is not valid, a refusal or a cut answer is `suspect`, so a broken answer cannot approve.
+- Approved (built): the text goes between markers with a random name, so the text cannot close the block. The source goes before it.
+- Approved (built): a fixed default prompt in `src/js/judge.js`. `judge with prompt '...'` (or a text block) in AGENTS.talk replaces it. The answer format is always added after the prompt.
+- Approved (built): by default the verdict is advice only. A human approves.
+- Approved (built): `let the judge approve clean inputs` in AGENTS.talk: a `clean` verdict approves the input (`approvedBy: the judge`). `suspect` and `unsure` never approve. `taint required` in a policy does not block this line.
+- Approved (built): `use model '<id>' for judging [with secret <NAME>]`. With no line, the judge uses the subagent model. pi lends its model. The key needs `allow secret <NAME> for subagents`.
+- Approved (built): by default the judge runs only on `npx clank-talk taint judge`. `judge untrusted inputs automatically` in AGENTS.talk runs it on each new input. A judge that fails gives a warning, and the input stays.
+
+### Security review (built)
+
+- A broken `index.json` counts as an input that is not approved, so the session stays untrusted. A new input is not saved over it: the step fails, and a human must repair or remove the file.
+- One change at a time to a session's index, so two scripts in one process cannot lose an input.
+- The question names at most 5 inputs, and `approve and untaint` approves only those.
+- A source in a question, and all untrusted text on the command line, show control characters as `?`. A source in a question is cut at 80 characters.
+- The error of an untrusted tool is an untrusted input too, as the agent sees it.
+- A session name that starts with dots stays inside the store.
+- Before a sandboxed run, `.talk/` is made, because on Linux the sandbox protects a hidden folder only if it exists when the program starts.
+- Approved (built), best effort: around a `run` with no sandbox, ClankTalk keeps a hash of each file in `.talk/`, a copy of the taint control files (`taint-state.json`, each `index.json`), and the last 1000 lines of the newest audit file. After the run, if a file changed: the error names each changed file, the control files go back (so taint cannot be turned off or approved this way), the output shows the saved audit lines, the audit notes a `restore` step, an untrusted input names the files, and the step fails. Other files are not put back. Writes of ClankTalk's own during the run (for example a background subagent that writes the audit) are noted, and are not changes; a second server process on the same project can still look like a change.
+- Limits, to document: a `start` with no sandbox keeps running, so it is not checked. A run with no sandbox can still change files outside `.talk/`. A policy with `require sandbox for run, start` closes this. Response headers from `fetch ... as response` do not go to the store. The cleanup runs only with the audit file.
+
+### Code review 2 (built)
+
+- Taint is for the whole project (see The flag).
+- A link in `.talk/`, or in place of it, is removed after a run with no sandbox, and the store comes back. The real target of a `.talk` link is protected from scripts.
+- An error after a redirect (a `data:` URL, a bad host) goes to the store, because the server chose its text.
+- A folder that ClankTalk deleted and then writes again loses its "deleted" mark, so a later removal is a change.
+- A write of ClankTalk's own on an index that changed since its last write is not noted as its own, so the check still finds the change.
+- The cleanup reads inside the lock, and never deletes a session with an input that is not approved.
+- Each index has a lock file (`index.json.lock`) for other processes, such as the command line, and is written with a rename. A lock older than 10 seconds is taken over.
+- The output of a subagent is stored before its length is noted. The print output of an untrusted tool goes to the store with its result. A program that an untrusted tool starts has untrusted output.
+- The judge gets the source inside the markers.
+- A line break in a source shows as `?` in the header of the text file.
+- A policy with `taint required` writes `.talk/taint-policy.json`, so the command line knows it.
+- Checked and correct: `keep audit` in AGENTS.talk cannot go below the policy's minimum; the load check refuses it.
+
+### Review in the harness
+
+- Approved (built, security review 2026-11-10): the source in the review table is in quotes, and `printable` also removes zero width, bidi and line separator characters, so the agent cannot make a source look like another row.
+- Approved (built): `taint review` in a script. It shows the human a form (MCP elicitation): a table of the inputs that are not approved (ref, time, size, judge, source), and one approve box for each input. The form shows at most 20 inputs.
+- Rejected: a `view` choice that showed the text in pages in the form. Claude Code shows only the first line of a long form message, and collapses the rest. The human reads an input with `npx clank-talk taint show <ref>`.
+- Not tested: Claude Code can also collapse a long table, so with many inputs the human can see only part of it.
+- Approved (built): the syntax is `taint review`. The human picked it because it does not read as English.
+- Approved (built): the agent runs `taint review` only when the human asks for it. After a refusal, a form would be jarring. The tool description says this.
+- Approved (built): only the human answers the form. The result is the number of inputs approved. The approvals record `the review` as who approved.
+- Approved (built): with no inputs, the result is 0 and no form shows. With no way to show a form, or no answer to the first form, it is an error, and nothing is approved.
+- Approved (built): pi has no form with boxes, so in pi `taint review` shows one yes or no dialog (`ctx.ui.confirm`) for each input. Each dialog shows the table. A closed dialog is no.
+
+### Hooks
+
+- Approved (built): `the session is untrusted` and `the session's untrusted inputs` (source and time) replace the label checks. `is untrusted` and `is private` on values go away. The old form gives a load error that names the new one.
+
+### Open
+
+- Built, to confirm: the `private` label and its question (`Send private data to api.github.com?`) went away with the labels. While the session is trusted, a fetch to a new host still asks (fetch.md).
+- Built: `.talk/taint.json` (file labels) went away. An old file stays on disk and is not read.
+- Later: a `taint_approve` MCP tool with `_meta["anthropic/requiresUserInteraction"]: true`, for Claude Code, after a test. The Claude Code docs do not say if the model can run MCP prompts, so prompts are not a human-only path.
+
+## Value labels (removed: replaced by session taint)
 
 ## Goal
 

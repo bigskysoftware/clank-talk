@@ -129,7 +129,7 @@ test('git commands', () => {
 });
 
 test('git errors', () => {
-  assert.deepEqual(errors('git reset'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit, merge, rebase, move, push, delete @1:5']);
+  assert.deepEqual(errors('git reset'), ['Expected a git operation: status, diff, log, show, branches, branch, switch, commit, merge, rebase, move, push, delete, stash, stashes, restore, pull, blame, tag, tags @1:5']);
   assert.deepEqual(errors("git rebase 'main'"), ["Expected 'onto' @1:12"]);
   assert.deepEqual(errors('git show'), ['Expected a value @1:5']);
 });
@@ -155,10 +155,15 @@ test('undo forms', () => {
 
 test('ask', () => {
   const [plain, choice] = commands("ask 'Name?'\nask 'Push?' with 'yes' or 'no' within 5 minutes");
-  assert.deepEqual(plain, { type: 'ask', question: { type: 'string', value: 'Name?' }, choices: [], within: null });
+  assert.deepEqual(plain, { type: 'ask', question: { type: 'string', value: 'Name?' }, choices: [], many: false, within: null });
   assert.deepEqual(choice.choices, [{ type: 'string', value: 'yes' }, { type: 'string', value: 'no' }]);
+  assert.equal(choice.many, false);
   assert.equal(choice.within.ms, 60000);
   assert.deepEqual(errors("ask 'x' with 'a'"), ["Expected 'or' and a second choice @1:14"]);
+  // with any of: the human can pick several
+  const [many] = commands("ask 'Commit which?' with any of 'a.js' or 'b.js'");
+  assert.equal(many.many, true);
+  assert.deepEqual(many.choices, [{ type: 'string', value: 'a.js' }, { type: 'string', value: 'b.js' }]);
 });
 
 test('fetch', () => {
@@ -228,4 +233,75 @@ test("a command word as a name gives an error that names the fix", () => {
   assert.deepEqual(errors("increment find"), ["'find' is a command word, so it cannot be a name. Use another name, such as 'my_find', or write 'the find' @1:11"]);
   assert.equal(errors("set x to 1\nprint stop")[0], "Expected a value, found the command word 'stop'. If it is a name, write 'the stop' @2:7");
   assert.deepEqual(errors("set the stop to 5\nprint the stop"), []);
+});
+
+test("an in after replace lines on the same line is a clear error; on a new line it is a new command", async () => {
+  const { parse } = await import("../src/js/parser.js");
+  const q3 = '"'.repeat(3);
+  const same = parse("replace lines 1 to 2 of ./a.txt with " + q3 + "\nx\n" + q3 + " in ./a.txt");
+  assert.match(same.errors[0].message, /^replace lines \.\.\. of <file> names the file after 'of', so it takes no 'in'/);
+  const next = parse("replace lines 1 to 2 of ./a.txt with 'x'\nin ./a.txt replace 'a' with 'b'");
+  assert.deepEqual(next.errors, []);
+});
+test("does not start with and does not end with", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  const result = await run("print 'abc' does not start with 'b'\nprint 'abc' does not start with 'a'\nprint 'abc' does not end with 'c'\nprint null does not end with 'c'", { root: os.tmpdir() });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.output, ["true", "false", "false", "true"]);
+});
+
+test("add puts an item at the end of a list; an unset variable starts empty", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  const result = await run("add 'a' to found\nadd 'b' to found\nprint found\nset box to {items: [1]}\nadd 2 to box's items\nprint box's items", { root: os.tmpdir() });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.output, ['["a","b"]', "[1,2]"]);
+  const text = await run("set t to 'x'\nadd 'y' to t", { root: os.tmpdir() });
+  assert.match(text.errors[0].message, /^add needs a list, found 'x'\. To join text, use \+/);
+});
+
+test("check gives the parse errors of a script or of AGENTS.talk text, and runs nothing", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "clank-check-"));
+  try {
+    const script = [
+      "check 'print 1 + 2'",
+      "print it",
+      "check 'write 1 to'",
+      "print it's length",
+      "check 'tool t with a\\n  run \\'node\\' with a in a sandbox\\nend\\nbefore t\\n  reject \\'no\\'\\nend' as AGENTS.talk",
+      "print it",
+      "check 'run \\'node\\''",
+      "print the message of first of it",
+      "check 'write \\'x\\' to ./made.txt'",
+      "print ./made.txt exists",
+    ].join("\n");
+    const result = await run(script, { root });
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.output[0], "[]");
+    assert.equal(result.output[1], "1");
+    assert.equal(result.output[2], "[]");
+    assert.match(result.output[3], /only allowed in a tool/);
+    assert.equal(result.output[4], "false");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("wait until slows down with no every, and every sets the pause", async () => {
+  const { run } = await import("../src/js/clank-talk.js");
+  const os = await import("node:os");
+  // each check is a step; with back-off, 1.5 s holds 4 checks (after 0, 200, 600 and 1400 ms); 200 ms each would be 8
+  const slow = await run("wait until false within 1500ms", { root: os.tmpdir() });
+  assert.match(slow.errors[0].message, /^wait until did not come true within 1500ms/);
+  assert.ok(slow.steps <= 6, "steps: " + slow.steps);
+  // every 1 second: checks after 0, 1000 and 2000 ms
+  const every = await run("wait until false every 1 second within 2500ms", { root: os.tmpdir() });
+  assert.match(every.errors[0].message, /^wait until did not come true within 2500ms/);
+  assert.ok(every.steps <= 4, "steps: " + every.steps);
+  assert.match((await run("wait until true every 1 second every 2 seconds", { root: os.tmpdir() })).errors[0].message, /'every' is given twice/);
 });

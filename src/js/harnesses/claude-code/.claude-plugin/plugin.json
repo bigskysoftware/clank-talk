@@ -1,0 +1,10 @@
+{
+  "name": "clank-talk",
+  "version": "0.1.0",
+  "description": "ClankTalk in Claude Code: its questions in Claude Code's own question dialog, and /taint to review untrusted inputs",
+  "license": "BSD-3-Clause",
+  "author": {
+    "name": "Big Sky Software"
+  },
+  "types": "./types/index.d.ts"
+}

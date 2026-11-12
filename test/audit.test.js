@@ -30,13 +30,60 @@ test("the text audit: one block for each script, one line for each step", async 
   const { name, text } = await auditText();
   assert.match(name, /^\d{4}-\d\d-\d\d\.log$/);
   const lines = text.split("\n");
-  assert.match(lines[0], /^== \d\d:\d\d:\d\d  script 1 \(main\)  done  6 steps ==$/);
+  assert.match(lines[0], /^== \d\d:\d\d:\d\d  script 1  \(done, 6 steps\) ==$/);
   assert.equal(lines[1], "  read ./a.txt");
   assert.ok(lines.includes("--"));
   const steps = lines.slice(lines.indexOf("--") + 1).filter((line) => line !== "");
   assert.deepEqual(steps.map((line) => line.slice(10, 18).trim()), ["read", "replace", "tool", "run"]);
-  assert.match(steps[1], /a\.txt +undo saved$/);
-  assert.match(steps[3], /node -e console\.log\(1\) +code 0, \d+\.\d s, from hi$/);
+  assert.match(steps[1], /a\.txt +1 match, line 1$/);
+  // the program is indented under its tool
+  assert.match(steps[3], /^\d\d:\d\d:\d\d    run    node -e console\.log\(1\) +no sandbox, code 0, \d+\.\d s$/);
+});
+
+test("each edit says what it did", async () => {
+  const script = [
+    "write 'one\ntwo\nthree\n' to ./b.txt",
+    "append 'four\n' to ./b.txt",
+    "put 'new\n' after line 1 of ./b.txt",
+    "replace lines 2 to 3 of ./b.txt with 'x\ny\nz\n'",
+    "remove lines 1 to 2 of ./b.txt",
+    "replace 'z' with 'Z' in ./b.txt",
+    "replace 'nothing here' with 'x' in ./b.txt",
+  ].join("\n");
+  assert.deepEqual((await run(script, { root, audit })).errors, []);
+  const details = audit.records.map((record) => record.kind + ": " + record.details);
+  assert.deepEqual(details.filter((line) => !line.startsWith("read")), [
+    "write: 3 lines, new file",
+    "append: 1 line at the end",
+    "put: 1 line after line 1",
+    "replace: lines 2-3 with 3 lines",
+    "remove: lines 1-2",
+    "replace: 1 match, line 2",
+    "replace: no match",
+  ]);
+});
+
+test("a git step shows what the script wrote, and the JSON audit keeps the full arguments", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const git = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: { PATH: process.env.PATH, HOME: root } });
+  git(["init", "-q", "-b", "main"]);
+  git(["config", "user.email", "t@t"]);
+  git(["config", "user.name", "t"]);
+  assert.deepEqual((await run("git commit [./a.txt] with 'Add a'\ngit status\ngit switch to new branch 'fix-x'", { root, audit })).errors, []);
+  const steps = audit.records.filter((record) => record.kind === "git").map((record) => [record.target, record.details]);
+  assert.deepEqual(steps, [["commit 'Add a'", "1 file"], ["status", ""], ["switch to new branch fix-x", ""]]);
+  assert.match(audit.records.find((record) => record.kind === "git").args, /^commit --no-verify /);
+});
+
+test("a pattern that is not valid gives a hint for the common causes", async () => {
+  const message = async (script) => (await run(script, { root })).errors[0].message;
+  assert.match(await message("find pattern '(?i)x' in 'abc'"), /Invalid group\.\nJavaScript has no \(\?i\)/);
+  assert.match(await message("find pattern \"\"\"a\\-b\"\"\" in 'abc'"), /Invalid escape\.\nWith the u flag/);
+  assert.match(await message("find pattern 'test\\(' in 'abc'"), /\nIn a quoted string, a backslash is an escape of the string/);
+});
+
+test("found null in an error says what null means", async () => {
+  assert.equal((await run("set hits to null\nfind 'x' in hits", { root })).errors[0].message, "'find' needs a file, a list of files, lines, or text, found null: the value has nothing in it.\nIf it came from an earlier find or fetch, that command found nothing.");
 });
 
 test("a script cannot fake a header or a step in the text audit", async () => {
@@ -52,7 +99,7 @@ test("a script cannot fake a header or a step in the text audit", async () => {
 test("a failed script says so, with its error", async () => {
   await run("read ./missing.txt", { root, audit });
   const { text } = await auditText();
-  assert.match(text, /script 1 \(main\)  failed  1 steps/);
+  assert.match(text, /script 1  \(failed, 1 step\)/);
   assert.match(text, /!! 1:1 File not found: missing\.txt/);
 });
 
@@ -61,7 +108,7 @@ test("scripts count up in a session, and the audit is a value", async () => {
   const result = await run("for step in the audit\n  print step's script + ' ' + step's kind + ' ' + step's target\nend", { root, audit });
   assert.deepEqual(result.output, ["1 read a.txt"]);
   const { text } = await auditText();
-  assert.match(text, /script 2 \(main\)  done/);
+  assert.match(text, /script 2  \(done, /);
 });
 
 test("audit as json writes JSON Lines", async () => {
@@ -88,12 +135,17 @@ test("without an audit session, no file is written", async () => {
   await assert.rejects(fs.access(path.join(root, "talk")));
 });
 
-test("the header names the session, and the agent or (main)", async () => {
+test("a session line comes before the first script of a session; the header names an agent, and the purpose", async () => {
   await run("print 1", { root, audit, session: "claude-code-4f2a" });
   await run("print 2", { root, audit, session: "claude-code-4f2a", agent: "tester" });
   const { text } = await auditText();
-  assert.match(text, /^== \d\d:\d\d:\d\d  session claude-code-4f2a  script 1 \(main\)  done  1 steps ==$/m);
-  assert.match(text, /^== \d\d:\d\d:\d\d  session claude-code-4f2a  script 2 \(agent tester\)  done  1 steps ==$/m);
+  assert.equal(text.match(/^-- session claude-code-4f2a --$/gm).length, 1);
+  assert.match(text, /^== \d\d:\d\d:\d\d  script 1  \(done, 1 step\) ==$/m);
+  assert.match(text, /^== \d\d:\d\d:\d\d  script 2 \(tester\)  \(done, 1 step\) ==$/m);
+  // a first line "# ..." is the purpose: in the header, and not again in the script
+  await run("# Fix the cart total\nprint 3", { root, audit, session: "claude-code-4f2a" });
+  const after = (await auditText()).text;
+  assert.match(after, /^== \d\d:\d\d:\d\d  script 3  Fix the cart total  \(done, 1 step\) ==\n  print 3\n--$/m);
 });
 
 
