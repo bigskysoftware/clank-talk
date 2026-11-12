@@ -23,6 +23,12 @@ On the day of the 0.1.0 release, about 20 kinds of steps needed Bash or another 
 - **Raw strings:** a raw string cannot start with a quote, by design; the error now says to start the text on the next line. A `\u` escape in a raw string stays as text, so the real U+2028 in one edit most likely came from the agent's input.
 - **A script runner for reviews:** a tool that runs a ClankTalk script in a temp project, so a security reviewer can test without Node.
 
+### Harnesses (from 2026-11-11)
+
+- **opencode plugin:** a server plugin in `src/js/harnesses/opencode/`, like pi: `clank_talk` as an in-process tool (`ctx.tool.transform`), a guard (a session `context` hook removes other tools, and a permission `evaluate` hook denies them), `/clank-talk` (`ctx.command.transform`, the report as a `ctx.session.synthetic` message), and the record (`tool.execute.after`). Open: `ask` as yes/no only, with `ctx.permission.assert`, and `/taint` as a hint to run the TUI in a second terminal, until a TUI part does more. Research: `tmp/harness-research.md`. Waits for the human's approval.
+- **Gemini CLI:** an extension with the MCP server, `BeforeTool` hooks as the guard, and `AfterTool` hooks for the record. No elicitation found in its docs, so `ask` gives null there.
+- **A question for hidden paths:** a script asks the human before it changes a hidden path, as for a new fetch host (`yes, once`, `yes, for this session`, `no`). Never for `.git/`, `.talk/` or `.env` files. A policy can turn the question off. Open: the human wants to think more.
+
 ### C. Larger features
 
 - **Worktrees:** `git worktree` commands, and a session that can switch its root to a worktree inside the project. Today the MCP root stays on the main checkout.

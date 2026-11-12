@@ -23,3 +23,7 @@ Approved. The steps for each release of the npm package `clank-talk`. A human ru
 
 - A changelog.
 - The VS Code extension has its own version and release.
+
+## Site mirror
+
+- Approved (built, 2026-11-11): the site has a mirror at https://clanktalk.github.io/, for networks that filter the `.talk` domain. `site.yml` builds `_site` once, uploads it to Pages for `clank.talk`, then force-pushes the same files (with `.nojekyll`) to `main` of `clanktalk/clanktalk.github.io`, with the `MIRROR_TOKEN` secret (a fine-grained token with Contents write on that repo only). With no secret, the step does nothing. Each page has `<link rel="canonical" href="https://clank.talk/...">`, so search engines treat the mirror as a copy. Why: GitHub Pages gives a repo one custom domain, and `bigskysoftware.github.io/clank-talk` redirects to `clank.talk`. Rejected: a second domain on the same repo (not possible), and a redirect only (a filter blocks the target too). The checkout has `persist-credentials: false`, so the GITHUB_TOKEN does not reach the mirror push.
