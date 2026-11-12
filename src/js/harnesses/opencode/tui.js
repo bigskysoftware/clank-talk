@@ -9,7 +9,7 @@ import { taintCommand } from "../../taint-cli.js";
 import { loadItems } from "../../taint-tui.js";
 import { openFile, writePage } from "../../taint-page.js";
 import { projectHarness } from "../../runtime.js";
-import { projectRoot } from "../../host.js";
+import { projectRoot, STAYS_ON, CLANK_TALK_USAGE, TAINT_USAGE } from "../../host.js";
 
 import { SESSION_NAME, sessionMode, statePath } from "./state.js";
 import { ClankTalkChannel } from "./channel.js";
@@ -35,7 +35,7 @@ export async function setup(context, options = {}) {
     const id = sessionID();
     if (arg === "on" || arg === "off") {
       if (arg === "off" && harness.required) {
-        toast("AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.", "warning");
+        toast(STAYS_ON, "warning");
         return;
       }
       if (id === null) {
@@ -48,7 +48,7 @@ export async function setup(context, options = {}) {
       return;
     }
     if (arg !== "") {
-      toast("Usage: /clank-talk [on | off]", "warning");
+      toast(CLANK_TALK_USAGE, "warning");
       return;
     }
     const state = await sessionMode(root, id, harness);
@@ -72,7 +72,7 @@ export async function setup(context, options = {}) {
       return;
     }
     if (arg !== "") {
-      toast("Usage: /taint [clear]", "warning");
+      toast(TAINT_USAGE, "warning");
       return;
     }
     await review();

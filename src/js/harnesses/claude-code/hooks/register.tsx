@@ -383,6 +383,7 @@ async function projectHarness($: EngineInterface, root: string): Promise<Harness
 let switched: 'on' | 'off' | null = null
 
 // on or off, and why: require clank-talk wins, then /clank-talk on or off, then on when there is an AGENTS.talk
+// a copy of harnessMode in src/js/host.js: the plugin cannot import it
 async function mode($: EngineInterface, root: string, harness: Harness): Promise<{ on: boolean; why: string }> {
   if (harness.required) {
     return { on: true, why: 'required by AGENTS.talk' }

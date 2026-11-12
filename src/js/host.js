@@ -2,6 +2,7 @@
 // the hosts are in harnesses/: the MCP server (mcp.js) and the pi extension (pi.js, pi-host.js)
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import nodePath from "node:path";
@@ -10,6 +11,7 @@ import { listTools, run } from "./clank-talk.js";
 import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
 import { isProtectedPath } from "./runtime.js";
+import { taintCommand } from "./taint-cli.js";
 
 // ----- the project root -----
 // see src/md/infrastructure/host.md
@@ -410,6 +412,57 @@ export function harnessToolAllowed(name, patterns) {
     const parts = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"));
     return new RegExp("^" + parts.join(".*") + "$").test(name);
   });
+}
+
+// ----- ClankTalk on or off in a harness; see src/md/features/harness-tools.md -----
+// the Claude Code plugin cannot import this file, so register.tsx has a copy of harnessMode
+
+export const STAYS_ON = "AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.";
+export const CLANK_TALK_USAGE = "Usage: /clank-talk [on | off]";
+export const TAINT_USAGE = "Usage: /taint [clear]";
+
+// on or off, and why: require clank-talk wins, then /clank-talk on or off for the session, then on when there is an AGENTS.talk
+// switched is "on", "off" or null
+export function harnessMode(harness, switched) {
+  if (harness.required) {
+    return { on: true, why: "required by AGENTS.talk" };
+  }
+  if (switched === "on" || switched === "off") {
+    return { on: switched === "on", why: "from /clank-talk " + switched };
+  }
+  return harness.agentsTalk ? { on: true, why: "the project has an AGENTS.talk" } : { on: false, why: "the project has no AGENTS.talk" };
+}
+
+// a session id that is a plain name, so it cannot point outside .talk/harness/
+export const SESSION_NAME = /^[A-Za-z0-9._-]+$/;
+
+// the file that keeps on or off for one harness session: .talk/harness/<client>-<session id>.json
+export function switchPath(root, client, sessionID) {
+  return nodePath.join(root, ".talk", "harness", client + "-" + sessionID + ".json");
+}
+
+// "on" or "off" from a session's file, or null if there is no file or the id is not a plain name
+export async function savedSwitch(root, client, sessionID) {
+  if (typeof sessionID !== "string" || !SESSION_NAME.test(sessionID)) {
+    return null;
+  }
+  try {
+    return JSON.parse(await readFile(switchPath(root, client, sessionID), "utf8")).on === true ? "on" : "off";
+  } catch {
+    return null;
+  }
+}
+
+// the status line: clank-talk: on, untainted | clank-talk: off, tainted 3 | clank-talk: on, taint off
+export async function statusLine(root, on) {
+  const lines = [];
+  try {
+    await taintCommand(["--line"], root, (line) => lines.push(line));
+  } catch {
+    // no store yet, or one that cannot be read
+    lines.splice(0, lines.length, "taint unknown");
+  }
+  return "clank-talk: " + (on ? "on" : "off") + ", " + lines.join(" ");
 }
 
 // a path that an allowed harness tool must never change: .talk/ (the audit, the taint store, the session state),

@@ -5,10 +5,9 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { stopAllProcesses } from "../clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../runtime.js";
-import * as untrusted from "../untrusted.js";
 import { taintCommand } from "../taint-cli.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, loadPolicy, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, loadPolicy, projectRoot, harnessToolAllowed, protectedHarnessPath, harnessMode, statusLine, STAYS_ON, CLANK_TALK_USAGE, TAINT_USAGE } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -39,15 +38,9 @@ export function clankTalkExtension(pi, Type, options = {}) {
   // the tools that pi had active before ClankTalk, for /clank-talk off
   let startTools = [];
 
-  // on or off, and why: require clank-talk wins, then /clank-talk on or off, then on when there is an AGENTS.talk
+  // on or off, and why
   function mode() {
-    if (harness.required) {
-      return { on: true, why: "required by AGENTS.talk" };
-    }
-    if (switched !== null) {
-      return { on: switched === "on", why: "from /clank-talk " + switched };
-    }
-    return harness.agentsTalk ? { on: true, why: "the project has an AGENTS.talk" } : { on: false, why: "the project has no AGENTS.talk" };
+    return harnessMode(harness, switched);
   }
 
   // the project root for a command: the session's, or the folder where pi runs
@@ -142,7 +135,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
         return;
       }
       if (arg !== "") {
-        ctx.ui.notify("Usage: /taint [clear]", "warning");
+        ctx.ui.notify(TAINT_USAGE, "warning");
         return;
       }
       await ctx.ui.custom((tui, _theme, _keybindings, done) => {
@@ -186,7 +179,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
       const arg = String(args || "").trim();
       if (arg === "on" || arg === "off") {
         if (arg === "off" && harness.required) {
-          say("AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.", "warning");
+          say(STAYS_ON, "warning");
           return;
         }
         switched = arg;
@@ -196,7 +189,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
         return;
       }
       if (arg !== "") {
-        say("Usage: /clank-talk [on | off]", "warning");
+        say(CLANK_TALK_USAGE, "warning");
         return;
       }
       const state = mode();
@@ -259,14 +252,7 @@ async function showTaint(ctx, root, on) {
   if (!ctx || !ctx.hasUI) {
     return;
   }
-  const lines = [];
-  try {
-    await taintCommand(["--line"], root, (line) => lines.push(line));
-  } catch {
-    // no store yet, or one that cannot be read
-    lines.push("taint unknown");
-  }
-  ctx.ui.setStatus(STATUS_KEY, "clank-talk: " + (on ? "on" : "off") + ", " + lines.join(" "));
+  ctx.ui.setStatus(STATUS_KEY, await statusLine(root, on));
 }
 
 // a subagent uses pi's own model and login, so it needs no API key; see src/md/features/subagents.md
