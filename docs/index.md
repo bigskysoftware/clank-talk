@@ -62,9 +62,8 @@ print process 'site'
 <button class="install-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="agent-icon claude">C</span><span class="install-name">Claude Code</span><span class="install-chevron"></span></button>
 <ul class="install-menu" role="listbox" hidden>
 <li role="option" tabindex="0" data-agent="claude"><span class="agent-icon claude">C</span>Claude Code</li>
-<li role="option" tabindex="0" data-agent="cursor"><span class="agent-icon cursor">C</span>Cursor</li>
-<li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
 <li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
+<li role="option" tabindex="0" data-agent="opencode"><span class="agent-icon other">O</span>opencode (experimental)</li>
 <li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
 </ul>
 </div>
@@ -72,23 +71,14 @@ print process 'site'
 <button class="install-copy" type="button">Copy</button>
 <pre data-agent="claude"><code># add the server
 claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
-# start Claude Code with ClankTalk as its only tool
-claude --tools "" --allowedTools mcp__clank-talk</code></pre>
-<pre data-agent="cursor" hidden><code>// .cursor/mcp.json
-{
-  "mcpServers": {
-    "clank-talk": {
-      "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
-    }
-  }
-}</code></pre>
-<pre data-agent="codex" hidden><code># ~/.codex/config.toml
-[mcp_servers.clank-talk]
-command = "npx"
-args = ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]</code></pre>
+# then, in Claude Code, add the plugin: /taint, /clank-talk, and the guard
+/plugin install clank-talk --marketplace bigskysoftware/clank-talk</code></pre>
 <pre data-agent="pi" hidden><code># install the ClankTalk package for this project
 pi install -l git:github.com/bigskysoftware/clank-talk</code></pre>
+<pre data-agent="opencode" hidden><code># experimental, opencode V2: install the package in your project
+npm install --save-dev clank-talk
+# then load the plugin in opencode.jsonc
+{ "plugins": ["./node_modules/clank-talk/src/js/harnesses/opencode"] }</code></pre>
 <pre data-agent="other" hidden><code>{
   "mcpServers": {
     "clank-talk": {
@@ -236,7 +226,15 @@ allow you or the agent to back out any changes made on
 disk easily, even if you aren't using git.
 
 ```talk undo.talk
-undo 2
+replace 'retries: 3' with 'retries: 5' in ./src/config.js
+set tests to run_tests
+if tests's code is not 0
+  # the change broke the tests: take it back
+  undo
+end
+
+# or go back further, or one file only
+undo 3
 undo changes to ./src/config.js
 ```
 
@@ -248,8 +246,14 @@ be used to compromise you.
 
 ```talk fix.talk
 git switch to new branch 'fix-retries'
+replace 'retries: 3' with 'retries: 5' in ./src/config.js
+git diff ./src/config.js
+print it
 git commit [./src/config.js] with 'More retries'
+git rebase onto 'main'
 git push
+# no hooks, no pager, no external diff, and
+# a repo config that runs programs stops git
 ```
 
 ## Taint Tracking
@@ -274,7 +278,9 @@ You can turn off your other tools and ClankTalk becomes
 the only way your agent can interact with your system.
 
 ```bash terminal
-claude --tools "" --allowedTools mcp__clank-talk
+claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
+# in Claude Code
+/plugin install clank-talk --marketplace bigskysoftware/clank-talk
 ```
 
 

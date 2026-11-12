@@ -329,6 +329,7 @@ pre {
 /* margins do not collapse in a flex column, so each block gets only a bottom margin */
 .feature > p, .feature > ul { margin: 0 0 0.7rem; }
 .feature .window { margin: 0.8rem 0 0; }
+.feature .window ~ p { margin-top: 1rem; }
 /* the last window grows to the bottom of the card, so the cards in a row end together */
 .feature > .window:last-child { flex: 1; display: flex; flex-direction: column; }
 .feature > .window:last-child pre { flex: 1; }

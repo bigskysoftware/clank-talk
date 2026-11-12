@@ -88,8 +88,6 @@ will start using it.
 <button class="install-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="agent-icon claude">C</span><span class="install-name">Claude Code</span><span class="install-chevron"></span></button>
 <ul class="install-menu" role="listbox" hidden>
 <li role="option" tabindex="0" data-agent="claude"><span class="agent-icon claude">C</span>Claude Code</li>
-<li role="option" tabindex="0" data-agent="cursor"><span class="agent-icon cursor">C</span>Cursor</li>
-<li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
 <li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
 <li role="option" tabindex="0" data-agent="opencode"><span class="agent-icon other">O</span>opencode (experimental)</li>
 <li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
@@ -131,39 +129,6 @@ To share the server with your team, put it in a `.mcp.json` at the root of your 
 ```
 
 </aside>
-
-</div>
-
-<div class="harness" data-agent="cursor" hidden>
-
-### Cursor
-
-Save this as `.cursor/mcp.json` in your project:
-
-```json
-{
-  "mcpServers": {
-    "clank-talk": {
-      "command": "npx",
-      "args": ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
-    }
-  }
-}
-```
-
-</div>
-
-<div class="harness" data-agent="codex" hidden>
-
-### Codex
-
-Add this to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.clank-talk]
-command = "npx"
-args = ["-y", "-p", "clank-talk@0.1", "clank-talk-mcp"]
-```
 
 </div>
 
@@ -227,6 +192,12 @@ Most MCP clients take a config like this:
     }
   }
 }
+```
+
+Cursor reads it from `.cursor/mcp.json` in your project.  For Codex, run:
+
+```bash
+$ codex mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
 ```
 
 If your client lets you, turn off its other tools, so the agent uses ClankTalk for everything.
