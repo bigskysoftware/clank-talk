@@ -33,7 +33,7 @@ const ANSWER_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/answer$/
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'taint', description: 'Review and approve the untrusted inputs of this ClankTalk project' })
-    await $.command.register({ name: 'clank-talk', description: 'ClankTalk only: on, off, or show which tools are allowed' })
+    await $.command.register({ name: 'clank-talk', description: 'ClankTalk only: on, off, or show which tools are allowed', argumentHint: '[on | off]' })
     return next(e)
   })
 
