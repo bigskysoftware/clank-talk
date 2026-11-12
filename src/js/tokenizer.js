@@ -100,6 +100,20 @@ function removeIndent(raw) {
     lines[lines.length - 1] = "";
   }
 
+  const indent = sharedIndent(lines);
+  const result = [];
+  for (const line of lines) {
+    if (line.trim() === "") {
+      result.push("");
+    } else {
+      result.push(line.slice(indent));
+    }
+  }
+  return result.join("\n");
+}
+
+// the indent that all non-blank lines share, or null if all lines are blank
+function sharedIndent(lines) {
   let indent = null;
   for (const line of lines) {
     if (line.trim() === "") {
@@ -110,16 +124,7 @@ function removeIndent(raw) {
       indent = spaces;
     }
   }
-
-  const result = [];
-  for (const line of lines) {
-    if (line.trim() === "") {
-      result.push("");
-    } else {
-      result.push(line.slice(indent));
-    }
-  }
-  return result.join("\n");
+  return indent;
 }
 
 // ${} inside ${} can nest this deep; the parser has the same cap for expressions
@@ -446,13 +451,18 @@ export function tokenize(source) {
       }
 
       // a script with CRLF line breaks gives LF in a string, as | blocks and raw strings do
-      const parts = splitTemplate(removeIndent(raw.replaceAll("\r\n", "\n")), startLine, startColumn);
+      const text = raw.replaceAll("\r\n", "\n");
+      const parts = splitTemplate(removeIndent(text), startLine, startColumn);
       if (parts.length === 1 && typeof parts[0] === "string") {
         push("string", parts[0], startLine, startColumn);
       } else if (parts.length === 0) {
         push("string", "", startLine, startColumn);
       } else {
         push("template", parts, startLine, startColumn);
+      }
+      // a string on more than one line lost the indent its lines share: replace warns, as code needs its spaces
+      if (text.includes("\n") && sharedIndent(text.split("\n")) > 0) {
+        tokens[tokens.length - 1].dedented = true;
       }
       continue;
     }

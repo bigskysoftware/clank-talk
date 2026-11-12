@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { parseEnv } from "node:util";
 import dns from "node:dns/promises";
 
-const DEFAULT_MAX_STEPS = 10_000;
+const DEFAULT_MAX_STEPS = 100_000;
 const AGENTS_TALK = "AGENTS.talk";
 
 // error messages show at most this much of a value
@@ -1805,6 +1805,13 @@ async function runCommand(command, state) {
     if (old === "") {
       throw new ScriptError("Cannot replace empty text", command);
     }
+    if (command.old.dedented) {
+      const warning = { message: "The old text is a quoted string on more than one line, so the indent its lines share was removed. For code, use a text block (| lines)", line: command.old.line, column: command.old.column };
+      if (state.file) {
+        warning.file = state.file;
+      }
+      state.execution.warnings.push(warning);
+    }
     const target = await evaluate(command.target, state);
     if (target instanceof FileRef) {
       const replacements = await replaceInFile(target, old, replacement, state, command);
@@ -2175,6 +2182,10 @@ async function evaluate(node, state) {
     // text has lines, as a file does
     if (typeof object === "string" && node.name === "lines") {
       return splitLines(object);
+    }
+    // lines, such as from find, are their own lines: they keep their numbers and files
+    if (node.name === "lines" && Array.isArray(object) && object.every((item) => item instanceof Line)) {
+      return object;
     }
     // first and last: of a list, or of the lines of text
     if (node.name === "first" || node.name === "last") {

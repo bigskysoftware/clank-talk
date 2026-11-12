@@ -28,7 +28,7 @@ await execution.done  // { status, output, errors, steps }
 - Parse errors stop the script before it runs.
 - A runtime error stops the script. `on error` comes later.
 - Everything is async, so later commands (`read`, `fetch`, `ask`) can wait without a change to how scripts are written.
-- Each command is one step, and each pass of a loop is one step. When the step count goes over `maxSteps` (default 10,000), the script stops. Thus `repeat while true end` stops too.
+- Each command is one step, and each pass of a loop is one step. When the step count goes over `maxSteps` (default 100,000), the script stops. Thus `repeat while true end` stops too. Changed 2026-11-12: before, the default was 10,000, and a loop over the lines of a 6000-line file used it up. Steps are cheap; the budget only stops a script that never ends.
 - `break` and `continue` pass up from `runCommand` as a return value, until a loop takes them.
 - `print` adds a line to `output`.
 - Local variables last for one run. `$` globals live in `options.globals`. A host keeps them for a session when it passes the same object to each run.

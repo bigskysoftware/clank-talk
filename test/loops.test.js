@@ -55,6 +55,30 @@ test("break only leaves the inner loop", async () => {
   assert.deepEqual(await output(source), ["1", "2"]);
 });
 
+test("a one-line if needs its end on the same line", async () => {
+  const message = "A one-line if needs 'end' on the same line: if <condition> then <command> end. For more lines, put the commands on the lines after the if";
+  // one error, at the if; the for still has its end
+  assert.deepEqual(await errors("for l in [1, 2]\n  if l > 1 then print l\nend"), [message]);
+  assert.deepEqual(await errors("if true then print 1\nend"), [message]);
+  assert.deepEqual(await output("for l in [1, 2]\n  if l > 1 then print l end\nend"), ["2"]);
+  assert.deepEqual(await output("if true then\n  print 1\nend"), ["1"]);
+  assert.deepEqual(await output("if true print 1 then print 2 end"), ["1", "2"]);
+});
+
+test("replace warns when its old text is a quoted string on more than one line that lost its indent", async () => {
+  const result = await run("set t to '    a,\\n    b'\nreplace '    a,\n    b' with 'x' in t\nprint t");
+  assert.deepEqual(result.warnings.map((warning) => warning.message), ["The old text is a quoted string on more than one line, so the indent its lines share was removed. For code, use a text block (| lines)", "No match in the variable for 'a,\nb'"]);
+  // a text block keeps the spaces, and gives no warning
+  const block = await run("set t to '    a,\\n    b'\nreplace\n|     a,\n|     b\nwith 'x' in t\nprint t");
+  assert.deepEqual(block.warnings, []);
+  assert.deepEqual(block.output, ["x"]);
+});
+
+test("lines of lines, such as from find, are the same lines", async () => {
+  const result = await run("set t to 'a\\nb x\\nc x'\nset hits to find 'x' in t\nset again to lines of hits\nprint again\nprint again's length");
+  assert.deepEqual(result.output, ["2: b x\n3: c x", "2"]);
+});
+
 test("break and continue outside a loop are errors", async () => {
   assert.deepEqual(await errors("break"), ["'break' is only allowed in a loop"]);
   assert.deepEqual(await errors("if true continue end"), ["'continue' is only allowed in a loop"]);

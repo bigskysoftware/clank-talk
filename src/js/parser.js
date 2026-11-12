@@ -708,13 +708,14 @@ export function parse(source, options = {}) {
       return null;
     }
 
-    if (token.type === "string") {
+    if (token.type === "string" || token.type === "template") {
       i++;
-      return node("string", token, { value: token.value });
-    }
-    if (token.type === "template") {
-      i++;
-      return parseTemplate(token);
+      const value = token.type === "string" ? node("string", token, { value: token.value }) : parseTemplate(token);
+      // a string on more than one line that lost its shared indent; see the tokenizer
+      if (value !== null && token.dedented) {
+        value.dedented = true;
+      }
+      return value;
     }
     if (token.type === "number") {
       if (!Number.isFinite(Number(token.value))) {
@@ -875,8 +876,20 @@ export function parse(source, options = {}) {
 
   function parseIf(token) {
     const condition = parseExpression();
+    // a one-line if, 'if x then y end': a command after 'then' on the line of the if
+    const oneLine = isWord("then") && current().line === token.line && tokens[i + 1] !== undefined && tokens[i + 1].line === token.line;
     blockDepth++;
     const body = parseCommands();
+    // its end must be on the same line, or the if takes the end of the block around it
+    if (oneLine && (current() === undefined || current().line !== token.line)) {
+      errors.push({ message: "A one-line if needs 'end' on the same line: if <condition> then <command> end. For more lines, put the commands on the lines after the if", line: token.line, column: token.column });
+      blockDepth--;
+      // with no block around it, the end is for this if: take it, so it gives no second error
+      if (blockDepth === 0 && isWord("end")) {
+        i++;
+      }
+      return { type: "if", condition, body, elseBody: [], line: token.line, column: token.column };
+    }
     let elseBody = [];
     if (isWord("else")) {
       i++;
