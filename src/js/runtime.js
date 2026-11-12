@@ -614,13 +614,23 @@ function subagentModel(state, node) {
   return anthropicModel({ url: state.subagentUrl, key: entry.value, model: use.model });
 }
 
+// the tools that a subagent can call, as the model sees them
+function subagentTools(state, names) {
+  return names.map((name) => ({ name, description: state.definitions[name].description || "A ClankTalk tool.", params: state.definitions[name].params }));
+}
+
+// the answer to a subagent that calls a tool that is not in its list
+function noSuchTool(name, names) {
+  return { content: "There is no tool named " + name + ". Use: " + names.join(", "), isError: true };
+}
+
 // run '<prompt>' in a subagent with only <tools>: the answer is untrusted text
 async function runSubagentCommand(command, state) {
   checkDenied("subagents", state, command);
   const prompt = redact(toText(await evaluate(command.program, state)), state);
   const ask = subagentModel(state, command);
   const owner = "subagent " + state.auditFrom;
-  const tools = command.subagent.tools.map((name) => ({ name, description: state.definitions[name].description || "A ClankTalk tool.", params: state.definitions[name].params }));
+  const tools = subagentTools(state, command.subagent.tools);
   let limit = shorter(state.timeLimit, SUBAGENT_TIME_LIMIT);
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
@@ -630,7 +640,7 @@ async function runSubagentCommand(command, state) {
 
   const callOne = async (name, input) => {
     if (!command.subagent.tools.includes(name)) {
-      return { content: "There is no tool named " + name + ". Use: " + command.subagent.tools.join(", "), isError: true };
+      return noSuchTool(name, command.subagent.tools);
     }
     takeStep(command, state, state.maxSteps);
     const definition = state.definitions[name];
@@ -690,11 +700,11 @@ async function startSubagent(command, state) {
   const ask = subagentModel(state, command);
   const owner = "subagent " + name;
   const allowed = command.subagent.tools;
-  const tools = allowed.map((tool) => ({ name: tool, description: state.definitions[tool].description || "A ClankTalk tool.", params: state.definitions[tool].params }));
+  const tools = subagentTools(state, allowed);
   const options = state.options;
   const callOne = async (tool, input) => {
     if (!allowed.includes(tool)) {
-      return { content: "There is no tool named " + tool + ". Use: " + allowed.join(", "), isError: true };
+      return noSuchTool(tool, allowed);
     }
     const globals = Object.create(null);
     const names = state.definitions[tool].params.map((param, index) => {
