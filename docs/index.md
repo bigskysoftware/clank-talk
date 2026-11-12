@@ -63,6 +63,7 @@ print process 'site'
 <ul class="install-menu" role="listbox" hidden>
 <li role="option" tabindex="0" data-agent="claude"><span class="agent-icon claude">C</span>Claude Code</li>
 <li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
+<li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
 <li role="option" tabindex="0" data-agent="opencode"><span class="agent-icon other">O</span>opencode (experimental)</li>
 <li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
 </ul>
@@ -75,6 +76,10 @@ claude mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
 /plugin install clank-talk --marketplace bigskysoftware/clank-talk</code></pre>
 <pre data-agent="pi" hidden><code># install the ClankTalk package for this project
 pi install -l git:github.com/bigskysoftware/clank-talk</code></pre>
+<pre data-agent="codex" hidden><code># add the server
+codex mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
+# check that it is there
+codex mcp list</code></pre>
 <pre data-agent="opencode" hidden><code># experimental, opencode V2: install the package in your project
 npm install --save-dev clank-talk
 # then load the plugin in opencode.jsonc

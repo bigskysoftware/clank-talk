@@ -89,6 +89,7 @@ will start using it.
 <ul class="install-menu" role="listbox" hidden>
 <li role="option" tabindex="0" data-agent="claude"><span class="agent-icon claude">C</span>Claude Code</li>
 <li role="option" tabindex="0" data-agent="pi"><span class="agent-icon pi">&pi;</span>pi</li>
+<li role="option" tabindex="0" data-agent="codex"><span class="agent-icon codex">O</span>Codex</li>
 <li role="option" tabindex="0" data-agent="opencode"><span class="agent-icon other">O</span>opencode (experimental)</li>
 <li role="option" tabindex="0" data-agent="other"><span class="agent-icon other">M</span>Other MCP clients</li>
 </ul>
@@ -157,6 +158,19 @@ Careful with `pi install` without the `-l`: then every pi session on your machin
 
 </div>
 
+<div class="harness" data-agent="codex" hidden>
+
+### Codex
+
+Add the server:
+
+```bash
+$ codex mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
+$ codex mcp list
+```
+
+</div>
+
 <div class="harness" data-agent="opencode" hidden>
 
 ### opencode (experimental)
@@ -194,11 +208,7 @@ Most MCP clients take a config like this:
 }
 ```
 
-Cursor reads it from `.cursor/mcp.json` in your project.  For Codex, run:
-
-```bash
-$ codex mcp add clank-talk -- npx -y -p clank-talk@0.1 clank-talk-mcp
-```
+Cursor reads it from `.cursor/mcp.json` in your project.
 
 If your client lets you, turn off its other tools, so the agent uses ClankTalk for everything.
 
@@ -779,9 +789,11 @@ Your agent has no shell in ClankTalk, so it cannot run these commands.
 
 Or, without leaving your harness, ask your agent to run `taint review`.  It shows you a form with a table of the inputs that are not approved, and a box to approve each one.  Only you can fill in the form.
 
+With the ClankTalk plugin for Claude Code, pi or opencode, type `/taint` to read and approve the inputs, or `/taint clear` to approve them all.  In a terminal, `npx clank-talk taint --tui` opens a full-screen review with vi keys.  Your agent cannot run any of these.
+
 <aside>
 
-In Claude Code, you can show the taint state in your status bar with `npx clank-talk taint --line`, which prints `taint off`, `untainted` or `tainted <n>`.
+In Claude Code, you can show ClankTalk in your status line with `npx clank-talk status-line`, which prints `clank-talk: on, untainted` or `clank-talk: off, tainted 3`.  Set it as the `command` of `statusLine` in your settings.
 
 </aside>
 
@@ -823,6 +835,25 @@ let the judge approve clean inputs
 - `npx clank-talk taint off` and `npx clank-talk taint on` change the setting from your terminal.  They win over `taint on` and `taint off`, but not over `taint required`.
 - `judge with prompt '...'` replaces the prompt of the judge.
 - A [team policy](policy.html) can hold `taint required` too.
+
+### Turning ClankTalk On and Off {#on-off}
+
+With the ClankTalk plugin, ClankTalk is on in a project that has an `AGENTS.talk`: your agent gets `clank_talk`, and the harness blocks its other tools.  Type `/clank-talk off` or `/clank-talk on` to change that for the current session, and `/clank-talk` to see which tools are allowed.
+
+Your `AGENTS.talk` can keep it on, and allow some other tools by name:
+
+```talk AGENTS.talk
+# /clank-talk off is refused
+require clank-talk
+
+# these harness tools stay available
+allow harness tools Read, Grep
+
+# these too, but their results are untrusted and taint the session
+allow untrusted harness tools WebFetch
+```
+
+ClankTalk records each call of an allowed tool in its audit.  An allowed tool can never change `.talk/` or a `.talk` file.
 
 ### Creating An Agents.talk File
 
