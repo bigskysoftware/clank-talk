@@ -5871,7 +5871,7 @@ async function moveFile(from, to, state, node) {
 // a protected path, relative to the root: any .talk file, anything in talk/ (extensions),
 // or anything in .talk/ (the audit and the untrusted inputs); no allow line can open these
 // letter case does not matter, because some file systems ignore it
-function isProtectedPath(relative) {
+export function isProtectedPath(relative) {
   const lower = relative.toLowerCase();
   return lower.endsWith(".talk") || lower === "talk" || lower.startsWith("talk/") || lower.startsWith(".talk/");
 }

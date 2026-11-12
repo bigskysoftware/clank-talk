@@ -139,7 +139,7 @@ export async function setup(ctx) {
     // an allowed edit never changes .talk/ or a .talk file, as a script cannot
     if (event.action === "edit" && (event.resources || []).some((resource) => protectedHarnessPath(root, resource)) && (await mode(event.sessionID)).on) {
       event.effect = "deny";
-      event.message = "ClankTalk protects .talk/ and .talk files. Only the human changes them.";
+      event.message = "ClankTalk protects .talk/, talk/ and .talk files. Only the human changes them.";
       return;
     }
     if (!allowed(event.action) && (await mode(event.sessionID)).on) {

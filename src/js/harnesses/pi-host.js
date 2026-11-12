@@ -172,7 +172,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
     // an allowed write or edit never changes .talk/ or a .talk file, as a script cannot
     const input = event.input || {};
     if (mode().on && /^(write|edit)$/.test(event.toolName) && session !== null && protectedHarnessPath(session.root, input.path)) {
-      return { block: true, reason: "ClankTalk protects .talk/ and .talk files: " + input.path + ". Only the human changes them." };
+      return { block: true, reason: "ClankTalk protects .talk/, talk/ and .talk files: " + input.path + ". Only the human changes them." };
     }
     return undefined;
   });

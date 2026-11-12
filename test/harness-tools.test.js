@@ -183,6 +183,11 @@ test("an allowed write or edit never changes .talk/ or a .talk file", async () =
   assert.equal(protectedHarnessPath("/p", "src/../.talk/audit/x.log"), true);
   assert.equal(protectedHarnessPath("/p", "src/app.js"), false);
   assert.equal(protectedHarnessPath("/p", ".talkative/x"), false);
+  // talk/ holds the tools, and case does not matter, as for scripts
+  assert.equal(protectedHarnessPath("/p", "talk/tools.js"), true);
+  assert.equal(protectedHarnessPath("/p", "/p/Talk/x.js"), true);
+  assert.equal(protectedHarnessPath("/p", "/p/.TALK/audit/x.log"), true);
+  assert.equal(protectedHarnessPath("/p", "talkative/x.js"), false);
   // pi: an allowed write to the store is blocked
   const root = await project("allow harness tools write");
   const pi = fakePi();

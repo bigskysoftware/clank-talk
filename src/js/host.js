@@ -9,6 +9,7 @@ import os from "node:os";
 import { listTools } from "./clank-talk.js";
 import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
+import { isProtectedPath } from "./runtime.js";
 
 // ----- the project root -----
 // see src/md/infrastructure/host.md
@@ -373,13 +374,11 @@ export function harnessToolAllowed(name, patterns) {
   });
 }
 
-// a path that an allowed harness tool must never change: .talk/ (the audit, the taint store, the session state) and .talk files
-// scripts cannot change them; this keeps an allowed Write or Edit from doing it; see src/md/features/harness-tools.md
+// a path that an allowed harness tool must never change: .talk/ (the audit, the taint store, the session state),
+// talk/ (the tools) and .talk files; the same rule as for scripts; see src/md/features/harness-tools.md
 export function protectedHarnessPath(root, path) {
   if (typeof path !== "string" || path === "") {
     return false;
   }
-  const full = nodePath.resolve(root, path);
-  const talk = nodePath.join(nodePath.resolve(root), ".talk");
-  return full === talk || full.startsWith(talk + nodePath.sep) || full.endsWith(".talk");
+  return isProtectedPath(nodePath.relative(nodePath.resolve(root), nodePath.resolve(root, path)).split(nodePath.sep).join("/"));
 }

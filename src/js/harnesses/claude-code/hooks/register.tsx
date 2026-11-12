@@ -60,7 +60,7 @@ export const register: Register = on => {
       // an allowed write or edit never changes .talk/ or a .talk file, as a script cannot
       const target = (e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path
       if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(e.tool) && protectedPath(root, target)) {
-        return { deny: 'ClankTalk protects .talk/ and .talk files: ' + String(target) + '. Only the human changes them.' }
+        return { deny: 'ClankTalk protects .talk/, talk/ and .talk files: ' + String(target) + '. Only the human changes them.' }
       }
       const ran = await next(e)
       await recordCall($, root, e.tool, e, ran, WEB_TOOLS.includes(e.tool) || toolAllowed(e.tool, harness.untrusted ?? []))
@@ -410,7 +410,7 @@ function grouped(names: string[]): string {
   return [...plain, ...mcp].join(', ')
 }
 
-// .talk/ and .talk files: an allowed tool must not change them; see protectedHarnessPath in src/js/host.js
+// .talk/, talk/ and .talk files: an allowed tool must not change them; the same rule as isProtectedPath in src/js/runtime.js
 function protectedPath(root: string, path: unknown): boolean {
   if (typeof path !== 'string' || path === '') {
     return false
@@ -424,9 +424,10 @@ function protectedPath(root: string, path: unknown): boolean {
       parts.push(part)
     }
   }
-  const full = '/' + parts.join('/')
-  const talk = root.replace(/\/+$/, '') + '/.talk'
-  return full === talk || full.startsWith(talk + '/') || full.endsWith('.talk')
+  const full = ('/' + parts.join('/')).toLowerCase()
+  const base = root.replace(/\/+$/, '').toLowerCase()
+  const relative = full.startsWith(base + '/') ? full.slice(base.length + 1) : full
+  return relative.endsWith('.talk') || relative === 'talk' || relative.startsWith('talk/') || relative.startsWith('.talk/')
 }
 
 // a name from allow harness tools: the same name, or a pattern where * is any text
