@@ -3,12 +3,12 @@
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { run, stopAllProcesses } from "../clank-talk.js";
+import { stopAllProcesses } from "../clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../runtime.js";
 import * as untrusted from "../untrusted.js";
 import { taintCommand } from "../taint-cli.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, loadPolicy, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -71,7 +71,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
 
   pi.on("session_start", async (_event, ctx) => {
     // the root: CLANK_TALK_ROOT, or the folder where pi starts
-    session = newSession(projectRoot(null, ctx.cwd));
+    session = newSession(projectRoot(null, ctx.cwd), "pi");
     // pi gives the flag values only after loading, so the policy is read here
     const file = pi.getFlag("clank-policy");
     const hash = pi.getFlag("clank-policy-hash");
@@ -235,36 +235,15 @@ export function clankTalkExtension(pi, Type, options = {}) {
       executionMode: "sequential",
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         if (session === null) {
-          session = newSession(projectRoot(null, ctx.cwd));
+          session = newSession(projectRoot(null, ctx.cwd), "pi");
         }
         if (session.policyError) {
           return { content: [{ type: "text", text: "ClankTalk does not run: " + session.policyError }], details: {}, isError: true };
         }
-        const agent = params.agent;
-        if (agent !== undefined && !AGENT_NAME.test(agent)) {
-          return { content: [{ type: "text", text: "The argument 'agent' must be a name of 1 to 40 letters, digits, -, _ or ." }], details: {}, isError: true };
+        if (badAgent(params.agent)) {
+          return { content: [{ type: "text", text: AGENT_ERROR }], details: {}, isError: true };
         }
-        const scope = agentScope(session, agent);
-        const result = await run(params.script, {
-          root: session.root,
-          globals: scope.globals,
-          seen: scope.seen,
-          undo: scope.undo,
-          agent: agent || null,
-          policy: session.policy,
-          fetchHosts: session.fetchHosts,
-          processes: session.processes,
-          audit: session.audit,
-          ask: askFor(ctx),
-          harness: "pi",
-          lendModel: lendModelFor(ctx),
-          maxSteps: MAX_STEPS,
-          onStep: progressFor(onUpdate),
-          signal,
-          previousOutput: scope.output.text,
-          session: session.name,
-        });
-        scope.output.text = keptOutput(result);
+        const result = await runScript(session, params.script, params.agent, { harness: "pi", ask: askFor(ctx), lendModel: lendModelFor(ctx), onStep: progressFor(onUpdate), signal });
         return {
           content: [{ type: "text", text: formatResult(result, params.script, session.root) }],
           details: { status: result.status, steps: result.steps },
@@ -288,10 +267,6 @@ async function showTaint(ctx, root, on) {
     lines.push("taint unknown");
   }
   ctx.ui.setStatus(STATUS_KEY, "clank-talk: " + (on ? "on" : "off") + ", " + lines.join(" "));
-}
-
-function newSession(root) {
-  return { root, name: sessionName("pi"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
 }
 
 // a subagent uses pi's own model and login, so it needs no API key; see src/md/features/subagents.md

@@ -2,8 +2,8 @@
 // Load it from opencode.jsonc: "plugins": ["<path to clank-talk>/src/js/harnesses/opencode"]
 // V2 reads the default export's id and setup(); no @opencode/plugin import is needed (opencode docs, Plugins, Support V1)
 
-import { run, stopAllProcesses } from "../../clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../../host.js";
+import { stopAllProcesses } from "../../clank-talk.js";
+import { describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../../host.js";
 import { projectHarness, recordHarnessTool } from "../../runtime.js";
 import { sessionMode } from "./state.js";
 import { ClankTalkChannel, SEEN_WITHIN_MS } from "./channel.js";
@@ -28,7 +28,7 @@ export async function setup(ctx) {
   function sessionFor(sessionID) {
     let session = sessions.get(sessionID);
     if (session === undefined) {
-      session = { root, name: sessionName("opencode"), globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
+      session = newSession(root, "opencode");
       sessions.set(sessionID, session);
     }
     return session;
@@ -84,30 +84,12 @@ export async function setup(ctx) {
       options: { codemode: false },
       execute: async (input, context) => {
         const session = sessionFor(context.sessionID);
-        const agent = input.agent;
-        if (agent !== undefined && !AGENT_NAME.test(agent)) {
-          return { content: "The argument 'agent' must be a name of 1 to 40 letters, digits, -, _ or ." };
+        if (badAgent(input.agent)) {
+          return { content: AGENT_ERROR };
         }
-        const scope = agentScope(session, agent);
         // a plain rejection of a question must end the step (opencode's permission.assert); the script then stops too
         const stop = { error: null };
-        const result = await run(input.script, {
-          root,
-          globals: scope.globals,
-          seen: scope.seen,
-          undo: scope.undo,
-          agent: agent || null,
-          fetchHosts: session.fetchHosts,
-          processes: session.processes,
-          audit: session.audit,
-          ask: askFor(ctx, context, stop, channel),
-          harness: "opencode",
-          maxSteps: MAX_STEPS,
-          signal: context.signal,
-          previousOutput: scope.output.text,
-          session: session.name,
-        });
-        scope.output.text = keptOutput(result);
+        const result = await runScript(session, input.script, input.agent, { harness: "opencode", ask: askFor(ctx, context, stop, channel), signal: context.signal });
         if (stop.error !== null) {
           throw stop.error;
         }

@@ -10,8 +10,8 @@
 import { watch } from "node:fs";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
-import { run, stopAllProcesses, VERSION } from "../clank-talk.js";
-import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, rootWarning } from "../host.js";
+import { stopAllProcesses, VERSION } from "../clank-talk.js";
+import { describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, sessionName, loadPolicy, projectRoot, rootWarning } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -89,11 +89,9 @@ export async function handleMessage(message, session) {
     }
     // agent: a subagent's name; each name has its own undo list, $ globals and reads
     const agent = params.arguments.agent;
-    // null counts as no agent, as a missing field does
-    if (agent !== undefined && agent !== null && (typeof agent !== "string" || !AGENT_NAME.test(agent))) {
-      return replyError(id, -32602, "The argument 'agent' must be a name of 1 to 40 letters, digits, -, _ or .");
+    if (badAgent(agent)) {
+      return replyError(id, -32602, AGENT_ERROR);
     }
-    const scope = agentScope(session, agent);
     // the client asks for progress with a token
     // a timer sends where the script is, also while a slow tool runs
     // no total: the step budget says nothing about how long a script takes
@@ -120,8 +118,7 @@ export async function handleMessage(message, session) {
     }
     let result;
     try {
-      result = await run(script, { root: session.root, globals: scope.globals, seen: scope.seen, undo: scope.undo, agent: agent || null, policy: session.policy, fetchHosts: session.fetchHosts, harness: "MCP", processes: session.processes, audit: session.audit, ask: askFor(session), maxSteps: MAX_STEPS, onStep, previousOutput: scope.output.text, session: session.name || (session.name = sessionName(null)) });
-      scope.output.text = keptOutput(result);
+      result = await runScript(session, script, agent, { harness: "MCP", ask: askFor(session), onStep });
     } finally {
       if (timer !== null) {
         clearInterval(timer);
@@ -353,7 +350,7 @@ export function main(args) {
   }
 
   // one session for the life of the server, so $ globals stay between calls
-  const session = { root, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] }, policy: policy.policy };
+  const session = newSession(root, null, policy.policy);
 
   // when the client goes away, stop the background processes, so nothing is left running
   const stopAll = () => stopAllProcesses(session.processes);

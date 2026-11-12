@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import nodePath from "node:path";
 import os from "node:os";
-import { listTools } from "./clank-talk.js";
+import { listTools, run } from "./clank-talk.js";
 import { syntaxSummary, toolSummary } from "./help.js";
 import { changedFiles } from "./diff.js";
 import { isProtectedPath } from "./runtime.js";
@@ -266,6 +266,44 @@ function pointAt(source, line, column) {
 
 // an agent name: letters, digits, -, _ and ., at most 40
 export const AGENT_NAME = /^[A-Za-z0-9_.-]{1,40}$/;
+export const AGENT_ERROR = "The argument 'agent' must be a name of 1 to 40 letters, digits, -, _ or .";
+
+// true if the agent argument is there and is not a name; null counts as no agent, as a missing field does
+export function badAgent(agent) {
+  return agent !== undefined && agent !== null && (typeof agent !== "string" || !AGENT_NAME.test(agent));
+}
+
+// one host session: what stays between the calls of one harness session
+// client names the session in the audit; policy is { name, source } or null
+export function newSession(root, client, policy = null) {
+  return { root, name: sessionName(client), policy, globals: Object.create(null), seen: new Map(), undo: [], fetchHosts: new Set(), processes: new Map(), audit: { scripts: 0, records: [] } };
+}
+
+// run a script in a host session, as one agent (or null), and keep its output for "the previous output"
+// options: what only the host knows, such as harness, ask, onStep, signal and lendModel
+export async function runScript(session, script, agent, options) {
+  const scope = agentScope(session, agent);
+  if (!session.name) {
+    session.name = sessionName(null);
+  }
+  const result = await run(script, {
+    root: session.root,
+    globals: scope.globals,
+    seen: scope.seen,
+    undo: scope.undo,
+    agent: agent || null,
+    policy: session.policy,
+    fetchHosts: session.fetchHosts,
+    processes: session.processes,
+    audit: session.audit,
+    maxSteps: MAX_STEPS,
+    previousOutput: scope.output.text,
+    session: session.name,
+    ...options,
+  });
+  scope.output.text = keptOutput(result);
+  return result;
+}
 
 // the per-agent part of a session: $ globals, the files it read (for the stale-write check), its undo list,
 // and the full output of its last script (output.text, for "the previous output")
