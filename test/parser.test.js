@@ -155,10 +155,15 @@ test('undo forms', () => {
 
 test('ask', () => {
   const [plain, choice] = commands("ask 'Name?'\nask 'Push?' with 'yes' or 'no' within 5 minutes");
-  assert.deepEqual(plain, { type: 'ask', question: { type: 'string', value: 'Name?' }, choices: [], within: null });
+  assert.deepEqual(plain, { type: 'ask', question: { type: 'string', value: 'Name?' }, choices: [], many: false, within: null });
   assert.deepEqual(choice.choices, [{ type: 'string', value: 'yes' }, { type: 'string', value: 'no' }]);
+  assert.equal(choice.many, false);
   assert.equal(choice.within.ms, 60000);
   assert.deepEqual(errors("ask 'x' with 'a'"), ["Expected 'or' and a second choice @1:14"]);
+  // with any of: the human can pick several
+  const [many] = commands("ask 'Commit which?' with any of 'a.js' or 'b.js'");
+  assert.equal(many.many, true);
+  assert.deepEqual(many.choices, [{ type: 'string', value: 'a.js' }, { type: 'string', value: 'b.js' }]);
 });
 
 test('fetch', () => {

@@ -236,7 +236,17 @@ function askFor(ctx) {
   if (!ctx || !ctx.hasUI) {
     return null;
   }
-  return async ({ question, choices, fields, signal }) => {
+  return async ({ question, choices, fields, many, signal }) => {
+    // several choices: pi has no multi-select, so one yes or no dialog for each choice
+    if (many) {
+      const picked = [];
+      for (const choice of choices) {
+        if ((await ctx.ui.confirm(choice + "?", question, { signal })) === true) {
+          picked.push(choice);
+        }
+      }
+      return picked;
+    }
     // a form of yes or no boxes, such as taint review: pi has no form, so one yes or no dialog for each box
     // each dialog shows the question; a dialog that the human closes is no
     if (fields) {

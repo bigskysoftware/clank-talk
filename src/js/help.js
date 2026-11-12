@@ -308,13 +308,16 @@ export const HELP = [
   },
   {
     name: "ask", kind: "command",
-    syntax: "ask <question> [with <choice> or <choice>] [within <duration>]",
+    syntax: "ask <question> [with [any of] <choice> or <choice>] [within <duration>]",
     description: [
       "Ask the human, and wait. Only the human answers, never you.",
       "The result is the text that the human types, or the choice that the human picks.",
+      "A choice 'staging: the test site' shows all of its text, and gives 'staging': the text before the first ': '.",
+      "'with any of' lets the human pick several. The result is a list of the choices, and an empty list if none.",
+      "The first choice is chosen at the start. Put the safe choice first.",
       "The result is null if there is no way to ask, no answer in time (2 minutes, or the 'within' time), or the human declines. Treat null as no.",
     ],
-    examples: ["ask 'Which branch should I use?'\nprint it", "ask 'Delete the old logs?' with 'yes' or 'no' within 5 minutes\nif the result is 'yes'\n  print 'ok'\nend"],
+    examples: ["ask 'Which branch should I use?'\nprint it", "ask 'Delete the old logs?' with 'no' or 'yes' within 5 minutes\nif the result is 'yes'\n  print 'ok'\nend", "ask 'Deploy where?' with 'staging: the test site' or 'production: the live site'\nif it is 'production' print 'careful' end", "ask 'Commit which files?' with any of 'src/a.js: new' or 'README.md: changed'\nfor file in it\n  print file\nend"],
   },
   {
     name: "undo", kind: "command",

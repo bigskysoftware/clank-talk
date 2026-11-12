@@ -4148,7 +4148,18 @@ async function askHuman(command, state) {
   if (command.within !== null) {
     limit = shorter(limit, await durationMs(command.within, state));
   }
-  return await askState(state, question, choices, limit);
+  const answer = await askState(state, question, choices, limit, null, command.many);
+  if (answer === null) {
+    return null;
+  }
+  return command.many ? answer.map(choiceValue) : choiceValue(answer);
+}
+
+// a choice 'staging: the test site' gives 'staging'; the human sees all of it
+// only ': ' splits, so 'http://x' stays whole; see src/md/features/ask.md
+function choiceValue(text) {
+  const at = text.indexOf(": ");
+  return at > 0 ? text.slice(0, at) : text;
 }
 
 // a question to the human waits at most this long, unless "within" says otherwise;
@@ -4377,7 +4388,8 @@ function askReason(state) {
 // ask through the host, with a time limit in ms (null: the default); used by ask, git push and fetch
 // with fields ([{ name, title }]), the host shows a form of yes or no boxes and gives { name: true or false }
 // state.askTimedOut tells the caller that nobody answered in time
-async function askState(state, question, choices, limit, fields = null) {
+// many: the human can pick several of the choices, and the answer is a list of them
+async function askState(state, question, choices, limit, fields = null, many = false) {
   state.askTimedOut = false;
   if (state.ask === null) {
     return null;
@@ -4387,14 +4399,26 @@ async function askState(state, question, choices, limit, fields = null) {
   }
   let timer = null;
   let answer = null;
+  // the end of the script or the time limit stops the question, so the host can close its dialog
+  const stop = new AbortController();
+  const stopAsk = () => stop.abort();
+  state.execution.signal?.addEventListener("abort", stopAsk);
   try {
-    const asking = state.ask(fields === null ? { question, choices, signal: state.execution.signal } : { question, choices, fields, signal: state.execution.signal });
+    const request = { question, choices, signal: stop.signal };
+    if (fields !== null) {
+      request.fields = fields;
+    }
+    if (many) {
+      request.many = true;
+    }
+    const asking = state.ask(request);
     if (limit === null) {
       answer = await asking;
     } else {
       const timeout = new Promise((resolve) => {
         timer = setTimeout(() => {
           state.askTimedOut = true;
+          stop.abort();
           resolve(null);
         }, limit);
       });
@@ -4405,15 +4429,19 @@ async function askState(state, question, choices, limit, fields = null) {
     answer = null;
   } finally {
     clearTimeout(timer);
+    state.execution.signal?.removeEventListener("abort", stopAsk);
   }
 
-  if (fields !== null) {
+  if (many) {
+    // a list of the choices; none picked is an empty list, and anything else is no answer
+    answer = Array.isArray(answer) && answer.every((item) => choices.includes(item)) ? choices.filter((choice) => answer.includes(choice)) : null;
+  } else if (fields !== null) {
     // a form: only the true boxes count
     answer = answer !== null && typeof answer === "object" ? Object.fromEntries(fields.map((field) => [field.name, answer[field.name] === true])) : null;
   } else if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
     answer = null;
   }
-  let answerText = "answer: " + (fields !== null && answer !== null ? fields.filter((field) => answer[field.name]).map((field) => field.title).join(", ") || "none" : answer);
+  let answerText = "answer: " + (fields !== null && answer !== null ? fields.filter((field) => answer[field.name]).map((field) => field.title).join(", ") || "none" : many && answer !== null ? answer.join(", ") || "none" : answer);
   if (answer === null) {
     answerText = state.askTimedOut ? "no answer within " + Math.round(limit / 1000) + " s" : "no answer";
   }

@@ -216,7 +216,86 @@ test('ask goes to the human as an MCP elicitation', async () => {
   };
   const response = await call("ask 'Push?' with 'yes' or 'no'\nprint it");
   assert.equal(response.result.content[0].text, 'yes');
-  assert.deepEqual(asked, [{ message: 'Push?', requestedSchema: { type: 'object', properties: { answer: { type: 'string', title: 'Answer', enum: ['yes', 'no'] } }, required: ['answer'] } }]);
+  // titled choices, the first one chosen at the start
+  const options = [{ const: 'yes', title: 'yes' }, { const: 'no', title: 'no' }];
+  assert.deepEqual(asked, [{ message: 'Push?', requestedSchema: { type: 'object', properties: { answer: { type: 'string', title: 'Answer', oneOf: options, default: 'yes' } }, required: ['answer'] } }]);
+});
+
+test("ask: 'value: description' gives the value, and 'with any of' gives a list", async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { elicitation: {} } } }, session);
+  const asked = [];
+  let content = null;
+  session.send = (message) => {
+    if (message.method === 'elicitation/create') {
+      asked.push(message.params.requestedSchema);
+      setImmediate(() => handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'accept', content } }, session));
+    }
+  };
+  content = { answer: 'production: the live site' };
+  const one = await call("ask 'Deploy where?' with 'staging: the test site' or 'production: the live site'\nprint it");
+  assert.equal(one.result.content[0].text, 'production');
+  content = { answer: ['b.js: changed'] };
+  const many = await call("ask 'Commit which?' with any of 'a.js: new' or 'b.js: changed'\nprint it as json");
+  assert.equal(many.result.content[0].text, '["b.js"]');
+  assert.deepEqual(asked[1].properties.answer, { type: 'array', title: 'Choices', items: { anyOf: [{ const: 'a.js: new', title: 'a.js: new' }, { const: 'b.js: changed', title: 'b.js: changed' }] } });
+  assert.deepEqual(asked[1].required, []);
+  // none picked is an empty list; a value that is not a choice is no answer
+  content = { answer: [] };
+  assert.equal((await call("ask 'Commit which?' with any of 'a.js' or 'b.js'\nprint it as json")).result.content[0].text, '[]');
+  content = { answer: ['c.js'] };
+  assert.equal((await call("ask 'Commit which?' with any of 'a.js' or 'b.js'\nprint it")).result.content[0].text, 'null');
+  // only ': ' splits, so a URL stays whole
+  content = { answer: 'http://x' };
+  assert.equal((await call("ask 'Which?' with 'http://x' or 'http://y'\nprint it")).result.content[0].text, 'http://x');
+});
+
+test('ask in Claude Code: the clank-talk mod answers at a local URL with a one-time token', async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'claude-code' }, capabilities: { elicitation: {} } } }, session);
+  const asked = [];
+  const posts = [];
+  let used = null;
+  session.send = (message) => {
+    if (message.method === 'elicitation/create') {
+      const schema = message.params.requestedSchema;
+      asked.push(schema);
+      const clank = schema['x-clank'];
+      if (clank === undefined) {
+        setImmediate(() => handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'accept', content: { answer: 'no' } } }, session));
+        return;
+      }
+      // the mod: a wrong token is refused, the right one answers, then it declines the dialog
+      used = clank;
+      setImmediate(async () => {
+        posts.push((await fetch(clank.url, { method: 'POST', body: JSON.stringify({ token: 'wrong', answer: 'yes' }) })).status);
+        posts.push((await fetch(clank.url, { method: 'POST', body: JSON.stringify({ token: clank.token, answer: 'yes' }) })).status);
+        await handleMessage({ jsonrpc: '2.0', id: message.id, result: { action: 'decline' } }, session);
+      });
+    }
+  };
+  const response = await call("ask 'Push?' with 'yes' or 'no'\nprint it");
+  assert.equal(response.result.content[0].text, 'yes');
+  // the token is used once
+  const again = (await fetch(used.url, { method: 'POST', body: JSON.stringify({ token: used.token, answer: 'no' }) })).status;
+  assert.equal(again, 403);
+  assert.deepEqual(posts.slice(0, 1), [403]);
+  assert.match(asked[0]['x-clank'].token, /^[0-9a-f]{32}$/);
+  assert.match(asked[0]['x-clank'].url, /^http:\/\/127\.0\.0\.1:\d+\/answer$/);
+  // more than 4 choices, or none, use the form alone
+  await call("ask 'Pick?' with 'a' or 'b' or 'c' or 'd' or 'e'\nprint it");
+  await call("ask 'Name?'\nprint it");
+  assert.equal(asked[1]['x-clank'], undefined);
+  assert.equal(asked[2]['x-clank'], undefined);
+});
+
+test('ask: a time limit cancels the question, so the client closes its dialog', async () => {
+  await handleMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { elicitation: {} } } }, session);
+  const sent = [];
+  session.send = (message) => sent.push(message);
+  const response = await call("ask 'Push?' with 'yes' or 'no' within 50 ms\nprint it");
+  assert.equal(response.result.content[0].text, 'null');
+  const asked = sent.find((message) => message.method === 'elicitation/create');
+  const cancelled = sent.find((message) => message.method === 'notifications/cancelled');
+  assert.equal(cancelled.params.requestId, asked.id);
 });
 
 test('ask: decline is null, and a client with no elicitation is never asked', async () => {

@@ -99,6 +99,17 @@ test("ask goes to a pi dialog, and with no UI the answer is null", async () => {
   assert.equal((await call("ask 'Is this a test?' with 'yes' or 'no'\nprint it")).content[0].text, "null");
   ui.select = async () => undefined;
   assert.equal((await call("ask 'Is this a test?' with 'yes' or 'no'\nprint it", ctx)).content[0].text, "null");
+  // a choice shows all of its text, and the answer is the part before ': '
+  ui.select = async (question, choices) => choices[1];
+  assert.equal((await call("ask 'Deploy where?' with 'staging: the test site' or 'production: the live site'\nprint it", ctx)).content[0].text, "production");
+  // with any of: one yes or no dialog for each choice
+  const confirmed = [];
+  ui.confirm = async (title) => {
+    confirmed.push(title);
+    return title.startsWith("b.js");
+  };
+  assert.equal((await call("ask 'Commit which?' with any of 'a.js: new' or 'b.js: changed'\nprint it as json", ctx)).content[0].text, '["b.js"]');
+  assert.deepEqual(confirmed, ["a.js: new?", "b.js: changed?"]);
 });
 
 test("taint review shows one yes or no dialog for each input", async () => {

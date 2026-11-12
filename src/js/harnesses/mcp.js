@@ -8,6 +8,8 @@
 // Logs go to stderr. stdout is only for protocol messages.
 
 import { watch } from "node:fs";
+import http from "node:http";
+import { randomBytes } from "node:crypto";
 import { run, stopAllProcesses, VERSION } from "../clank-talk.js";
 import { describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, rootWarning } from "../host.js";
 
@@ -39,6 +41,8 @@ export async function handleMessage(message, session) {
   if (message.method === "initialize") {
     // a client that supports elicitation can show a question to the human: see "ask"
     session.canAsk = Boolean(params.capabilities && params.capabilities.elicitation);
+    // the client's own name, such as claude-code: it picks how a question is shown, never what is allowed
+    session.client = (params.clientInfo && params.clientInfo.name) || null;
     // the audit names the session after the client, such as claude-code-4f2a
     session.name = sessionName(params.clientInfo && params.clientInfo.name);
     return reply(id, {
@@ -145,7 +149,12 @@ function requestClient(session, method, params, signal) {
     session.pending.set(id, resolve);
     if (signal) {
       signal.addEventListener("abort", () => {
+        if (!session.pending.has(id)) {
+          return;
+        }
         session.pending.delete(id);
+        // the client closes its dialog
+        session.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "The script stopped asking" } });
         resolve(null);
       });
     }
@@ -162,13 +171,62 @@ function answerRequest(message, session) {
   resolve(message);
 }
 
+// the Claude Code mod's question dialog takes 2 to 4 choices; see src/md/features/ask.md
+const MOD_CHOICES = { min: 2, max: 4 };
+
+// a local URL where the clank-talk mod for Claude Code posts the human's answer, with a one-time token
+// the token rides only in the elicitation, which the model never sees, so the model cannot answer for the human
+// gives { token, url, answer, done }: answer resolves to the mod's answer, or null when the question stops
+async function modChannel(session, signal) {
+  if (!session.answers) {
+    const waiting = new Map();
+    const server = http.createServer((request, response) => {
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+        // an answer is small; a big body is not one
+        if (body.length > 65536) {
+          request.destroy();
+        }
+      });
+      request.on("end", () => {
+        let data = null;
+        try {
+          data = JSON.parse(body);
+        } catch {
+          data = null;
+        }
+        const resolve = request.method === "POST" && data !== null && typeof data.token === "string" ? waiting.get(data.token) : undefined;
+        if (resolve === undefined) {
+          response.writeHead(403).end();
+          return;
+        }
+        waiting.delete(data.token);
+        resolve(data.answer === undefined ? null : data.answer);
+        response.writeHead(200).end();
+      });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    // the answer server does not keep the MCP server running
+    server.unref();
+    session.answers = { waiting, url: "http://127.0.0.1:" + server.address().port + "/answer" };
+  }
+  const token = randomBytes(16).toString("hex");
+  const answer = new Promise((resolve) => {
+    session.answers.waiting.set(token, resolve);
+    signal?.addEventListener("abort", () => resolve(null));
+  });
+  return { token, url: session.answers.url, answer, done: () => session.answers.waiting.delete(token) };
+}
+
 // "ask" in a script: an MCP elicitation, so the human answers in the client, never the agent
-// the answer is text, or null if the human declines or cancels
+// the answer is text (a list with many), or null if the human declines or cancels
+// choices are the full texts; the first one is the default
 function askFor(session) {
   if (!session.canAsk || !session.send) {
     return null;
   }
-  return async ({ question, choices, fields, signal }) => {
+  return async ({ question, choices, fields, many, signal }) => {
     // a form of yes or no boxes, such as taint review: gives { name: true or false }
     if (fields) {
       const properties = {};
@@ -181,17 +239,43 @@ function askFor(session) {
       }
       return response.result.content || {};
     }
-    const answer = { type: "string", title: "Answer" };
-    if (choices.length > 0) {
-      answer.enum = choices;
+    // titled choices (the title is the full text), the first chosen at the start; many: a list of boxes
+    const options = choices.map((choice) => ({ const: choice, title: choice }));
+    let answer;
+    if (many) {
+      answer = { type: "array", title: "Choices", items: { anyOf: options } };
+    } else {
+      answer = { type: "string", title: "Answer" };
+      if (choices.length > 0) {
+        answer.oneOf = options;
+        answer.default = choices[0];
+      }
     }
-    const requestedSchema = { type: "object", properties: { answer }, required: ["answer"] };
-    const response = await requestClient(session, "elicitation/create", { message: question, requestedSchema }, signal);
+    const requestedSchema = { type: "object", properties: { answer }, required: many ? [] : ["answer"] };
+    // in Claude Code, the clank-talk mod can show its own question dialog, and post the answer here
+    let mod = null;
+    if (session.client === "claude-code" && choices.length >= MOD_CHOICES.min && choices.length <= MOD_CHOICES.max) {
+      mod = await modChannel(session, signal);
+      requestedSchema["x-clank"] = { token: mod.token, url: mod.url };
+    }
+    const fromDialog = requestClient(session, "elicitation/create", { message: question, requestedSchema }, signal).then((response) => ({ response }));
+    let response;
+    if (mod === null) {
+      ({ response } = await fromDialog);
+    } else {
+      // the mod declines the built-in dialog after it posts, so the first of the two wins
+      const first = await Promise.race([fromDialog, mod.answer.then((value) => ({ value }))]);
+      mod.done();
+      if ("value" in first) {
+        return first.value;
+      }
+      response = first.response;
+    }
     if (response === null || !response.result || response.result.action !== "accept") {
       return null;
     }
     const content = response.result.content || {};
-    if (typeof content.answer !== "string") {
+    if (many ? !Array.isArray(content.answer) : typeof content.answer !== "string") {
       return null;
     }
     return content.answer;

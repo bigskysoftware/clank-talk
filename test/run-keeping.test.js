@@ -54,7 +54,7 @@ test("keeping is the last part of run; bad forms are clear errors", async () => 
   await fs.writeFile(path.join(root, "AGENTS.talk"), `allow env PATH\ntool ten\n  run '${NODE}' with '-e', "${TEN}" in a sandbox with network, writes to './tmp' within 1 minute keeping the last 1 lines\nend`);
   const sandboxed = await run("ten\nprint it's output", { root });
   if (sandboxed.errors.length === 0) {
-    assert.equal(sandboxed.output[0], "... 9 lines cut ...\nok 10\n");
+    assert.equal(sandboxed.output[0], "... 9 lines cut (all lines: the result's full) ...\nok 10\n");
   } else {
     assert.doesNotMatch(sandboxed.errors[0].message, /^Expected/);
   }

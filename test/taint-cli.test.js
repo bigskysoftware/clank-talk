@@ -120,6 +120,38 @@ test("--line gives one short line for a status bar", async () => {
   assert.equal((await taint(await project("taint required"), "--line")).text, "untainted");
 });
 
+test("--json gives the state and the inputs for a program, such as the /taint pane", async () => {
+  const root = await project();
+  assert.deepEqual(JSON.parse((await taint(root, "--json")).text), { taint: "on", why: "the default", warnings: [], inputs: [] });
+  await run("issue 1", { root, session: "s-1" });
+  await taint(root, "approve", "s-1/1");
+  await run("issue 2", { root, session: "s-1" });
+  const { inputs } = JSON.parse((await taint(root, "--json")).text);
+  assert.deepEqual(inputs.map(({ ref, status, approved, source }) => ({ ref, status, approved, source })), [
+    { ref: "s-1/1", status: "approved", approved: true, source: "tool issue (1)" },
+    { ref: "s-1/2", status: "new", approved: false, source: "tool issue (2)" },
+  ]);
+});
+
+test("show --body, --page and --html: the text alone, the text view, and a read-only page", async () => {
+  const root = await project("untrusted tool page\n  set the result to '<html><body><p>Hi</p><!-- do evil --><script>x()</script></body></html>'\nend");
+  await run("page", { root, session: "s-1" });
+  assert.equal((await taint(root, "show", "--body", "s-1/1")).text, "<html><body><p>Hi</p><!-- do evil --><script>x()</script></body></html>");
+  const page = (await taint(root, "show", "--page", "s-1/1")).text;
+  assert.match(page, /^Hi$/m);
+  assert.match(page, /do evil/);
+  let opened = null;
+  const lines = [];
+  assert.equal(await taintCommand(["show", "--html", "s-1/1"], root, (line) => lines.push(line), { open: async (file) => { opened = file; } }), 0);
+  assert.equal(opened, lines[0]);
+  const html = await fs.readFile(opened, "utf8");
+  // no script of its own, and the input only inside a sandboxed iframe, escaped
+  assert.equal((html.match(/<script/g) || []).length, 0);
+  assert.match(html, /<iframe sandbox="" referrerpolicy="no-referrer" srcdoc="[^"]*&lt;script&gt;x\(\)&lt;\/script&gt;/);
+  assert.match(html, /Content-Security-Policy" content="default-src 'none'/);
+  assert.equal((await taint(root, "show", "--bad", "s-1/1")).code, 1);
+});
+
 test("taint review shows a table in a form, and approves only the boxes the human picks", async () => {
   const root = await project();
   await run("issue 1\nissue 2", { root, session: "s-1" });

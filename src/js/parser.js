@@ -1041,7 +1041,8 @@ export function parse(source, options = {}) {
     return { type: "taintReview", line: token.line, column: token.column };
   }
 
-  // ask <question> [with <choice> or <choice> ...] [within <duration>]
+  // ask <question> [with [any of] <choice> or <choice> ...] [within <duration>]
+  // 'with any of' lets the human pick several: the answer is a list
   // only the human answers; see src/md/features/ask.md
   function parseAsk(token) {
     const question = parseBefore(["with", "within"], parseExpression);
@@ -1049,8 +1050,13 @@ export function parse(source, options = {}) {
       return null;
     }
     const choices = [];
+    let many = false;
     if (isWord("with")) {
       i++;
+      if (isWord("any") && tokens[i + 1] !== undefined && tokens[i + 1].value === "of") {
+        many = true;
+        i += 2;
+      }
       while (true) {
         const choice = parseBefore(["or", "within"], parseExpression);
         if (choice === null) {
@@ -1075,7 +1081,7 @@ export function parse(source, options = {}) {
         return null;
       }
     }
-    return { type: "ask", question, choices, within, line: token.line, column: token.column };
+    return { type: "ask", question, choices, many, within, line: token.line, column: token.column };
   }
 
   // undo, undo <count>, undo changes to <file>

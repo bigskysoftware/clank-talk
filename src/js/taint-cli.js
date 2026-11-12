@@ -7,11 +7,22 @@ import { parse } from "./parser.js";
 import * as untrusted from "./untrusted.js";
 import { projectFetchWarnings, projectJudge } from "./runtime.js";
 import { runTui } from "./taint-tui.js";
+import { inputPage } from "./taint-page.js";
+import { viewText } from "./taint-view.js";
+import { execFile } from "node:child_process";
+
+// open a file in the browser, with the system's own opener; the path is one argument, never shell text
+function openFile(file) {
+  const [program, args] = process.platform === "darwin" ? ["open", [file]] : process.platform === "win32" ? ["explorer.exe", [file]] : ["xdg-open", [file]];
+  return new Promise((resolve) => execFile(program, args, () => resolve()));
+}
 
 export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
 
   clank-talk taint                     list the untrusted inputs, with their source and status
   clank-talk taint show <ref>          show one input: source, time and text
+  clank-talk taint show --page <ref>   the text view: HTML as text with what it hides, JSON pretty
+  clank-talk taint show --html <ref>   open a read-only page of the input in the browser
   clank-talk taint approve <ref> ...   approve inputs
   clank-talk taint approve --all       approve all inputs: clears all taints
   clank-talk taint approve --clean     approve the inputs that the judge found clean
@@ -20,6 +31,7 @@ export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
   clank-talk taint judge --all         the judge reads the inputs that it did not read and that are not approved
   clank-talk taint on | off            turn session taint on or off for this project
   clank-talk taint --tui               a full-screen review: read, mark and approve inputs (q to quit)
+  clank-talk taint --json              the state and the inputs as JSON, for a program
   clank-talk taint --line              one short line for a status bar: taint off, untainted, or tainted <n> (inputs to review)
 
 A <ref> is <session>/<n>, such as claude-code-4f2a/3, or <n> for the newest session.`;
@@ -113,6 +125,22 @@ export async function taintCommand(args, root, out, options = {}) {
     return 0;
   }
 
+  // for a program, such as the /taint pane of the Claude Code plugin: the state and the inputs, as JSON
+  // the source and the judge's reason are printable, because a program can show them in a terminal
+  if (command === "--json") {
+    const inputs = (await allInputs(root)).map(({ session, entry }) => ({
+      ref: session + "/" + entry.n,
+      time: entry.time,
+      status: statusText(entry),
+      approved: Boolean(entry.approved),
+      size: sizeText(entry.size) + (entry.cut ? " (cut)" : ""),
+      judge: untrusted.printable(judgeText(entry)),
+      source: untrusted.printable(entry.source),
+    }));
+    out(JSON.stringify({ taint: state[0] === "required" ? "on" : state[0], why: state[1], warnings: await projectFetchWarnings(root), inputs }));
+    return 0;
+  }
+
   if (command === "--tui") {
     return await runTui(root, options.input || process.stdin, options.output || process.stdout, out, options);
   }
@@ -143,10 +171,34 @@ export async function taintCommand(args, root, out, options = {}) {
   }
 
   if (command === "show") {
-    const found = rest.length === 1 ? await findRef(root, rest[0]) : null;
-    if (found === null) {
-      out("No untrusted input " + (rest[0] || "") + ". List them with: npx clank-talk taint");
+    // --body: the text alone; --page: the text view (HTML as text, JSON pretty); --html: a page in the browser
+    const flags = rest.filter((arg) => arg.startsWith("--"));
+    const refs = rest.filter((arg) => !arg.startsWith("--"));
+    const unknown = flags.find((flag) => !["--body", "--page", "--html"].includes(flag));
+    if (unknown !== undefined) {
+      out("Unknown option " + unknown + ".\n\n" + USAGE);
       return 1;
+    }
+    const found = refs.length === 1 ? await findRef(root, refs[0]) : null;
+    if (found === null) {
+      out("No untrusted input " + (refs[0] || "") + ". List them with: npx clank-talk taint");
+      return 1;
+    }
+    if (flags.length > 0) {
+      const stored = await untrusted.inputText(root, found.session, found.entry);
+      // the store keeps the source and the time first, then a blank line, then the text
+      const start = stored.indexOf("\n\n");
+      const body = start === -1 ? stored : stored.slice(start + 2);
+      if (flags.includes("--html")) {
+        const ref = found.session + "/" + found.entry.n;
+        const file = nodePath.join(root, untrusted.storePath(found.session), found.entry.n + ".html");
+        await fs.writeFile(file, inputPage({ ref, status: statusText(found.entry), time: found.entry.time, source: found.entry.source, judge: judgeText(found.entry) }, body));
+        out(file);
+        await (options.open || openFile)(file);
+        return 0;
+      }
+      out(flags.includes("--page") ? viewText(untrusted.printable(body, true), true).join("\n") : untrusted.printable(body, true));
+      return 0;
     }
     out("status: " + statusText(found.entry) + (found.entry.approvedBy ? " by " + found.entry.approvedBy : ""));
     out("judge: " + untrusted.printable(judgeText(found.entry)));
