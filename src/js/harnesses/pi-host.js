@@ -4,9 +4,10 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { run, stopAllProcesses } from "../clank-talk.js";
+import { projectHarness } from "../runtime.js";
 import * as untrusted from "../untrusted.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_NAME, agentScope, MAX_STEPS, keptOutput, sessionName, loadPolicy, projectRoot, harnessToolAllowed } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -30,6 +31,8 @@ export function clankTalkExtension(pi, Type, options = {}) {
   const spawn = options.spawn || spawnSync;
   // one session, as in the MCP server: $ globals, reads, undo, fetch approvals, processes and the audit
   let session = null;
+  // other tools that AGENTS.talk allows: allow harness tools Read, 'mcp__*'
+  let allowedTools = [];
 
   // a harness policy, as the MCP server's --policy and --policy-hash; see src/md/features/policy.md
   pi.registerFlag("clank-policy", { description: "A ClankTalk policy file for this session", type: "string" });
@@ -46,8 +49,14 @@ export function clankTalkExtension(pi, Type, options = {}) {
     session.policyError = loaded.error || null;
     // register the tool again, now with the tools from this project's AGENTS.talk in its description
     registerClankTalk(await describeTool(session.root));
-    // ClankTalk is the only tool the model sees
-    pi.setActiveTools([TOOL_NAME]);
+    // ClankTalk is the only tool the model sees, with the tools that AGENTS.talk allows by name
+    try {
+      allowedTools = (await projectHarness(session.root)).allowed;
+    } catch {
+      allowedTools = [];
+    }
+    const all = typeof pi.getAllTools === "function" ? pi.getAllTools().map((tool) => tool.name) : [];
+    pi.setActiveTools([TOOL_NAME, ...all.filter((name) => name !== TOOL_NAME && harnessToolAllowed(name, allowedTools))]);
     await showTaint(ctx, session.root);
   });
 
@@ -93,7 +102,7 @@ export function clankTalkExtension(pi, Type, options = {}) {
 
   // block every other tool: built-in tools, MCP tools, and calls from codemode
   pi.on("tool_call", async (event) => {
-    if (event.toolName !== TOOL_NAME) {
+    if (event.toolName !== TOOL_NAME && !harnessToolAllowed(event.toolName, allowedTools)) {
       return { block: true, reason: "Only clank_talk is allowed here. Do the work in a ClankTalk script." };
     }
     return undefined;

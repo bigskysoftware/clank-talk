@@ -2325,6 +2325,30 @@ export function parse(source, options = {}) {
   //   allow changes to @/.github/, @/.gitignore
   //   allow fetch from 'api.github.com', '*.npmjs.org'
   function parseAllow(token) {
+    // allow harness tools Read, Grep, 'mcp__github__*': other tools that the harness lets the agent use; see src/md/features/harness-tools.md
+    if (isWord("harness")) {
+      i++;
+      if (!isWord("tools")) {
+        error("Expected 'tools', as in: allow harness tools Read, Grep");
+        return null;
+      }
+      i++;
+      const names = [];
+      while (true) {
+        const name = current();
+        if (name === undefined || (name.type !== "word" && name.type !== "string") || name.value === "") {
+          error("Expected a tool name, such as Read, or a pattern in quotes, such as 'mcp__github__*'");
+          return null;
+        }
+        names.push(name.value);
+        i++;
+        if (!isOp(",")) {
+          break;
+        }
+        i++;
+      }
+      return { type: "allowHarnessTools", names, line: token.line, column: token.column };
+    }
     if (isWord("fetch")) {
       i++;
       if (!isWord("from")) {
@@ -2345,7 +2369,7 @@ export function parse(source, options = {}) {
       return parseAllowSecret(token);
     }
     if (!isWord("env")) {
-      error("Expected 'env', 'changes to', 'fetch from' or 'secret'");
+      error("Expected 'env', 'changes to', 'fetch from', 'secret' or 'harness tools'");
       return null;
     }
     i++;
@@ -2871,7 +2895,8 @@ export function parse(source, options = {}) {
         continue;
       }
       // a policy: policy 'name', require ..., limit ..., deny ..., audit also to ...; see src/md/features/policy.md
-      if (isWord("policy") || isWord("require") || isWord("limit") || isWord("deny") || (isWord("audit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "also")) {
+      // require clank-talk is AGENTS.talk's own line; see below
+      if (isWord("policy") || (isWord("require") && (options.policy || tokens[i + 1] === undefined || tokens[i + 1].value !== "clank-talk")) || isWord("limit") || isWord("deny") || (isWord("audit") && tokens[i + 1] !== undefined && tokens[i + 1].value === "also")) {
         const token = current();
         if (!options.policy) {
           error("'" + token.value + "' is only allowed in a policy file");
@@ -2908,6 +2933,18 @@ export function parse(source, options = {}) {
         if (definition !== null) {
           definitions.push(definition);
         }
+        continue;
+      }
+      // require clank-talk: the harness lets the agent use only ClankTalk; see src/md/features/harness-tools.md
+      if (isWord("require") && !options.policy) {
+        const token = current();
+        i++;
+        if (!isWord("clank-talk")) {
+          error("Expected 'clank-talk', as in: require clank-talk");
+          continue;
+        }
+        i++;
+        definitions.push({ type: "requireClankTalk", line: token.line, column: token.column });
         continue;
       }
       // trust fetch from <hosts or URLs>: text from them is not an untrusted input; see src/md/features/taint.md

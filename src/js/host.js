@@ -360,3 +360,15 @@ export function staleCodeWarning(dir = CODE_DIR, since = STARTED, baseline = STA
   const at = new Date(newest.time).toTimeString().slice(0, 5);
   return { message: "The ClankTalk server is older than its code (" + newest.name + " changed at " + at + "). Ask the human to reconnect it (/mcp in Claude Code)." };
 }
+
+// a tool name matches a name from "allow harness tools": the same name, or a pattern where * is any text
+// see src/md/features/harness-tools.md
+export function harnessToolAllowed(name, patterns) {
+  return patterns.some((pattern) => {
+    if (!pattern.includes("*")) {
+      return pattern === name;
+    }
+    const parts = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"));
+    return new RegExp("^" + parts.join(".*") + "$").test(name);
+  });
+}

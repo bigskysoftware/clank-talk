@@ -33,7 +33,60 @@ const ANSWER_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/answer$/
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'taint', description: 'Review and approve the untrusted inputs of this ClankTalk project' })
+    await $.command.register({ name: 'clank-talk', description: 'ClankTalk only: on, off, or show which tools are allowed' })
     return next(e)
+  })
+
+  // ClankTalk only: while it is on, the agent can use clank_talk and the allowed tools, and nothing else
+  // see src/md/features/harness-tools.md
+  on('tool.call', async ($, e, next) => {
+    if (CLANK_TALK_TOOL.test(e.tool) || BUILT_IN.includes(e.tool)) {
+      return next(e)
+    }
+    const root = await $.session.root()
+    const harness = await projectHarness($, root)
+    if (!(await mode($, root, harness)).on || toolAllowed(e.tool, harness.allowed)) {
+      return next(e)
+    }
+    return { deny: 'ClankTalk is on in this project, so ' + e.tool + ' is blocked. Do the work in a ClankTalk script with the clank_talk tool. To allow the tool, the human can add a line to AGENTS.talk: allow harness tools ' + e.tool }
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'clank-talk: the ClankTalk guard failed, so ' + e.tool + ' is blocked' }))
+
+  // /clank-talk on | off, or a report with no argument
+  on('command.run', { command: 'clank-talk' }, async ($, e) => {
+    const root = await $.session.root()
+    cached = null
+    const harness = await projectHarness($, root)
+    const arg = e.args.trim()
+    if (arg === 'on' || arg === 'off') {
+      // only the person's own Enter changes it; never the model or another plugin
+      if (e.origin.kind !== 'composer') {
+        return { text: 'Only the person at the terminal can turn ClankTalk on or off.' }
+      }
+      if (arg === 'off' && harness.required) {
+        return { text: 'AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.' }
+      }
+      await $.store.set('mode:' + root, arg)
+      return { text: 'ClankTalk is ' + arg + ' in this project.' + (arg === 'on' ? ' Other tools are blocked; /clank-talk shows which.' : '') }
+    }
+    if (arg !== '') {
+      return { text: 'Usage: /clank-talk [on | off]' }
+    }
+    const state = await mode($, root, harness)
+    const names = (await $.tool.list()).map(tool => tool.name)
+    const allowed = names.filter(name => CLANK_TALK_TOOL.test(name) || BUILT_IN.includes(name) || toolAllowed(name, harness.allowed))
+    const blocked = names.filter(name => !allowed.includes(name))
+    const lines = [
+      'ClankTalk: ' + (state.on ? 'on' : 'off') + ' (' + state.why + ')',
+      'allowed: ' + (allowed.length === 0 ? 'none' : grouped(allowed)),
+      (state.on ? 'blocked: ' : 'blocked when on: ') + (blocked.length === 0 ? 'none' : grouped(blocked) + ' (' + blocked.length + ' in all)'),
+    ]
+    if (harness.allowed.length > 0) {
+      lines.push('AGENTS.talk allows: ' + harness.allowed.join(', '))
+    }
+    for (const error of harness.errors) {
+      lines.push('AGENTS.talk error: ' + error)
+    }
+    return { text: lines.join('\n') }
   })
 
   on('command.run', { command: 'taint' }, async ($, e) => {
@@ -246,8 +299,69 @@ async function openPage($: EngineInterface, ref: string): Promise<void> {
 // run the ClankTalk command line in the project
 async function cli($: EngineInterface, args: string[]): Promise<{ ok: boolean; text: string }> {
   const cwd = await $.session.root()
-  const result = await $.process.run([...(await command($, cwd)), ...args], { cwd })
+  const result = await $.process.run([...(await command($, cwd)), 'taint', ...args], { cwd })
   return { ok: result.exitCode === 0, text: result.exitCode === 0 ? result.stdout : result.stderr || result.stdout }
+}
+
+// ClankTalk's own tool, under any MCP server name: mcp__clank-talk__clank_talk
+const CLANK_TALK_TOOL = /^mcp__.+__clank_talk$/
+// tools that only talk to the person or plan: always allowed
+const BUILT_IN = ['AskUserQuestion', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TodoWrite', 'ToolSearch', 'EnterPlanMode', 'ExitPlanMode']
+
+type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; errors: string[] }
+// the project's settings, read again when AGENTS.talk changes
+let cached: { root: string; stamp: number; harness: Harness } | null = null
+
+// require clank-talk and allow harness tools, from AGENTS.talk, through the command line
+// if it cannot be read, a project with an AGENTS.talk stays on with no extra tools: the guard fails closed
+async function projectHarness($: EngineInterface, root: string): Promise<Harness> {
+  const file = root + '/AGENTS.talk'
+  const stamp = (await $.fs.exists(file)) ? (await $.fs.stat(file)).mtimeMs : 0
+  if (cached !== null && cached.root === root && cached.stamp === stamp) {
+    return cached.harness
+  }
+  const ran = await $.process.run([...(await command($, root)), 'harness', '--json'], { cwd: root })
+  let harness: Harness
+  try {
+    harness = JSON.parse(ran.stdout) as Harness
+  } catch {
+    harness = { agentsTalk: stamp !== 0, required: false, allowed: [], errors: ['clank-talk harness failed: ' + (ran.stderr || ran.stdout).trim().slice(0, 200)] }
+  }
+  cached = { root, stamp, harness }
+  return harness
+}
+
+// on or off, and why: require clank-talk wins, then /clank-talk on or off, then on when there is an AGENTS.talk
+async function mode($: EngineInterface, root: string, harness: Harness): Promise<{ on: boolean; why: string }> {
+  if (harness.required) {
+    return { on: true, why: 'required by AGENTS.talk' }
+  }
+  const saved = await $.store.get('mode:' + root)
+  if (saved === 'on' || saved === 'off') {
+    return { on: saved === 'on', why: 'from /clank-talk ' + saved }
+  }
+  return harness.agentsTalk ? { on: true, why: 'the project has an AGENTS.talk' } : { on: false, why: 'the project has no AGENTS.talk' }
+}
+
+// tool names in short: built-in tools by name, then MCP tools by server, as mcp__idea__* (90)
+function grouped(names: string[]): string {
+  const servers = new Map<string, number>()
+  const plain: string[] = []
+  for (const name of names) {
+    const match = /^mcp__(.+?)__/.exec(name)
+    if (match === null) {
+      plain.push(name)
+    } else {
+      servers.set(match[1] ?? '', (servers.get(match[1] ?? '') ?? 0) + 1)
+    }
+  }
+  const mcp = [...servers].map(([server, count]) => (count === 1 ? names.find(name => name.startsWith('mcp__' + server + '__')) ?? '' : 'mcp__' + server + '__* (' + count + ')'))
+  return [...plain, ...mcp].join(', ')
+}
+
+// a name from allow harness tools: the same name, or a pattern where * is any text
+function toolAllowed(name: string, patterns: string[]): boolean {
+  return patterns.some(pattern => (pattern.includes('*') ? new RegExp('^' + pattern.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$').test(name) : pattern === name))
 }
 
 // the ClankTalk command line: the project's own when the project is ClankTalk itself, else npx,
@@ -256,12 +370,12 @@ async function command($: EngineInterface, root: string): Promise<string[]> {
   try {
     const pkg = JSON.parse(String(await $.fs.read(root + '/package.json'))) as { name?: string }
     if (pkg.name === 'clank-talk' && (await $.fs.exists(root + '/bin/clank-talk.js'))) {
-      return ['node', root + '/bin/clank-talk.js', 'taint']
+      return ['node', root + '/bin/clank-talk.js']
     }
   } catch {
     // no package.json, or one that is not JSON: use npx
   }
-  return ['npx', '--yes', 'clank-talk', 'taint']
+  return ['npx', '--yes', 'clank-talk']
 }
 
 // read the inputs again, and the text of the selected one

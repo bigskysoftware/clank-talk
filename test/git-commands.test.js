@@ -178,7 +178,7 @@ test("git push pushes the branch to origin, and never asks", async () => {
     assert.deepEqual(questions, []);
     assert.equal(remoteLog(), git(["log", "--oneline", "-1"]));
     await fs.writeFile(path.join(root, "AGENTS.talk"), "allow git push");
-    assert.match((await errors("git push"))[0], /^Expected 'env', 'changes to', 'fetch from' or 'secret'/);
+    assert.match((await errors("git push"))[0], /^Expected 'env', 'changes to', 'fetch from', 'secret' or 'harness tools'/);
   } finally {
     await fs.rm(path.join(root, "AGENTS.talk"), { force: true });
     git(["remote", "remove", "origin"]);

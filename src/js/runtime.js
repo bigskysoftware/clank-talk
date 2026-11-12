@@ -1242,7 +1242,7 @@ function checkSandboxRequired(what, sandbox, state, node) {
 // read and parse @/AGENTS.talk and the files it imports
 // gives { definitions: name to tool node, allowedEnv, errors }
 async function loadAgentsTalk(root, hostTools) {
-  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], trustedFetch: [], trustWhere: null, allowedSecrets: [], useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
+  const result = { definitions: Object.create(null), allowedEnv: [], allowedChanges: [], allowedFetch: [], trustedFetch: [], trustWhere: null, allowedSecrets: [], harnessTools: [], requireClankTalk: false, useModel: null, judge: { model: null, approves: false, automatically: false, prompt: null }, keepAudit: null, taint: null, taintAsks: null, keepUntrustedBytes: null, auditFormat: "text", outputLimit: null, hooks: [], allows: [], errors: [] };
   try {
     await fs.access(nodePath.join(root, AGENTS_TALK));
   } catch (err) {
@@ -1285,6 +1285,17 @@ async function loadAgentsTalk(root, hostTools) {
     if (definition.type.startsWith("allow") && file.name === AGENTS_TALK) {
       result.allows.push({ definition, where });
     }
+      // require clank-talk and allow harness tools: for the harness, which blocks its other tools; see src/md/features/harness-tools.md
+      if (definition.type === "requireClankTalk" || definition.type === "allowHarnessTools") {
+        if (file.name !== AGENTS_TALK) {
+          result.errors.push({ message: "'" + (definition.type === "requireClankTalk" ? "require clank-talk" : "allow harness tools") + "' is only allowed in " + AGENTS_TALK, ...where });
+        } else if (definition.type === "requireClankTalk") {
+          result.requireClankTalk = true;
+        } else {
+          result.harnessTools.push(...definition.names);
+        }
+        continue;
+      }
       if (definition.type === "allowEnv") {
         if (file.name === AGENTS_TALK) {
           result.allowedEnv.push(...definition.names);
@@ -4225,6 +4236,15 @@ function judgeModel(use, lendModel, secrets, url) {
     throw new Error("no value for secret " + use.secret + ". Put it in the environment, in .env.local or in .env");
   }
   return anthropicModel({ url, key: entry.value, model: use.model });
+}
+
+// for the harness: is there an AGENTS.talk, does it require ClankTalk, and which other tools does it allow
+// see src/md/features/harness-tools.md; errors are AGENTS.talk's own, so a harness can fail closed
+export async function projectHarness(root) {
+  const resolved = nodePath.resolve(root);
+  const exists = fsSync.existsSync(nodePath.join(resolved, AGENTS_TALK));
+  const agents = await loadAgentsTalk(resolved, {});
+  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: agents.harnessTools, errors: agents.errors.map((error) => error.message) };
 }
 
 // the '*' warnings for the taint command, which reads AGENTS.talk on its own

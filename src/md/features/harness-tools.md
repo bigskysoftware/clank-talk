@@ -1,0 +1,15 @@
+# Harness tools
+
+In a harness, ClankTalk can be the only tool, so the agent does all its work in scripts that the rules and the audit cover. Before, only pi did this (`pi.setActiveTools`). Claude Code had no way.
+
+Code: the `clank-talk` plugin for Claude Code (`claude-code/hooks/register.tsx`), `src/js/harnesses/pi-host.js`, `projectHarness` in `src/js/runtime.js`, `harnessToolAllowed` in `src/js/host.js`, and `clank-talk harness --json` in `bin/clank-talk.js`.
+
+## Rules
+
+- Approved (built, 2026-11-11): while ClankTalk is on, the Claude Code plugin blocks every tool except `clank_talk` (`mcp__<server>__clank_talk`), a built-in list that only talks to the person or plans (AskUserQuestion, TaskCreate, TaskGet, TaskList, TaskUpdate, TodoWrite, ToolSearch, EnterPlanMode, ExitPlanMode), and the tools that AGENTS.talk allows. The deny message tells the model to use a ClankTalk script, and names the AGENTS.talk line that allows the tool. Rejected: blocking only the tools that change or run things (Read and web tools skip the hidden-file rules and the taint record), and only Bash, Edit and Write.
+- Approved (built, 2026-11-11): `require clank-talk`, at the top of AGENTS.talk, keeps ClankTalk on: `/clank-talk off` is refused. Rejected: `clank-talk on | off | required`, and `only clank-talk`. Any other `require` is still a policy line.
+- Approved (built, 2026-11-11): `allow harness tools Read, Grep, 'mcp__github__*'`, at the top of AGENTS.talk, allows other tools by the harness's own names. In a name in quotes, `*` is any text. pi uses the same line: the allowed tools are active, beside `clank_talk`. Rejected: `allow tools` (close to `tool`), and `allow claude tools`.
+- Approved (built, 2026-11-11): with no `require clank-talk`, ClankTalk is on in a project that has an AGENTS.talk, and off in one that has none. `/clank-talk on` and `/clank-talk off` change it for that project, also in later sessions; the plugin keeps the state in its own store, by project root, outside the project. Only the person's own Enter changes it (`origin.kind` is `composer`).
+- Approved (built, 2026-11-11): `/clank-talk` with no argument prints a report in the transcript: on or off and why, the allowed and the blocked tools (built-in tools by name, MCP tools by server, as `mcp__idea__* (94)`), the names that AGENTS.talk allows, and AGENTS.talk errors. The model can read it; it holds nothing secret.
+- Approved (built, 2026-11-11): the plugin reads the project's settings with `clank-talk harness --json` (`{ agentsTalk, required, allowed, errors }`), and reads them again when AGENTS.talk changes. If the command fails, a project with an AGENTS.talk stays on with no extra tools: the guard fails closed. A guard hook that fails also blocks the call.
+- Limit: the plugin only guards Claude Code. Without the plugin, Claude Code does not block other tools. A `claude --dangerously-skip-permissions` session still runs the plugin's hooks; this is not tested.
