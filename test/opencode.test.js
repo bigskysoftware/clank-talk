@@ -81,7 +81,7 @@ test("clank_talk runs a script; with an AGENTS.talk the other tools are hidden a
   const ctx = fakeContext(root);
   const cleanup = await plugin.setup(ctx);
   assert.equal(ctx.tools.clank_talk.options.codemode, false);
-  const result = await ctx.tools.clank_talk.execute({ script: "print 1 + 1" }, { sessionID: "s1" });
+  const result = await ctx.tools.clank_talk.execute({ script: "# add\nprint 1 + 1" }, { sessionID: "s1" });
   assert.equal(result.content, "2");
   const event = { sessionID: "s1", tools: tools() };
   await ctx.hooks["session.context"](event);
@@ -229,7 +229,7 @@ test("ask with real choices: the TUI part shows a select dialog, a confirm for e
   tui.ui.dialog.confirm = async ({ message }) => message.startsWith("b.js");
   tui.ui.dialog.prompt = async () => "blue";
   const stop = await tuiPlugin.setup(tui);
-  const run = async (script) => (await ctx.tools.clank_talk.execute({ script }, { sessionID: "s1" })).content;
+  const run = async (script) => (await ctx.tools.clank_talk.execute({ script: "# ask\n" + script }, { sessionID: "s1" })).content;
   assert.equal(await run("ask 'Deploy where?' with 'staging: the test site' or 'production: the live site'\nprint it"), "production");
   assert.equal(asked[0].title, "Deploy where?");
   assert.deepEqual(asked[0].options.map((option) => option.title), ["staging: the test site", "production: the live site"]);

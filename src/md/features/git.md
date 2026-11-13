@@ -65,6 +65,7 @@ What already protects us: scripts cannot write hidden files, so a script cannot 
   - `git switch to new branch <branch>`: make a branch and switch to it
   - no `git add`: `git commit` takes the files, so the agent cannot commit files it did not name
 - Approved: each command puts its output in the result, as text, like a tool's `output`. Later: values, such as a list of changed files.
+- Approved (built, 2026-11-12): each git command also prints its output, if it has any, as `help` does. The output is still the result. Why: from the audit, agents wrote `print it` 34 times on 2026-11-12, nearly always after `git log`, `git status` or `git push`. Limit: an old script that still has `print it` after git shows the output two times.
 - Approved (built): `git status` is `status --short --branch`. `git log` shows 15 commits with `--oneline`. A git call that fails is a script error with git's message. `git diff` with an empty list of files is an error, because no files would mean the diff of everything.
 - Approved (built): `git switch to <branch>` is `switch <branch>`, and `git switch to new branch <branch>` is `switch --create <branch>`.
 - Approved: `git switch` and `git merge` can change `.talk` files, `@/talk/`, and hidden files. No extra check. Why: what is in git got there in a legitimate way. A script cannot commit these files, and a sandboxed program cannot write `.git/`, so a human put them there.

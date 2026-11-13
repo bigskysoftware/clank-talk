@@ -41,22 +41,22 @@ async function errors(source) {
 }
 
 test("git status, branch and branches", async () => {
-  assert.deepEqual(await output("git status\nprint it"), ["## main\n M a.txt\n"]);
-  assert.deepEqual(await output("git branch\nprint it"), ["main\n"]);
-  assert.deepEqual(await output("git branches\nprint it"), ["* main\n"]);
+  assert.deepEqual(await output("git status"), ["## main\n M a.txt\n"]);
+  assert.deepEqual(await output("git branch"), ["main\n"]);
+  assert.deepEqual(await output("git branches"), ["* main\n"]);
 });
 
 test("git diff, of all files or some", async () => {
-  const [all] = await output("git diff\nprint it");
+  const [all] = await output("git diff");
   assert.match(all, /\+more/);
-  assert.deepEqual(await output("git diff ./b.txt\nprint it"), [""]);
-  assert.match((await output("git diff [./a.txt, ./b.txt]\nprint it"))[0], /\+more/);
+  assert.deepEqual(await output("git diff ./b.txt"), []);
+  assert.match((await output("git diff [./a.txt, ./b.txt]"))[0], /\+more/);
 });
 
 test("git log and git show", async () => {
-  assert.match((await output("git log\nprint it"))[0], /^[0-9a-f]+ first\n$/);
-  assert.match((await output("git log 1\nprint it"))[0], /first/);
-  assert.match((await output("git show 'HEAD'\nprint it"))[0], /first/);
+  assert.match((await output("git log"))[0], /^[0-9a-f]+ first\n$/);
+  assert.match((await output("git log 1"))[0], /first/);
+  assert.match((await output("git show 'HEAD'"))[0], /first/);
 });
 
 test("git checks the values from the script", async () => {
@@ -84,7 +84,7 @@ test("hooks can watch git", async () => {
   await fs.writeFile(path.join(root, "AGENTS.talk"), "before git\n  if the git's operation is 'log'\n    reject 'no log'\n  end\nend");
   try {
     assert.deepEqual(await errors("git log"), ["no log"]);
-    assert.deepEqual((await output("git branch\nprint it")), ["main\n"]);
+    assert.deepEqual((await output("git branch")), ["main\n"]);
   } finally {
     await fs.rm(path.join(root, "AGENTS.talk"));
   }
@@ -273,11 +273,11 @@ test("git diff and git show do not show a .env file that is in git", async () =>
   await fs.writeFile(path.join(root, ".env.example"), "KEY=one\n");
   git(["add", "-f", ".env.example"]);
   git(["commit", "-q", "-m", "Add env"]);
-  const [shown] = await output("git show 'HEAD'\nprint it");
+  const [shown] = await output("git show 'HEAD'");
   assert.match(shown, /diff --git a\/\.env\.example b\/\.env\.example\n\(a \.env file: not shown, since it holds secrets\)/);
   assert.doesNotMatch(shown, /KEY=one/);
   await fs.writeFile(path.join(root, ".env.example"), "KEY=two\n");
-  const [diff] = await output("git diff\nprint it");
+  const [diff] = await output("git diff");
   assert.doesNotMatch(diff, /KEY=/);
   assert.deepEqual(await errors("git diff ./.env.example"), ["A script cannot read .env files, because they hold secrets: .env.example"]);
   git(["checkout", "--", ".env.example"]);
@@ -312,7 +312,7 @@ test("git stash keeps untracked files; stash pop brings the changes back", async
   try {
     await fs.writeFile(path.join(dir, "a.txt"), "changed\n");
     await fs.writeFile(path.join(dir, "new.txt"), "untracked\n");
-    assert.deepEqual((await go("git stash\ngit stashes\nprint it")).output[0].trim().split("\n").length, 1);
+    assert.deepEqual((await go("git stash\ngit stashes")).output[0].trim().split("\n").length, 1);
     assert.equal(await fs.readFile(path.join(dir, "a.txt"), "utf8"), "one\n");
     assert.equal(await fs.readFile(path.join(dir, "new.txt"), "utf8"), "untracked\n");
     assert.deepEqual((await go("git stash pop")).errors, []);
@@ -346,7 +346,7 @@ test("git restore puts files back, with the checks of a write, and undo takes it
 
 test("git blame reads a file, and refuses .env files", async () => {
   const { go } = await repo();
-  const result = await go("git blame ./a.txt\nprint it");
+  const result = await go("git blame ./a.txt");
   assert.deepEqual(result.errors, []);
   assert.match(result.output[0], /\) one$/m);
   assert.equal((await go("git blame ./.env")).errors[0].message, "A script cannot read .env files, because they hold secrets: .env");
@@ -355,7 +355,7 @@ test("git blame reads a file, and refuses .env files", async () => {
 
 test("git tag and git tags; a bad tag name is refused", async () => {
   const { go } = await repo();
-  assert.deepEqual((await go("git tag 'v1.0'\ngit tags\nprint it")).output, ["v1.0\n"]);
+  assert.deepEqual((await go("git tag 'v1.0'\ngit tags")).output, ["v1.0\n"]);
   assert.match((await go("git tag '-x'")).errors[0].message, /^Not a safe tag name/);
 });
 
@@ -371,7 +371,8 @@ test("git pull is fast-forward only, and the pulled changes make the project unt
     origin.g(["commit", "-q", "-am", "theirs"]);
     const result = await run("git pull\nprint the session is untrusted", { root: clone });
     assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.output, ["true"]);
+    // git pull prints what it did, then the print
+    assert.equal(result.output.at(-1), "true");
     assert.equal(await fs.readFile(path.join(clone, "a.txt"), "utf8"), "from someone else\n");
     // a policy that denies fetch denies pull
     const denied = await run("git pull", { root: clone, policy: { name: "p.talk", source: "policy 'p'\ndeny fetch" } });

@@ -9,6 +9,7 @@
 //   <tool name>          a call to a tool from AGENTS.talk, with no arguments yet
 
 import { tokenize } from "./tokenizer.js";
+import { shellHint } from "./help.js";
 // the words after "git"; see src/md/features/git.md
 // how deep expressions and blocks can nest
 const MAX_NESTING = 100;
@@ -19,8 +20,11 @@ const BLOCK_WORDS = ["end", "then", "else"];
 // an expression can have this many operators in a row, such as a + b + c
 const MAX_CHAIN = 500;
 
+// README.md, data.xlsx: a variable with one of these properties, and no spaces, is likely a file name
+const FILE_EXTENSIONS = ["md", "txt", "js", "mjs", "ts", "json", "py", "html", "css", "csv", "xlsx", "yml", "yaml", "toml", "sh", "talk", "log", "xml", "pdf"];
+
 // words that join values, so they never start one: "set sorted to 5" sets a variable named sorted
-const LINK_WORDS = ["to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
+const LINK_WORDS = ["because", "to", "is", "and", "or", "of", "in", "with", "within", "as", "then", "matches", "contains", "starts", "ends", "does", "index", "by", "onto", "else", "end"];
 
 export const GIT_OPERATIONS = ["status", "diff", "log", "show", "branches", "branch", "switch", "commit", "merge", "rebase", "move", "push", "delete", "stash", "stashes", "restore", "pull", "blame", "tag", "tags"];
 
@@ -448,6 +452,12 @@ export function parse(source, options = {}) {
         i++;
         value = parseProperty(value, token);
       } else if (isOp(".")) {
+        // README.md with no spaces: if README is not a variable, the error says to write a path
+        const before = tokens[i - 1];
+        const after = tokens[i + 1];
+        if (value.type === "variable" && after !== undefined && after.type === "word" && FILE_EXTENSIONS.includes(after.value) && before.end === token.start && token.end === after.start) {
+          value.pathHint = value.name + "." + after.value;
+        }
         i++;
         value = parseProperty(value, token);
       } else if (isOp("[")) {
@@ -544,7 +554,25 @@ export function parse(source, options = {}) {
       const savedIndex = i;
       const savedErrorCount = errors.length;
       i++;
-      const from = parseBefore(["to"], parseMath);
+      const from = parseBefore(["to", "after", "before"], parseMath);
+      // lines <n> after <line> and lines <n> before <line>: the lines next to a line, such as one from find
+      if (from !== null && (isWord("after") || isWord("before"))) {
+        const direction = current().value;
+        i++;
+        const anchor = parseBefore(["of"], parseAccess);
+        if (anchor === null) {
+          return null;
+        }
+        let target = null;
+        if (isWord("of")) {
+          i++;
+          target = parseAccess();
+          if (target === null) {
+            return null;
+          }
+        }
+        return node("linesNear", linesToken, { count: from, direction, anchor, target });
+      }
       if (from !== null && isWord("to")) {
         i++;
         const to = parseBefore(["of"], parseMath);
@@ -677,6 +705,13 @@ export function parse(source, options = {}) {
         i = savedIndex;
         errors.length = savedErrorCount;
       }
+    }
+
+    // list as a value: set files to list @/notes/; with nothing after it, list is a plain name
+    if (isWord("list") && startsList()) {
+      const listToken = current();
+      i++;
+      return parseListTarget(listToken);
     }
 
     // read as an expression: set readme to read @/README.md
@@ -1317,6 +1352,38 @@ export function parse(source, options = {}) {
     return { type: "onError", body, line: token.line, column: token.column };
   }
 
+
+  // after the word list: [all of] <folder>
+  function parseListTarget(token) {
+    let all = false;
+    if (isWord("all")) {
+      i++;
+      if (!isWord("of")) {
+        error("Expected 'of', as in: list all of @/notes/");
+        return null;
+      }
+      i++;
+      all = true;
+    }
+    const folder = parseAccess();
+    if (folder === null) {
+      return null;
+    }
+    return { type: "listFolder", folder, all, line: token.line, column: token.column };
+  }
+
+  // list starts a value only when a path, all, or a name follows on its line
+  function startsList() {
+    const next = tokens[i + 1];
+    if (next === undefined || next.line !== current().line) {
+      return false;
+    }
+    if (next.type === "path") {
+      return true;
+    }
+    return next.type === "word" && !LINK_WORDS.includes(next.value) && !BLOCK_WORDS.includes(next.value);
+  }
+
   // read <expression>: puts the text of a file in the result
   function parseRead(token) {
     // in an "in <target> do ... end" block, a read with nothing after it on its line reads the block's target
@@ -1660,6 +1727,7 @@ export function parse(source, options = {}) {
     print: parsePrint,
     if: parseIf,
     read: parseRead,
+    list: parseListTarget,
     write: parseWrite,
     append: parseWrite,
     replace: parseReplace,
@@ -1712,8 +1780,9 @@ export function parse(source, options = {}) {
       // if the command had an error, skip the rest of it, so one mistake gives one error
       if (errors.length > errorCount) {
         skipToNextCommand();
+        return command;
       }
-      return command;
+      return withBecause(command);
     }
 
     if (tools.includes(token.value)) {
@@ -1722,14 +1791,30 @@ export function parse(source, options = {}) {
       const call = parseToolCall(token);
       if (errors.length > errorCount) {
         skipToNextCommand();
+        return call;
       }
-      return call;
+      return withBecause(call);
     }
 
-    error("Unknown command '" + token.value + "'");
+    const hint = shellHint(token.value);
+    error("Unknown command '" + token.value + "'" + (hint === null ? "" : ". " + hint));
     i++;
     skipToNextCommand();
     return null;
+  }
+
+
+  // <command> because <text>: the reason goes in the audit with the command's steps; see src/md/features/audit.md
+  function withBecause(command) {
+    if (command === null || !isWord("because")) {
+      return command;
+    }
+    i++;
+    const reason = parseExpression();
+    if (reason !== null) {
+      command.because = reason;
+    }
+    return command;
   }
 
   // commands up to an 'end' or the end of the source

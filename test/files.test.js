@@ -124,11 +124,11 @@ test("a missing file is an error", async () => {
 });
 
 test("reading a folder is an error", async () => {
-  assert.deepEqual(await errors("read ./src"), ["Not a file: src"]);
+  assert.deepEqual(await errors("read ./src"), ["src/ is a folder, not a file. For its files, use a glob: for f in @/src/**/*"]);
 });
 
 test("read needs a file", async () => {
-  assert.deepEqual(await errors("read 'README.md'"), ["Expected a file, found 'README.md'"]);
+  assert.deepEqual(await errors("read 'README.md'"), ["Expected a file, found the text 'README.md'. Write the path with no quotes: @/README.md"]);
 });
 
 test("file objects cannot be changed or looked into", async () => {

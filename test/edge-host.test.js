@@ -144,7 +144,7 @@ test("with the root in a subfolder of a repo, git output covers only the root's 
   await fs.writeFile(path.join(outer, "a.txt"), "outside-text\n");
   await fs.writeFile(path.join(outer, "sub", "in.txt"), "inside-text\n");
   const root = path.join(outer, "sub");
-  const [status, diff, log] = await outputIn(root, "git status\nprint it\ngit diff\nprint it\ngit log\nprint it");
+  const [status, diff, log] = await outputIn(root, "git status\ngit diff\ngit log");
   assert.doesNotMatch(status, /a\.txt/);
   assert.match(status, /in\.txt/);
   assert.doesNotMatch(diff, /outside-text/);

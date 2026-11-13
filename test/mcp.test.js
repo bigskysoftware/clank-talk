@@ -112,10 +112,10 @@ test("the server speaks JSON-RPC over stdio", async () => {
   const send = (message) => child.stdin.write(JSON.stringify(message) + "\n");
   send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
   send({ jsonrpc: "2.0", method: "notifications/initialized" });
-  send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "clank_talk", arguments: { script: "print 'hello'" } } });
+  send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "clank_talk", arguments: { script: "# hello\nprint 'hello'" } } });
   // U+2028 and U+2029 are allowed in a JSON string, so they do not end a line
   const separators = String.fromCharCode(0x2028) + String.fromCharCode(0x2029);
-  send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "clank_talk", arguments: { script: "print 'a" + separators + "b'" } } });
+  send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "clank_talk", arguments: { script: "# separators\nprint 'a" + separators + "b'" } } });
   while (lines.length < 3) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }

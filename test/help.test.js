@@ -31,12 +31,14 @@ test("every help example parses", () => {
   }
 });
 
-test("help lists commands, expressions and tools", async () => {
+test("help starts with examples that run, then the tools; help commands lists everything", async () => {
   await agentsTalk(TOOLS);
   const text = (await run("help", { root })).output[0];
-  assert.match(text, /^Commands:\n  print +Output a value to the agent\./);
-  assert.match(text, /\nExpressions:\n/);
-  assert.match(text, /\n  run_tests +Runs the tests\.\n  lint with file *\n/);
+  assert.match(text, /^ClankTalk is a simple scripting language for you to use\./);
+  assert.match(text, /\n# This lists the files in the root of a project\. @\/ is the project root\.\nlist @\/\n/);
+  assert.match(text, /\nTools in this project:\n  run_tests +Runs the tests\.\n  lint with file *\n/);
+  const all = (await run("help commands", { root })).output[0];
+  assert.match(all, /^Commands:\n  print +Output a value to the agent\./);
 });
 
 test("help <word> shows syntax, description and examples", async () => {

@@ -60,6 +60,25 @@ export const HELP = [
     examples: ["repeat 3 times index i\n  print i\nend", "repeat until done\n  set done to true\nend"],
   },
   {
+    name: "list", kind: "command",
+    syntax: "list <folder> | list all of <folder>   (also a value: set files to list @/)",
+    description: [
+      "Print the files and folders in a folder, one on each line. A folder ends with /. The list of files is the result.",
+      "'list all of' gives every file below the folder, as the glob @/folder/**/* does.",
+      "Both leave out .git, .talk, what git ignores, and .env files.",
+    ],
+    examples: ["list @/", "list all of @/notes/", "set files to list @/src/\nprint the length of files"],
+  },
+  {
+    name: "because", kind: "command",
+    syntax: "<command> because <text>",
+    description: [
+      "Give the reason for a command. The audit shows it on each step of the command, for the human who reads it.",
+      "Use it for push, delete, run and other steps that the human must be able to explain, with the human's words if they gave them.",
+    ],
+    examples: ["git push because 'Carson: commit merge and push'", "delete @/tmp/old.txt because 'the test no longer uses it'"],
+  },
+  {
     name: "break", kind: "command",
     syntax: "break",
     description: "Leave the loop now.",
@@ -338,7 +357,7 @@ export const HELP = [
     name: "git", kind: "command",
     syntax: "git status | git diff [<files>] | git log [<count>] | git show <commit> | git branches | git branch | git switch to [new branch] <branch> | git commit <files> with <message> | git merge <branch> | git rebase onto <branch> | git move <file> to <file> | git push | git delete branch <branch> | git stash | git stash pop | git stashes | git restore <files> | git pull | git blame <file> | git tag <name> | git tags | git push tag <name>",
     description: [
-      "A hardened git: no hooks, no pager, no external diff, and a clean environment. The result is git's output as text.",
+      "A hardened git: no hooks, no pager, no external diff, and a clean environment. git prints its output, so you need no print it. The output is also the result, as text.",
       "If the repo config can run programs, git does not run.",
       "status is short, with the branch. log shows 15 commits, one line each.",
       "commit adds and commits only the files that you name: a list, or files with commas (git commit ./a.js, ./b.js with 'Fix').",
@@ -351,7 +370,7 @@ export const HELP = [
       "pull gets the current branch from origin, fast-forward only. The pulled changes are an untrusted input. A policy with deny fetch denies it.",
       "blame shows who changed each line of a file. tag puts a tag on the current commit; push does not send tags, and push tag sends one tag, never with force.",
     ],
-    examples: ["git status\nprint it", "git diff ./src/app.js\nprint it", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
+    examples: ["git status", "git diff ./src/app.js", "git switch to new branch 'fix-parser'", "git commit [./src/a.js, ./test/a.test.js] with 'Fix the parser'"],
   },
   {
     name: "previous", kind: "expression",
@@ -472,14 +491,15 @@ export const HELP = [
   },
   {
     name: "lines", kind: "expression",
-    syntax: "lines of <file or text> | lines <a> to <b> of <file or text> | line <n> of <file or text>",
+    syntax: "lines of <file or text> | lines <a> to <b> of <file or text> | line <n> of <file or text> | lines <n> after <line> | lines <n> before <line>",
     description: [
       "The lines of a file or text. Each line has number (from 1) and text.",
       "A range uses whole line numbers, both ends included, and starts at 1 or more. The end can go past the last line.",
       "'line <n> of' gives one line. A number past the end is an error.",
+      "'lines <n> after <line>' gives the n lines after a line, such as one from find; 'before' gives the n lines before it. A line from a file knows its file. For a line from text, add 'of <text>'.",
       "Put a line in a variable first. Then use its fields on the next line.",
     ],
-    examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js", "set first to line 1 of ./a.txt\nset name to first's text"],
+    examples: ["for line in lines of the result's output\n  if line starts with 'FAIL' print line end\nend", "print lines 10 to 20 of ./a.js", "set hit to first of find 'function main' in ./a.js\nprint hit\nprint lines 30 after hit", "set first to line 1 of ./a.txt\nset name to first's text"],
   },
   {
     name: "first", kind: "expression",
@@ -637,7 +657,97 @@ function toolSyntax(tool) {
  * Everything, in short: commands, expressions, and the tools.
  * @param {{ name: string, params: string[], description: string }[]} tools
  */
+// shell words that agents type, and the ClankTalk form; for "No help for" and "Unknown command"
+const SHELL_WORDS = {
+  ls: "list @/",
+  dir: "list @/",
+  cat: "read @/a.txt",
+  grep: "find 'text' in @/src/**/*.js",
+  sed: "replace 'old' with 'new' in @/a.txt",
+  rm: "delete @/a.txt",
+  mv: "move @/a.txt to @/b.txt",
+  cp: "write read @/a.txt to @/b.txt",
+  echo: "print 'text'",
+  touch: "write '' to @/a.txt",
+  mkdir: "write 'text' to @/new/a.txt (write makes the folders)",
+  head: "first 10 of lines of @/a.txt",
+  tail: "last 10 of lines of @/a.txt",
+  wc: "print the length of lines of @/a.txt",
+  split: "lines of t",
+  len: "the length of t",
+  cd: "@/a.txt (paths start at @/, the project root)",
+};
+
+// "ClankTalk has no ls. Use: list @/", or null for a word that is not a shell word
+export function shellHint(word) {
+  if (!Object.hasOwn(SHELL_WORDS, word)) {
+    return null;
+  }
+  return "ClankTalk has no " + word + ". Use: " + SHELL_WORDS[word];
+}
+
+// the first example of a command's help, for an error at that command, or null
+export function exampleFor(word) {
+  const entry = HELP.find((item) => item.name === word && item.kind === "command");
+  if (entry === undefined || entry.examples.length === 0) {
+    return null;
+  }
+  return entry.examples[0];
+}
+
+// what a bare help shows first: the most common tasks, as scripts that run; the text is Carson's
+const START_HERE = `ClankTalk is a simple scripting language for you to use. It consists of commands and replaces bash. Comments start with #
+
+# This lists the files in the root of a project. @/ is the project root.
+list @/
+
+# This reads a file, such as @/notes/a.md. Paths have no quotes. it and result contain the result of the last command.
+read @/notes/a.md
+print it
+
+# This makes a file, or replaces its text.
+write 'hello' to @/out.txt
+
+# This counts matches of 'TODO' in the matching files.
+# 'the length of' applies to the value after it.
+print the length of find 'TODO' in @/notes/**/*.md
+
+# To edit code you usually want the replace command.
+# The old text and the new text are in lines that start with |. These lines are taken exactly as typed, after the | and one space.
+# The old text must be exactly as it is in the file and match one place.
+replace
+| return total
+with
+| return round(total, 2)
+in @/stats.py
+
+# If statements are normal and end with end.
+if @/ANSWERS.md exists
+  print 'yes'
+end
+
+Commands for files: list, read, find, write, append, replace, put, remove, move, delete, undo
+
+Commands for values: set, print, add, if, for, repeat
+
+Other commands: git, fetch, ask`;
+
 export function helpIndex(tools, only) {
+  // a bare help: start here, the tools, and where the rest is
+  if (!only) {
+    const lines = [START_HERE, ""];
+    if (tools.length > 0) {
+      lines.push("Tools in this project:");
+      for (const tool of tools) {
+        lines.push("  " + pad(toolSyntax(tool), 24) + toolSummary(tool.description));
+      }
+      lines.push("");
+    }
+    lines.push("help <word> shows help for one command, with examples. Example: help replace");
+    lines.push("");
+    lines.push('"help recipes" shows common tasks, step by step. "help commands", "help expressions" and "help tools" list everything.');
+    return lines.join("\n");
+  }
   const lines = [];
   if (!only || only === "commands") {
     lines.push("Commands:");
@@ -709,7 +819,7 @@ export const RECIPES = [
   {
     name: "Commit your work",
     description: "Look at what changed, then commit only the files you mean.",
-    example: "git status\nprint it\ngit diff ./src/cart.js\nprint it\ngit commit [./src/cart.js, ./test/cart.test.js] with 'Fix the cart total'",
+    example: "git status\ngit diff ./src/cart.js\ngit commit [./src/cart.js, ./test/cart.test.js] with 'Fix the cart total'",
   },
   {
     name: "Catch up, test, then merge",
@@ -780,10 +890,10 @@ export const AREAS = [
   { title: "Basics", intro: "Output, variables, the result, and help.", names: ["help", "check", "print", "set", "add", "increment", "decrement", "it", "the", "of", "then", "previous"] },
   { title: "Values and Text", intro: "Values, text, paths, lists and checks.", names: ["values", "strings", "paths", "operators", "contains", "as", "lines", "first", "last", "sorted", "pattern"] },
   { title: "Control Flow", intro: "Conditions, loops, waits, time limits and errors.", names: ["if", "for", "repeat", "break", "continue", "wait", "within", "on error", "stop"] },
-  { title: "Files", intro: "Read, find, change, move and delete files. Undo takes changes back.", names: ["read", "find", "write", "append", "replace", "in", "put", "remove", "move", "delete", "undo"] },
+  { title: "Files", intro: "Read, find, change, move and delete files. Undo takes changes back.", names: ["list", "read", "find", "write", "append", "replace", "in", "put", "remove", "move", "delete", "undo"] },
   { title: "Git", intro: "A hardened git.", names: ["git"] },
   { title: "Web and the Human", intro: "Fetch from the web, and ask the human.", names: ["fetch", "ask"] },
-  { title: "Safety", intro: "Secrets, session taint and the audit.", names: ["secret", "untrusted", "audit"] },
+  { title: "Safety", intro: "Secrets, session taint and the audit.", names: ["secret", "untrusted", "audit", "because"] },
   { title: "Tools", intro: "Only in AGENTS.talk: tools, programs, background processes and imports.", names: ["tool", "run", "start", "process", "import"] },
   { title: "Hooks and Rules", intro: "Only in AGENTS.talk: hooks, and the allow and limit lines.", names: ["before", "after", "reject", "allow", "limit", "taint"] },
 ];

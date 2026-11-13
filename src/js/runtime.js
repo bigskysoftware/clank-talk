@@ -6,7 +6,7 @@
 // A runtime error stops the script. "on error" comes later.
 
 import { parse } from "./parser.js";
-import { helpIndex, helpFor } from "./help.js";
+import { helpIndex, helpFor, shellHint } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { keepItems, withNotes } from "./keeping.js";
@@ -289,6 +289,12 @@ async function execute(source, options, execution) {
   if (errors.length > 0) {
     return finish(execution, "failed", errors);
   }
+  // in a host session, the first line '# ...' is the script's purpose in the audit header; see src/md/features/audit.md
+  if (options.audit && !source.startsWith("#") && !options.audit.warnedPurpose) {
+    // once in each session, so it does not repeat on every result
+    options.audit.warnedPurpose = true;
+    execution.warnings.push({ message: "Start the script with a # line that says what it is for, in a few words. The human reads it in the audit.", line: 1, column: 1 });
+  }
 
   const state = {
     execution,
@@ -360,6 +366,9 @@ async function execute(source, options, execution) {
     auditSteps: [],
     auditReads: new Set(),
     auditFrom: "script",
+    // the script line of the command now running, and its 'because' reason, for each audit step
+    auditLine: null,
+    auditBecause: null,
     auditFormat: agents.auditFormat,
     // how many days of audit files to keep: AGENTS.talk, or the default, but never fewer than the policy says
     auditKeepDays: keepDays(agents, policy.policy),
@@ -1551,9 +1560,21 @@ async function runCommands(commands, state) {
       continue;
     }
     takeStep(command, state);
+    // the audit names the script line of each step, and the reason from 'because'; a tool's own lines are not the script's
+    if (state.file === null) {
+      state.auditLine = command.line;
+    }
+    const savedBecause = state.auditBecause;
     let signal;
     try {
-      signal = await runCommand(command, state);
+      if (command.because) {
+        state.auditBecause = toText(await evaluate(command.because, state));
+      }
+      try {
+        signal = await runCommand(command, state);
+      } finally {
+        state.auditBecause = savedBecause;
+      }
     } catch (caught) {
       let err = caught;
       // a secret in the wrong place: the error points at this command, and names it
@@ -1754,11 +1775,22 @@ async function runCommand(command, state) {
     return null;
   }
   if (command.type === "git") {
-    await runGit(command, state);
+    const output = await runGit(command, state);
+    // git prints what it gave back, as help does; it is still the result; see src/md/features/git.md
+    if (typeof output === "string" && output.trim() !== "") {
+      state.execution.output.push(redact(output, state));
+    }
     return null;
   }
   if (command.type === "find") {
     state.result = await evaluate(command, state);
+    return null;
+  }
+  // list prints the entries, one on each line, as git does; the list is the result
+  if (command.type === "listFolder") {
+    state.result = await evaluate(command, state);
+    const shown = state.result.map((file) => (file.folder ? file.path + "/" : file.path));
+    state.execution.output.push(shown.length === 0 ? "(empty)" : shown.join("\n"));
     return null;
   }
 
@@ -1899,7 +1931,8 @@ async function runCommand(command, state) {
     } else {
       text = helpFor(command.word, list);
       if (text === null) {
-        throw new ScriptError("No help for '" + command.word + "'. Use help to list everything", command);
+        const hint = shellHint(command.word);
+        throw new ScriptError("No help for '" + command.word + "'." + (hint === null ? "" : " " + hint + ".") + " Use help to list everything", command);
       }
     }
     state.execution.output.push(text);
@@ -1915,7 +1948,12 @@ async function runCommand(command, state) {
 
   // check <text> [as AGENTS.talk]: the parse errors, as a list of { line, column, message }; empty if it parses
   if (command.type === "check") {
-    const text = toText(notNull(await evaluate(command.value, state), "check needs text. Give it a value", command.value));
+    const value = notNull(await evaluate(command.value, state), "check needs text. Give it a value", command.value);
+    // check parses ClankTalk text; a condition is a mistake, since it would parse 'true' and say nothing
+    if (typeof value !== "string") {
+      throw new ScriptError("check parses ClankTalk text, and found " + describe(value) + ". To test a condition, use if: if @/a.txt exists print 'yes' end", command.value);
+    }
+    const text = value;
     // the parser needs the tool names: the ones that the session knows, and for AGENTS.talk text, its own tools
     const names = Object.keys(state.tools || {}).concat(Object.keys(state.definitions || {}));
     if (command.agents) {
@@ -1984,7 +2022,7 @@ async function runCommand(command, state) {
     }
 
     // a host tool: its effects first, then the call; see src/md/infrastructure/host.md
-    const changed = await hostToolEffects(host, command, step, argText, state);
+    const changed = await hostToolEffects(host, command, step, argText, args, named, state);
     const signal = state.execution.signal;
     try {
       state.result = await host.run({ signal, args, named });
@@ -2050,6 +2088,29 @@ async function evaluate(node, state) {
     }
     // both ends are included, and a range past the end stops at the last line
     return all.slice(from - 1, Math.max(to, 0));
+  }
+  if (type === "listFolder") {
+    return await listFolder(await evaluate(node.folder, state), node.all, state, node);
+  }
+  // lines <n> after <line> [of <file or text>]: a line from find knows its file; see src/md/features/language.md
+  if (type === "linesNear") {
+    const anchor = await evaluate(node.anchor, state);
+    if (!(anchor instanceof Line)) {
+      throw new ScriptError("lines ... " + node.direction + " needs a line, such as one from find, found " + describe(anchor), node.anchor);
+    }
+    const count = toNumber(await evaluate(node.count, state), node.count);
+    if (!Number.isInteger(count) || count < 0) {
+      throw new ScriptError("The count of lines must be a whole number, 0 or more, found " + describe(count), node.count);
+    }
+    const target = node.target !== null ? await evaluate(node.target, state) : anchor.file;
+    if (target === null) {
+      throw new ScriptError("This line has no file. Name the text: lines " + count + " " + node.direction + " hit of t", node);
+    }
+    const all = await linesOf(target, state, node);
+    if (node.direction === "after") {
+      return all.slice(anchor.number, anchor.number + count);
+    }
+    return all.slice(Math.max(anchor.number - 1 - count, 0), anchor.number - 1);
   }
   if (type === "read") {
     return await readText(await evaluate(node.file, state), state, node);
@@ -2151,7 +2212,7 @@ async function evaluate(node, state) {
     if (node.name.startsWith("$")) {
       return null;
     }
-    throw new ScriptError(unknownVariable(node.name, scope), node);
+    throw new ScriptError(unknownVariable(node.name, scope, node.pathHint), node);
   }
   if (type === "list") {
     const items = [];
@@ -2357,14 +2418,16 @@ export function hostTool(value) {
 
 // before a host tool runs: reads is an audit read, changes gets the checks of a write, and sends asks the human
 // each time, tainted or not; gives { file, before } for undo, or null
-async function hostToolEffects(host, command, step, argText, state) {
+async function hostToolEffects(host, command, step, argText, args, named, state) {
   const reads = await effectFile(host, "reads", step, command, state);
   if (reads !== null) {
     auditRead(state, reads.path);
+    giveFile(host, "reads", reads, args, named);
   }
   let changed = null;
   const changes = await effectFile(host, "changes", step, command, state);
   if (changes !== null) {
+    giveFile(host, "changes", changes, args, named);
     await checkWritable(changes, state, command);
     const before = await utf8TextOrNull(changes.absolute);
     const real = await realPath(changes, state, command);
@@ -2385,6 +2448,19 @@ async function hostToolEffects(host, command, step, argText, state) {
     }
   }
   return changed;
+}
+
+// the tool gets the file that the runtime checked, also when the script gave the path as text ('@/a.xlsx')
+function giveFile(host, effect, file, args, named) {
+  const name = host.effects[effect];
+  if (Object.hasOwn(named, name)) {
+    named[name] = file;
+    return;
+  }
+  const index = host.params.indexOf(name);
+  if (index !== -1 && index < args.length) {
+    args[index] = file;
+  }
 }
 
 // the file in the parameter that an effect names, or null if the effect or the value is not there
@@ -4642,6 +4718,12 @@ function localDate(date) {
 // extra: more fields for the JSON audit only, such as the full git arguments
 function auditStep(state, kind, target, details, extra = {}) {
   const record = { time: clock(new Date()), script: state.auditScript, agent: state.agent, kind, target: redact(String(target), state), details: redact(details || "", state), from: state.auditFrom };
+  if (state.auditLine !== null && state.auditLine !== undefined) {
+    record.line = state.auditLine;
+  }
+  if (state.auditBecause !== null && state.auditBecause !== undefined) {
+    record.because = redact(state.auditBecause, state);
+  }
   for (const name of Object.keys(extra)) {
     record[name] = redact(String(extra[name]), state);
   }
@@ -4674,7 +4756,14 @@ function cut(text, width) {
 // a step from inside a tool or a subagent is indented under it, so "from" is not needed
 function auditLine(record) {
   const kind = record.from !== "script" ? "  " + record.kind.padEnd(6) : record.kind.padEnd(8);
-  return (record.time + "  " + kind + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(record.details)).trimEnd();
+  let text = (record.time + "  " + kind + " " + cut(oneLine(record.target), 40).padEnd(40) + "  " + oneLine(record.details)).trimEnd();
+  if (record.because !== undefined) {
+    text += "  because: " + cut(oneLine(record.because), 80);
+  }
+  if (record.line !== undefined) {
+    text += "  (line " + record.line + ")";
+  }
+  return text;
 }
 
 // the audit keeps this many days by default; see src/md/features/audit.md
@@ -4826,7 +4915,7 @@ async function runUndo(command, state) {
   if (command.file !== null) {
     const file = await evaluate(command.file, state);
     if (!(file instanceof FileRef)) {
-      throw new ScriptError("Expected a file, found " + describe(file), command.file);
+      throw new ScriptError(notAFile(file), command.file);
     }
     for (let index = state.undo.length - 1; index >= 0 && items.length === 0; index--) {
       for (const item of state.undo[index].files) {
@@ -5227,8 +5316,12 @@ function flatFiles(value) {
 }
 
 // the error for a name that no command set; it names a set variable with a close spelling
-function unknownVariable(name, scope) {
+function unknownVariable(name, scope, pathHint) {
   let message = "Unknown variable '" + name + "'.";
+  // read README.md: a file name with no ./ or @/ reads as a variable and a property
+  if (pathHint !== undefined) {
+    return message + " If " + pathHint + " is a file, write it as a path, with no quotes: @/" + pathHint + " or ./" + pathHint;
+  }
   const close = Object.keys(scope).find((other) => editDistance(name, other) <= 2);
   if (close !== undefined) {
     message += " Did you mean '" + close + "'?";
@@ -5711,6 +5804,39 @@ async function globFiles(base, pattern, state, node) {
   return files;
 }
 
+// list <folder>: the files and folders in it, by name, folders marked; list all of <folder>: every file below it
+// the same as a glob leaves out: .git, .talk, what git ignores, .env files, and links that leave the root
+async function listFolder(folder, all, state, node) {
+  if (!(folder instanceof FileRef)) {
+    throw new ScriptError("list needs a folder, such as @/ or @/notes/, found " + describe(folder), node);
+  }
+  const stats = await fs.stat(folder.absolute).catch(() => null);
+  if (stats === null || !stats.isDirectory()) {
+    throw new ScriptError((folder.path === "" ? "@/" : folder.path) + " is not a folder. list takes a folder, such as @/notes/", node);
+  }
+  const prefix = folder.path === "" ? "" : folder.path + "/";
+  if (all) {
+    return await globFiles(state.root, prefix + "**/*", state, node);
+  }
+  const ignored = await gitIgnored(state, node);
+  const realRoot = await fs.realpath(state.root);
+  const entries = [];
+  for (const entry of await fs.readdir(folder.absolute, { withFileTypes: true })) {
+    const absolute = nodePath.join(folder.absolute, entry.name);
+    if (entry.name === ".git" || entry.name === ".talk" || ignored.has(absolute) || isSecretFile(absolute)) {
+      continue;
+    }
+    const entryStats = await fs.stat(absolute).catch(() => null);
+    if (entryStats === null || !isInside(await fs.realpath(absolute), realRoot)) {
+      continue;
+    }
+    entries.push(new FileRef(absolute, state.root, entryStats.isDirectory()));
+  }
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  auditStep(state, "list", prefix === "" ? "@/" : prefix, entries.length + (entries.length === 1 ? " entry" : " entries"));
+  return entries;
+}
+
 function isInside(absolute, root) {
   const relative = nodePath.relative(root, absolute);
   return !relative.startsWith("..") && !nodePath.isAbsolute(relative);
@@ -5757,9 +5883,23 @@ async function fileExists(file, state, node) {
   }
 }
 
+// the error for a value that is not a file; text that looks like a path gets the path form
+function notAFile(value) {
+  if (typeof value === "string" && /^(\.\.?\/|@\/|~\/)|^[\w.-]+\/|\.[A-Za-z0-9]{1,5}$/.test(value)) {
+    return "Expected a file, found the text " + describe(value) + ". Write the path with no quotes: " + (/^(\.\.?\/|@\/)/.test(value) ? value : "@/" + value);
+  }
+  return "Expected a file, found " + describe(value);
+}
+
+// a folder is not a file: name it, and show how to get its files
+function folderError(file) {
+  const shown = file.path === "" ? "@/" : file.path + "/";
+  return shown + " is a folder, not a file. For its files, use a glob: for f in " + (shown === "@/" ? "@/" : "@/" + shown) + "**/*";
+}
+
 async function readText(file, state, node) {
   if (!(file instanceof FileRef)) {
-    throw new ScriptError("Expected a file, found " + describe(file), node);
+    throw new ScriptError(notAFile(file), node);
   }
   const real = await realPath(file, state, node);
   if (real === null) {
@@ -5771,7 +5911,7 @@ async function readText(file, state, node) {
   }
   const stats = await fs.stat(real);
   if (!stats.isFile()) {
-    throw new ScriptError("Not a file: " + file.path, node);
+    throw new ScriptError(stats.isDirectory() ? folderError(file) : "Not a file: " + file.path, node);
   }
   const step = Object.create(null);
   step.path = file.path;
@@ -5882,7 +6022,7 @@ async function writeText(file, text, append, state, node) {
   if (real !== null) {
     const stats = await fs.stat(real);
     if (!stats.isFile()) {
-      throw new ScriptError("Not a file: " + file.path, node);
+      throw new ScriptError(stats.isDirectory() ? folderError(file) : "Not a file: " + file.path, node);
     }
     // a file that is not UTF-8 would lose bytes, and undo could not put them back
     const bytes = await fs.readFile(real);
@@ -5918,7 +6058,7 @@ async function checkWritable(file, state, node) {
     throw new ScriptError("Expected one file, found a list of " + file.length + ". Use a for loop", node);
   }
   if (!(file instanceof FileRef)) {
-    throw new ScriptError("Expected a file, found " + describe(file), node);
+    throw new ScriptError(notAFile(file), node);
   }
   checkDenied("writes", state, node);
   if (await isProtected(file, state, node)) {

@@ -66,7 +66,7 @@ test("clank_talk is the only tool: the others are blocked", async () => {
 });
 
 test("the tool runs a script, and gives the same text as the MCP server", async () => {
-  const result = await call("print 1 + 1");
+  const result = await call("# add\nprint 1 + 1");
   assert.deepEqual(result.content, [{ type: "text", text: "2" }]);
   assert.equal(result.isError, false);
   assert.equal(result.details.status, "done");

@@ -35,9 +35,10 @@ test("the text audit: one block for each script, one line for each step", async 
   assert.ok(lines.includes("--"));
   const steps = lines.slice(lines.indexOf("--") + 1).filter((line) => line !== "");
   assert.deepEqual(steps.map((line) => line.slice(10, 18).trim()), ["read", "replace", "tool", "run"]);
-  assert.match(steps[1], /a\.txt +1 match, line 1$/);
+  // each step ends with its script line; a step inside a tool has the line of the tool call
+  assert.match(steps[1], /a\.txt +1 match, line 1  \(line 4\)$/);
   // the program is indented under its tool
-  assert.match(steps[3], /^\d\d:\d\d:\d\d    run    node -e console\.log\(1\) +no sandbox, code 0, \d+\.\d s$/);
+  assert.match(steps[3], /^\d\d:\d\d:\d\d    run    node -e console\.log\(1\) +no sandbox, code 0, \d+\.\d s  \(line 5\)$/);
 });
 
 test("each edit says what it did", async () => {
