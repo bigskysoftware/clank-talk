@@ -6,7 +6,7 @@
 // A runtime error stops the script. "on error" comes later.
 
 import { parse } from "./parser.js";
-import { helpIndex, helpFor, shellHint } from "./help.js";
+import { helpIndex, helpFor, noHelp } from "./help.js";
 import { unsafeConfig, guardArgs, gitEnv, isSafeBranchName, isSafeCommitName } from "./git.js";
 import { Pattern, PatternWorker, PATTERN_TIME_LIMIT } from "./patterns.js";
 import { keepItems, withNotes } from "./keeping.js";
@@ -1931,8 +1931,7 @@ async function runCommand(command, state) {
     } else {
       text = helpFor(command.word, list);
       if (text === null) {
-        const hint = shellHint(command.word);
-        throw new ScriptError("No help for '" + command.word + "'." + (hint === null ? "" : " " + hint + ".") + " Use help to list everything", command);
+        throw new ScriptError(noHelp(command.word, list), command);
       }
     }
     state.execution.output.push(text);

@@ -580,7 +580,7 @@ export const HELP = [
     name: "within", kind: "expression",
     syntax: "<tool call> within <duration>",
     description: "A time limit for a tool call. Durations: 100ms, 2s, 5 seconds, 10 minutes, 1 hour.",
-    examples: ["help within"],
+    examples: ["set tests to run_tests within 5 minutes\nprint tests's code"],
   },
 ];
 
@@ -732,6 +732,109 @@ Commands for values: set, print, add, if, for, repeat
 
 Other commands: git, fetch, ask`;
 
+// the end of a bare help: the levels of help, and the areas; each level names the level below it
+const HELP_MAP = `How to use help:
+  help <area>       the commands of one area, each with its form and one example
+  help <command>    all forms of one command, with examples
+  help recipes      common tasks, step by step
+  help commands     every command, one line each
+  help expressions  every expression, one line each
+
+Areas:
+  help basics        output, variables, the result
+  help text          values, text, paths, lists, checks
+  help control flow  if, for, repeat, wait, within, on error, stop
+  help files         list, read, find, write, append, replace, put, remove, move, delete, undo
+  help git           a hardened git
+  help web           fetch, ask
+  help safety        secrets, taint, audit, because
+  help tools         the tools of this project, and how a human adds one in AGENTS.talk
+  help hooks         hooks and rules in AGENTS.talk: before, after, allow, limit, taint
+
+A human writes AGENTS.talk. If a task needs a tool or a rule, tell the human the lines to add.
+If help does not know a word, it names the closest topics.`;
+
+// help <area>: the intro, then each entry of the area with its form, its first sentence and one example
+function areaText(area) {
+  const lines = [area.title + ": " + area.intro];
+  for (const name of area.names) {
+    const entry = findEntry(name);
+    lines.push("", entry.syntax, "  " + firstSentence(rulesOf(entry)[0]));
+    if (entry.examples.length > 0) {
+      for (const line of entry.examples[0].split("\n")) {
+        lines.push("    " + line);
+      }
+    }
+  }
+  lines.push("", "For all forms and examples of one command: help <command>, for example help " + area.names[0] + ". All areas: help");
+  return lines.join("\n");
+}
+
+// the area of an entry, or undefined
+function areaOf(entry) {
+  return AREAS.find((area) => area.names.some((name) => findEntry(name) === entry));
+}
+
+// other words that agents try, and the topic that they mean
+const OTHER_WORDS = {
+  loop: "control flow", loops: "control flow", conditions: "control flow", while: "repeat", until: "repeat",
+  errors: "on error", error: "on error", try: "on error", catch: "on error",
+  string: "strings", path: "paths", glob: "paths", globs: "paths", number: "values", numbers: "values",
+  regex: "pattern", regexp: "pattern", match: "pattern",
+  folder: "list", folders: "list", directory: "list", directories: "list",
+  edit: "replace", change: "replace", split: "lines", line: "lines", json: "as", variable: "set", variables: "set",
+  commit: "git", http: "fetch", url: "fetch", human: "ask",
+  rules: "hooks", hook: "hooks", policy: "hooks", program: "run", programs: "run", shell: "run", bash: "run", exec: "run",
+  secrets: "secret",
+};
+
+// the number of one-letter changes from a to b; a swap of two letters is one change
+function distance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  let before = row;
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      let best = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      // two letters swapped: one change
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        best = Math.min(best, before[j - 2] + 1);
+      }
+      next.push(best);
+    }
+    before = row;
+    row = next;
+  }
+  return row[b.length];
+}
+
+// up to 3 topics close to a word: a near spelling, or a topic that starts with the word
+function closestTopics(word, tools) {
+  const topics = new Set([...HELP.map((entry) => entry.name), ...AREAS.map((area) => area.key), "recipes", "commands", "expressions", ...tools.map((tool) => tool.name)]);
+  const scored = [];
+  for (const topic of topics) {
+    const near = distance(word, topic);
+    if (near <= Math.max(1, Math.floor(word.length / 3)) || (word.length >= 3 && topic.startsWith(word))) {
+      scored.push({ topic, near });
+    }
+  }
+  scored.sort((a, b) => a.near - b.near);
+  return scored.slice(0, 3).map((item) => "help " + item.topic);
+}
+
+// the error for a word with no help: a shell word gets its ClankTalk form, else the closest topics
+export function noHelp(word, tools) {
+  let message = "No help for '" + word + "'.";
+  const hint = shellHint(word);
+  const close = closestTopics(word, tools);
+  if (hint !== null) {
+    message += " " + hint + ".";
+  } else if (close.length > 0) {
+    message += " Did you mean: " + close.join(", ") + "?";
+  }
+  return message + " Use help to list everything";
+}
+
 export function helpIndex(tools, only) {
   // a bare help: start here, the tools, and where the rest is
   if (!only) {
@@ -743,9 +846,7 @@ export function helpIndex(tools, only) {
       }
       lines.push("");
     }
-    lines.push("help <word> shows help for one command, with examples. Example: help replace");
-    lines.push("");
-    lines.push('"help recipes" shows common tasks, step by step. "help commands", "help expressions" and "help tools" list everything.');
+    lines.push(HELP_MAP);
     return lines.join("\n");
   }
   const lines = [];
@@ -768,18 +869,20 @@ export function helpIndex(tools, only) {
     lines.push("");
   }
   if ((!only || only === "tools") && tools.length === 0) {
-    lines.push("Tools: none. A human can add tools in AGENTS.talk.", "");
+    lines.push("Tools in this project: none. A human can add tools in AGENTS.talk.", "");
   }
   if ((!only || only === "tools") && tools.length > 0) {
-    lines.push("Tools:");
+    lines.push("Tools in this project:");
     for (const tool of tools) {
       const description = toolSummary(tool.description);
       lines.push("  " + pad(toolSyntax(tool), 24) + description);
     }
     lines.push("");
   }
-  lines.push("Use help <word> for details and examples, for example: help replace");
-  lines.push("Use help commands, help expressions or help tools for one group, and help recipes for common tasks.");
+  // help tools ends after its area, with the same line
+  if (only !== "tools") {
+    lines.push("For all forms and examples of one command: help <command>, for example help replace. All areas: help");
+  }
   return lines.join("\n");
 }
 
@@ -850,8 +953,19 @@ function recipesText() {
  * One command, expression or tool, with examples. Null if the word is not known.
  */
 export function helpFor(word, tools) {
-  if (word === "commands" || word === "expressions" || word === "tools") {
+  if (Object.hasOwn(OTHER_WORDS, word)) {
+    word = OTHER_WORDS[word];
+  }
+  if (word === "commands" || word === "expressions") {
     return helpIndex(tools, word);
+  }
+  // help tools: the tools of this project, then how a human adds one
+  if (word === "tools") {
+    return helpIndex(tools, word) + "\n" + areaText(AREAS.find((area) => area.key === "tools"));
+  }
+  const area = AREAS.find((item) => item.key === word);
+  if (area !== undefined && area.names.length > 1) {
+    return areaText(area);
   }
   if (word === "recipes") {
     return recipesText();
@@ -876,6 +990,10 @@ export function helpFor(word, tools) {
       lines.push("  " + line);
     }
   }
+  const home = areaOf(entry);
+  if (home !== undefined && home.names.length > 1) {
+    lines.push("", "More in this area: help " + home.key);
+  }
   return lines.join("\n");
 }
 // the groups of the reference, in order
@@ -886,16 +1004,17 @@ const GROUPS = [
 ];
 
 // the areas of the reference page, in order; each entry of HELP is in one area
+// key: the word for help <area>; see src/md/features/discoverability.md
 export const AREAS = [
-  { title: "Basics", intro: "Output, variables, the result, and help.", names: ["help", "check", "print", "set", "add", "increment", "decrement", "it", "the", "of", "then", "previous"] },
-  { title: "Values and Text", intro: "Values, text, paths, lists and checks.", names: ["values", "strings", "paths", "operators", "contains", "as", "lines", "first", "last", "sorted", "pattern"] },
-  { title: "Control Flow", intro: "Conditions, loops, waits, time limits and errors.", names: ["if", "for", "repeat", "break", "continue", "wait", "within", "on error", "stop"] },
-  { title: "Files", intro: "Read, find, change, move and delete files. Undo takes changes back.", names: ["list", "read", "find", "write", "append", "replace", "in", "put", "remove", "move", "delete", "undo"] },
-  { title: "Git", intro: "A hardened git.", names: ["git"] },
-  { title: "Web and the Human", intro: "Fetch from the web, and ask the human.", names: ["fetch", "ask"] },
-  { title: "Safety", intro: "Secrets, session taint and the audit.", names: ["secret", "untrusted", "audit", "because"] },
-  { title: "Tools", intro: "Only in AGENTS.talk: tools, programs, background processes and imports.", names: ["tool", "run", "start", "process", "import"] },
-  { title: "Hooks and Rules", intro: "Only in AGENTS.talk: hooks, and the allow and limit lines.", names: ["before", "after", "reject", "allow", "limit", "taint"] },
+  { title: "Basics", key: "basics", intro: "Output, variables, the result, and help.", names: ["help", "check", "print", "set", "add", "increment", "decrement", "it", "the", "of", "then", "previous"] },
+  { title: "Values and Text", key: "text", intro: "Values, text, paths, lists and checks.", names: ["values", "strings", "paths", "operators", "contains", "as", "lines", "first", "last", "sorted", "pattern"] },
+  { title: "Control Flow", key: "control flow", intro: "Conditions, loops, waits, time limits and errors.", names: ["if", "for", "repeat", "break", "continue", "wait", "within", "on error", "stop"] },
+  { title: "Files", key: "files", intro: "Read, find, change, move and delete files. Undo takes changes back.", names: ["list", "read", "find", "write", "append", "replace", "in", "put", "remove", "move", "delete", "undo"] },
+  { title: "Git", key: "git", intro: "A hardened git.", names: ["git"] },
+  { title: "Web and the Human", key: "web", intro: "Fetch from the web, and ask the human.", names: ["fetch", "ask"] },
+  { title: "Safety", key: "safety", intro: "Secrets, session taint and the audit.", names: ["secret", "untrusted", "audit", "because"] },
+  { title: "Tools", key: "tools", intro: "Only in AGENTS.talk: tools, programs, background processes and imports.", names: ["tool", "run", "start", "process", "import"] },
+  { title: "Hooks and Rules", key: "hooks", intro: "Only in AGENTS.talk: hooks, and the allow and limit lines.", names: ["before", "after", "reject", "allow", "limit", "taint"] },
 ];
 
 // an id for a link: "Values and Text" gives "values-and-text"

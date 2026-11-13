@@ -38,3 +38,17 @@ Approved:
 ## Recipes
 
 - Approved: `help recipes` shows common tasks, step by step: look before you edit, change and test and undo, read only the failures, find then rename, ask before something big, start a server and wait, commit your work, catch up and test before a merge. They teach habits, not syntax. They live in `RECIPES` in `src/js/help.js`, show in the docs for agents, and every recipe must parse (test/help.test.js). The MCP rules name `help recipes` in one line. No new grammar: `help <word>` already exists, like `help tools`.
+
+## Three levels of help
+
+- Approved (built, 2026-11-12): help is the main docs for agents, more than the site. The agent must find each part of help from bare `help`, with no guesses.
+- Level 1, bare `help`: the start-here text (Carson's), the tools of the project, then a map: the levels of help, and one line for each area.
+- Level 2, `help <area>`: the area intro, then each command of the area with its form, its first sentence and one example. It ends with the way to level 3.
+- Level 3, `help <command>`: all forms, the rules and the examples. It ends with `More in this area: help <area>`.
+- The areas are `AREAS` in `src/js/help.js`, the same as the Reference page: basics, text, control flow, files, git, web, safety, tools, hooks. `help git` shows the git entry, because the area has only that entry.
+- `help tools` and `help hooks` are in the map, although only a human writes AGENTS.talk. Why: the agent can then recommend good lines to the human. `help tools` shows the tools of the project, then how a human adds one.
+- Other words that agents try go to an area or an entry: `help loops`, `help regex`, `help split`, `help folders` and more (`OTHER_WORDS`). Shell words (`ls`, `cat`) keep their shell hint.
+- If help does not know a word, the error names up to 3 close topics: a near spelling (a swap of two letters is one change), or a topic that starts with the word.
+- Every example is an ideal pattern: a test checks that it parses, has no parentheses for grouping (except `help operators`), and has no paths in quotes.
+- Why: in the tau demo the agent ran help 8 times in 34 scripts, and `help split` failed with no hint.
+- Rejected (2026-11-12): a host option to change the "add this to AGENTS.talk" advice. The advice goes to the human, who decides.

@@ -25,7 +25,7 @@ const TOOLS = "# Runs the tests.\n# Gives back { code, output }.\ntool run_tests
 test("every help example parses", () => {
   for (const entry of HELP) {
     for (const example of entry.examples) {
-      const { errors } = parse(example, { definitions: entry.where === "AGENTS.talk" });
+      const { errors } = parse(example, { definitions: entry.where === "AGENTS.talk", tools: ["run_tests", "dev_server"] });
       assert.deepEqual(errors, [], entry.name + ": " + example);
     }
   }
@@ -58,12 +58,62 @@ test("help with two words, and help for one group", async () => {
   const commands = (await run("help commands", { root })).output[0];
   assert.match(commands, /^Commands:/);
   assert.doesNotMatch(commands, /Expressions:/);
-  assert.match((await run("help tools", { root })).output[0], /^Tools: none/);
+  assert.match((await run("help tools", { root })).output[0], /^Tools in this project: none/);
 });
 
 test("help for an unknown word is an error", async () => {
   const result = await run("help banana", { root });
   assert.equal(result.errors[0].message, "No help for 'banana'. Use help to list everything");
+});
+
+test("bare help maps the levels and every area", async () => {
+  const text = (await run("help", { root })).output[0];
+  assert.match(text, /\nHow to use help:\n  help <area> /);
+  for (const area of AREAS) {
+    assert.ok(text.includes("\n  help " + area.key + " "), area.key);
+  }
+});
+
+test("help <area> shows each command of the area with its form and one example, and the next level", async () => {
+  const text = (await run("help files", { root })).output[0];
+  assert.match(text, /^Files: Read, find, change/);
+  assert.ok(text.includes("\nread <file>\n  Put the text of a file in the result.\n    "));
+  assert.match(text, /For all forms and examples of one command: help <command>, for example help list\. All areas: help$/);
+  assert.match((await run("help control flow", { root })).output[0], /^Control Flow: /);
+  assert.match((await run("help hooks", { root })).output[0], /^Hooks and Rules: Only in AGENTS\.talk/);
+  const tools = (await run("help tools", { root })).output[0];
+  assert.match(tools, /^Tools in this project: none\. A human can add tools in AGENTS\.talk\.\n[\s\S]*\nTools: Only in AGENTS\.talk/);
+  assert.match((await run("help git", { root })).output[0], /^git status/);
+});
+
+test("help <command> names its area", async () => {
+  assert.match((await run("help read", { root })).output[0], /\n\nMore in this area: help files$/);
+});
+
+test("help knows other words that agents try", async () => {
+  assert.match((await run("help loops", { root })).output[0], /^Control Flow: /);
+  assert.match((await run("help regex", { root })).output[0], /^pattern /);
+  assert.match((await run("help split", { root })).output[0], /^lines of /);
+});
+
+test("help for a word close to a topic names the closest topics", async () => {
+  const result = await run("help raed", { root });
+  assert.match(result.errors[0].message, /^No help for 'raed'\. Did you mean: help read[,?]/);
+});
+
+test("every help example is an ideal pattern: no parentheses for grouping, no paths in quotes", () => {
+  for (const entry of HELP) {
+    for (const example of entry.examples) {
+      const code = example.replace(/^\s*\|.*$/gm, "").replace(/'[^'\n]*'|"[^"\n]*"/g, "''").replace(/pattern \/.*\//g, "pattern //");
+      if (entry.name !== "operators") {
+        assert.doesNotMatch(code, /\(/, entry.name + ": " + example);
+      }
+      assert.doesNotMatch(example, /['"](@\/|\.\.?\/)/, entry.name + ": " + example);
+      if (entry.name !== "help") {
+        assert.doesNotMatch(example, /^help /, entry.name + ": an example shows a use, not help");
+      }
+    }
+  }
 });
 
 test("a word on the next line is not part of help", async () => {
