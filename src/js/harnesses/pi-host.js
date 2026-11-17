@@ -313,7 +313,8 @@ function piMessages(message) {
 
 // "ask" in a script goes to a pi dialog, so the human answers, never the model
 // with no UI (print and JSON modes), there is no ask, so the answer is null: no
-function askFor(ctx) {
+// exported for other pi hosts, such as tau, so a form of yes or no boxes works the same there
+export function askFor(ctx) {
   if (!ctx || !ctx.hasUI) {
     return null;
   }

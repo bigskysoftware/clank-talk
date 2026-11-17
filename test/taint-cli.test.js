@@ -187,6 +187,7 @@ test("taint review: no inputs gives 0; no answer or no form is an error that app
   await run("issue 1", { root, session: "s-1" });
   assert.match((await run("taint review", { root, session: "s-1" })).errors[0].message, /^taint review failed: there is no way to show a form/);
   assert.match((await run("taint review", { root, session: "s-1", ask: async () => null })).errors[0].message, /^taint review got no answer\. Nothing was approved\.$/);
+  assert.match((await run("taint review", { root, session: "s-1", ask: async () => "yes" })).errors[0].message, /^taint review got no answer: this host showed a text box, not a form of yes or no boxes\. Ask the human to run: npx clank-talk taint\. Nothing was approved\.$/);
   assert.match((await run("taint", { root })).errors[0].message, /^Expected 'review', as in: taint review/);
   assert.equal((await taint(root, "--line")).text, "tainted 1");
 });

@@ -4630,6 +4630,9 @@ function askReason(state) {
   if (state.askTimedOut) {
     return ": nobody answered in time";
   }
+  if (state.askNoForm) {
+    return ": this host showed a text box, not a form of yes or no boxes. Ask the human to run: npx clank-talk taint";
+  }
   return "";
 }
 
@@ -4639,6 +4642,7 @@ function askReason(state) {
 // many: the human can pick several of the choices, and the answer is a list of them
 async function askState(state, question, choices, limit, fields = null, many = false) {
   state.askTimedOut = false;
+  state.askNoForm = false;
   if (state.ask === null) {
     return null;
   }
@@ -4684,7 +4688,8 @@ async function askState(state, question, choices, limit, fields = null, many = f
     // a list of the choices; none picked is an empty list, and anything else is no answer
     answer = Array.isArray(answer) && answer.every((item) => choices.includes(item)) ? choices.filter((choice) => answer.includes(choice)) : null;
   } else if (fields !== null) {
-    // a form: only the true boxes count
+    // a form: only the true boxes count; text is from a host that showed a text box, not a form
+    state.askNoForm = typeof answer === "string";
     answer = answer !== null && typeof answer === "object" ? Object.fromEntries(fields.map((field) => [field.name, answer[field.name] === true])) : null;
   } else if (typeof answer !== "string" || (choices.length > 0 && !choices.includes(answer))) {
     answer = null;
