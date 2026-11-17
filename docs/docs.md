@@ -798,7 +798,7 @@ $ echo "the note" | npx clank-talk taint add --session claude-code-4f2a --source
 claude-code-4f2a/1
 ```
 
-It can only add taint, never take it away.
+It can only add taint, never take it away.  The session name is a label for `/taint`: one input taints every session in the project.
 
 <aside>
 
