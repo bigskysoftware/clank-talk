@@ -47,6 +47,24 @@ if (args[0] === "harness" && args[1] === "record") {
   console.log(JSON.stringify({ ref }));
   process.exit(0);
 }
+// clank-talk taint add --session <name> --source <text>: text on stdin taints a session; it only adds taint
+// for an app that carries text between agents, such as mr-klanky; see src/md/features/taint.md
+if (args[0] === "taint" && args[1] === "add") {
+  const flag = (name) => (args.indexOf(name) === -1 ? "" : String(args[args.indexOf(name) + 1] ?? ""));
+  const session = flag("--session");
+  const source = flag("--source");
+  if (!/^[A-Za-z0-9._-]+$/.test(session) || source === "") {
+    console.log("taint add needs --session <name> (letters, digits, . _ -) and --source <text>, with the text on stdin.");
+    process.exit(1);
+  }
+  let text = "";
+  for await (const chunk of process.stdin) {
+    text += chunk;
+  }
+  const ref = await recordHarnessTool(projectRoot(given, process.cwd()), { session, tool: "taint add", input: source, output: text, untrusted: true });
+  console.log(ref === null ? "Taint is off, so nothing was added." : ref);
+  process.exit(0);
+}
 if (args[0] !== "taint") {
   console.log(USAGE);
   process.exit(args.length === 0 || args[0] === "--help" ? 0 : 1);

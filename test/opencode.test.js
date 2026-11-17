@@ -9,6 +9,10 @@ import * as untrusted from "../src/js/untrusted.js";
 
 // the opencode V2 server plugin, with a fake opencode; see src/md/infrastructure/opencode.md
 
+// these tests check the defaults, so CLANK_TALK and CLANK_TALK_ALLOW from the shell (such as from mr-klanky) must not change them
+delete process.env.CLANK_TALK;
+delete process.env.CLANK_TALK_ALLOW;
+
 const dirs = [];
 
 after(async () => {

@@ -436,16 +436,21 @@ export const STAYS_ON = "AGENTS.talk has require clank-talk, so ClankTalk stays 
 export const CLANK_TALK_USAGE = "Usage: /clank-talk [on | off]";
 export const TAINT_USAGE = "Usage: /taint [clear]";
 
-// on or off, and why: require clank-talk wins, then /clank-talk on or off for the session, then on when there is an AGENTS.talk
+// on or off, and why: require clank-talk wins, then /clank-talk on or off for the session,
+// then CLANK_TALK=on|off from the app that started the agent (such as mr-klanky), then on when there is an AGENTS.talk
 // switched is "on", "off" or null
-export function harnessMode(harness, switched) {
+export function harnessMode(harness, switched, launched = process.env.CLANK_TALK) {
   if (harness.required) {
     return { on: true, why: "required by AGENTS.talk" };
   }
   if (switched === "on" || switched === "off") {
     return { on: switched === "on", why: "from /clank-talk " + switched };
   }
-  return harness.agentsTalk ? { on: true, why: "the project has an AGENTS.talk" } : { on: false, why: "the project has no AGENTS.talk" };
+  if (launched === "on" || launched === "off") {
+    return { on: launched === "on", why: "from CLANK_TALK=" + launched };
+  }
+  const ignored = launched ? "; CLANK_TALK=" + launched + " is not on or off, so it is ignored" : "";
+  return harness.agentsTalk ? { on: true, why: "the project has an AGENTS.talk" + ignored } : { on: false, why: "the project has no AGENTS.talk" + ignored };
 }
 
 // a session id that is a plain name, so it cannot point outside .talk/harness/

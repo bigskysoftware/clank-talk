@@ -99,8 +99,13 @@ export const register: Register = on => {
       'allowed: ' + (allowed.length === 0 ? 'none' : grouped(allowed)),
       (state.on ? 'blocked: ' : 'blocked when on: ') + (blocked.length === 0 ? 'none' : grouped(blocked) + ' (' + blocked.length + ' in all)'),
     ]
-    if (harness.allowed.length > 0) {
-      lines.push('AGENTS.talk allows: ' + harness.allowed.join(', '))
+    const launched = harness.launchAllowed ?? []
+    const fromAgents = harness.allowed.filter(name => !launched.includes(name))
+    if (fromAgents.length > 0) {
+      lines.push('AGENTS.talk allows: ' + fromAgents.join(', '))
+    }
+    if (launched.length > 0) {
+      lines.push('CLANK_TALK_ALLOW allows: ' + launched.join(', '))
     }
     for (const error of harness.errors) {
       lines.push('AGENTS.talk error: ' + error)
@@ -340,7 +345,7 @@ const CLANK_TALK_TOOL = /^mcp__.+__clank_talk$/
 // tools that only talk to the person or plan: always allowed
 const BUILT_IN = ['AskUserQuestion', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TodoWrite', 'ToolSearch', 'EnterPlanMode', 'ExitPlanMode']
 
-type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; untrusted?: string[]; errors: string[] }
+type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; launchAllowed?: string[]; untrusted?: string[]; errors: string[] }
 // tools that always bring web text: their results are untrusted inputs
 const WEB_TOOLS = ['WebFetch', 'WebSearch']
 
@@ -382,7 +387,7 @@ async function projectHarness($: EngineInterface, root: string): Promise<Harness
 // /clank-talk on or off, for this session only: nothing is kept
 let switched: 'on' | 'off' | null = null
 
-// on or off, and why: require clank-talk wins, then /clank-talk on or off, then on when there is an AGENTS.talk
+// on or off, and why: require clank-talk wins, then /clank-talk on or off, then CLANK_TALK=on|off, then on when there is an AGENTS.talk
 // a copy of harnessMode in src/js/host.js: the plugin cannot import it
 async function mode($: EngineInterface, root: string, harness: Harness): Promise<{ on: boolean; why: string }> {
   if (harness.required) {
@@ -392,7 +397,13 @@ async function mode($: EngineInterface, root: string, harness: Harness): Promise
   if (saved === 'on' || saved === 'off') {
     return { on: saved === 'on', why: 'from /clank-talk ' + saved }
   }
-  return harness.agentsTalk ? { on: true, why: 'the project has an AGENTS.talk' } : { on: false, why: 'the project has no AGENTS.talk' }
+  // set by the app that started the agent, such as mr-klanky
+  const launched = await $.env.get('CLANK_TALK')
+  if (launched === 'on' || launched === 'off') {
+    return { on: launched === 'on', why: 'from CLANK_TALK=' + launched }
+  }
+  const ignored = launched ? '; CLANK_TALK=' + launched + ' is not on or off, so it is ignored' : ''
+  return harness.agentsTalk ? { on: true, why: 'the project has an AGENTS.talk' + ignored } : { on: false, why: 'the project has no AGENTS.talk' + ignored }
 }
 
 // tool names in short: built-in tools by name, then MCP tools by server, as mcp__idea__* (90)

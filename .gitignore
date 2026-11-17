@@ -9,3 +9,4 @@ _site/
 # local Claude Code state: worktrees and settings
 .claude/worktrees/
 .claude/settings.local.json
+.mr-klanky/

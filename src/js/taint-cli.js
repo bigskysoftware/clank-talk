@@ -21,6 +21,7 @@ export const USAGE = `Usage: clank-talk taint [command] [--root <dir>]
   clank-talk taint clear               approve all inputs, and say which
   clank-talk taint approve --clean     approve the inputs that the judge found clean
   clank-talk taint unapprove <ref> ... take back approvals: the inputs taint the session again
+  clank-talk taint add --session <name> --source <text>   text on stdin taints a session (for apps such as mr-klanky)
   clank-talk taint judge <ref> ...     the judge reads inputs, and gives clean, suspect or unsure
   clank-talk taint judge --all         the judge reads the inputs that it did not read and that are not approved
   clank-talk taint on | off            turn session taint on or off for this project

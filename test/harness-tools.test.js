@@ -4,13 +4,17 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { run } from "../src/js/clank-talk.js";
-import { projectHarness, recordHarnessTool } from "../src/js/runtime.js";
+import { projectHarness, recordHarnessTool, launchAllowed } from "../src/js/runtime.js";
 import * as untrusted from "../src/js/untrusted.js";
-import { harnessToolAllowed, protectedHarnessPath } from "../src/js/host.js";
+import { harnessToolAllowed, protectedHarnessPath, harnessMode } from "../src/js/host.js";
 import { execFileSync } from "node:child_process";
 import { clankTalkExtension } from "../src/js/harnesses/pi-host.js";
 
 // require clank-talk and allow harness tools; see src/md/features/harness-tools.md
+
+// these tests check the defaults, so CLANK_TALK and CLANK_TALK_ALLOW from the shell (such as from mr-klanky) must not change them
+delete process.env.CLANK_TALK;
+delete process.env.CLANK_TALK_ALLOW;
 
 const dirs = [];
 
@@ -30,10 +34,10 @@ async function project(text) {
 }
 
 test("projectHarness reads require clank-talk and allow harness tools from AGENTS.talk", async () => {
-  assert.deepEqual(await projectHarness(await project(null)), { agentsTalk: false, required: false, allowed: [], untrusted: [], errors: [] });
-  assert.deepEqual(await projectHarness(await project("")), { agentsTalk: true, required: false, allowed: [], untrusted: [], errors: [] });
+  assert.deepEqual(await projectHarness(await project(null)), { agentsTalk: false, required: false, allowed: [], launchAllowed: [], untrusted: [], errors: [] });
+  assert.deepEqual(await projectHarness(await project("")), { agentsTalk: true, required: false, allowed: [], launchAllowed: [], untrusted: [], errors: [] });
   const root = await project("require clank-talk\nallow harness tools Read, Grep\nallow untrusted harness tools 'mcp__github__*'");
-  assert.deepEqual(await projectHarness(root), { agentsTalk: true, required: true, allowed: ["Read", "Grep", "mcp__github__*"], untrusted: ["mcp__github__*"], errors: [] });
+  assert.deepEqual(await projectHarness(root), { agentsTalk: true, required: true, allowed: ["Read", "Grep", "mcp__github__*"], launchAllowed: [], untrusted: ["mcp__github__*"], errors: [] });
   // a script still runs: the lines are for the harness
   assert.deepEqual((await run("print 1", { root })).errors, []);
 });
@@ -196,4 +200,41 @@ test("an allowed write or edit never changes .talk/ or a .talk file", async () =
   assert.equal((await pi.handlers.tool_call({ toolName: "write", input: { path: ".talk/untrusted/x/index.json" } })).block, true);
   assert.equal((await pi.handlers.tool_call({ toolName: "write", input: { path: "AGENTS.talk" } })).block, true);
   await pi.handlers.session_shutdown({}, {});
+});
+test("harnessMode: require wins, then /clank-talk, then CLANK_TALK, then AGENTS.talk", () => {
+  const plain = { agentsTalk: true, required: false };
+  assert.deepEqual(harnessMode({ ...plain, required: true }, "off", "off"), { on: true, why: "required by AGENTS.talk" });
+  assert.deepEqual(harnessMode(plain, "on", "off"), { on: true, why: "from /clank-talk on" });
+  assert.deepEqual(harnessMode(plain, null, "off"), { on: false, why: "from CLANK_TALK=off" });
+  assert.deepEqual(harnessMode({ ...plain, agentsTalk: false }, null, "on"), { on: true, why: "from CLANK_TALK=on" });
+  assert.deepEqual(harnessMode(plain, null, ""), { on: true, why: "the project has an AGENTS.talk" });
+  assert.deepEqual(harnessMode(plain, null, "yes"), { on: true, why: "the project has an AGENTS.talk; CLANK_TALK=yes is not on or off, so it is ignored" });
+});
+
+test("CLANK_TALK_ALLOW adds to the tools that AGENTS.talk allows", async () => {
+  assert.deepEqual(launchAllowed(" mcp__mr-klanky__* , Read,,"), ["mcp__mr-klanky__*", "Read"]);
+  assert.deepEqual(launchAllowed(""), []);
+  const root = await project("allow harness tools Grep\n");
+  process.env.CLANK_TALK_ALLOW = "mcp__mr-klanky__*";
+  try {
+    const harness = await projectHarness(root);
+    assert.deepEqual(harness.allowed, ["Grep", "mcp__mr-klanky__*"]);
+    assert.deepEqual(harness.launchAllowed, ["mcp__mr-klanky__*"]);
+    assert.ok(harnessToolAllowed("mcp__mr-klanky__inbox", harness.allowed));
+  } finally {
+    delete process.env.CLANK_TALK_ALLOW;
+  }
+});
+
+test("clank-talk taint add: text on stdin taints a session, with an audit line", async () => {
+  const bin = path.resolve("bin/clank-talk.js");
+  const add = (root, ...args) => execFileSync(process.execPath, [bin, "taint", "add", ...args, "--root", root], { input: "a note from agent-3" }).toString().trim();
+  const root = await project("");
+  assert.equal(add(root, "--session", "claude-code-4f2a", "--source", "mr-klanky: note from agent-3"), "claude-code-4f2a/1");
+  const entries = await untrusted.inputs(root, "claude-code-4f2a");
+  assert.equal(entries.length, 1);
+  assert.match(entries[0].source, /mr-klanky: note from agent-3/);
+  const day = (await fs.readdir(path.join(root, ".talk", "audit"))).find((name) => name.endsWith(".log"));
+  assert.match(await fs.readFile(path.join(root, ".talk", "audit", day), "utf8"), /harness tool taint add {2}\(session claude-code-4f2a\)/);
+  assert.throws(() => add(root, "--session", "../x", "--source", "s"));
 });

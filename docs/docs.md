@@ -791,6 +791,15 @@ Or, without leaving your harness, ask your agent to run `taint review`.  It show
 
 With the ClankTalk plugin for Claude Code, pi or opencode, type `/taint` to read and approve the inputs, or `/taint clear` to approve them all.  In a terminal, `npx clank-talk taint --tui` opens a full-screen review with vi keys.  Your agent cannot run any of these.
 
+An app that carries text between agents can pass the taint along.  When a tainted agent writes a note, the app gives it to the next agent, and taints that agent too:
+
+```
+$ echo "the note" | npx clank-talk taint add --session claude-code-4f2a --source "note from agent-3"
+claude-code-4f2a/1
+```
+
+It can only add taint, never take it away.
+
 <aside>
 
 In Claude Code, you can show ClankTalk in your status line with `npx clank-talk status-line`, which prints `clank-talk: on, untainted` or `clank-talk: off, tainted 3`.  Set it as the `command` of `statusLine` in your settings.
@@ -839,6 +848,8 @@ let the judge approve clean inputs
 ### Turning ClankTalk On and Off {#on-off}
 
 With the ClankTalk plugin, ClankTalk is on in a project that has an `AGENTS.talk`: your agent gets `clank_talk`, and the harness blocks its other tools.  Type `/clank-talk off` or `/clank-talk on` to change that for the current session, and `/clank-talk` to see which tools are allowed.
+
+An app that starts agents for you can set `CLANK_TALK=on` or `CLANK_TALK=off` in the agent's environment.  That picks the default for the agent, and `/clank-talk` still wins.  The app can also set `CLANK_TALK_ALLOW=mcp__mr-klanky__*`, a comma list of tools to allow, on top of the ones in your `AGENTS.talk`.
 
 Your `AGENTS.talk` can keep it on, and allow some other tools by name:
 

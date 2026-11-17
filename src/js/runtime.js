@@ -4442,7 +4442,14 @@ export async function projectHarness(root) {
   const resolved = nodePath.resolve(root);
   const exists = fsSync.existsSync(nodePath.join(resolved, AGENTS_TALK));
   const agents = await loadAgentsTalk(resolved, {});
-  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: agents.harnessTools, untrusted: agents.untrustedHarnessTools, errors: agents.errors.map((error) => error.message) };
+  const launched = launchAllowed();
+  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: [...agents.harnessTools, ...launched], launchAllowed: launched, untrusted: agents.untrustedHarnessTools, errors: agents.errors.map((error) => error.message) };
+}
+
+// CLANK_TALK_ALLOW: a comma list of tool names, * for any text, from the app that started the agent, such as mr-klanky
+// it only adds to the tools that AGENTS.talk allows; see src/md/features/harness-tools.md
+export function launchAllowed(value = process.env.CLANK_TALK_ALLOW) {
+  return (value || "").split(",").map((name) => name.trim()).filter((name) => name !== "");
 }
 
 // an allowed harness tool ran while ClankTalk was on: an audit record, and for an untrusted tool, an untrusted input
