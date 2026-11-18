@@ -185,6 +185,9 @@ test("an allowed write or edit never changes .talk/ or a .talk file", async () =
   assert.equal(protectedHarnessPath("/p", "/p/.talk"), true);
   assert.equal(protectedHarnessPath("/p", "AGENTS.talk"), true);
   assert.equal(protectedHarnessPath("/p", "src/../.talk/audit/x.log"), true);
+  // a disk that ignores case: the root in another case is the same root
+  assert.equal(protectedHarnessPath("/Users/p", "/users/p/.talk/taint.json"), true);
+  assert.equal(protectedHarnessPath("/Users/p", "/USERS/P/talk/tool.js"), true);
   assert.equal(protectedHarnessPath("/p", "src/app.js"), false);
   assert.equal(protectedHarnessPath("/p", ".talkative/x"), false);
   // talk/ holds the tools, and case does not matter, as for scripts

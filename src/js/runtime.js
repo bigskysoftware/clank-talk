@@ -2420,6 +2420,17 @@ export function hostTool(value) {
 async function hostToolEffects(host, command, step, argText, args, named, state) {
   const reads = await effectFile(host, "reads", step, command, state);
   if (reads !== null) {
+    // the same checks as read: no link out of the root, no .env file, and the read hooks
+    const real = await realPath(reads, state, command);
+    if (real === null) {
+      throw new ScriptError("File not found: " + reads.path, command);
+    }
+    if (isSecretFile(reads.path) || isSecretFile(real)) {
+      throw new ScriptError("A script cannot read .env files, because they hold secrets: " + reads.path, command);
+    }
+    const readOf = Object.create(null);
+    readOf.path = reads.path;
+    await runHooks("before", ["read"], readOf, state, command);
     auditRead(state, reads.path);
     giveFile(host, "reads", reads, args, named);
   }

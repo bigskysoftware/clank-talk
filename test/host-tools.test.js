@@ -104,3 +104,20 @@ test("sends asks the human before each call; no or no answer stops it", async ()
   assert.match((await run("post_issue 'again'", { root, tools })).errors[0].message, /The human did not approve post_issue/);
   assert.equal(calls, 1);
 });
+test("a reads effect has the checks of read: no .env file, no link out of the root, no missing file", async () => {
+  const root = await project();
+  await fs.writeFile(path.join(root, ".env"), "SECRET=abc\n");
+  await fs.writeFile(path.join(root, "a.txt"), "a\n");
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), "clank-host-out-"));
+  dirs.push(outside);
+  await fs.writeFile(path.join(outside, "b.txt"), "b\n");
+  await fs.symlink(path.join(outside, "b.txt"), path.join(root, "link.txt"));
+  let calls = 0;
+  const tools = { peek: { params: ["path"], effects: { reads: "path" }, run: async ({ args }) => (++calls, fs.readFile(args[0].absolute, "utf8")) } };
+  const message = async (script) => (await run(script, { root, tools })).errors.map((e) => e.message)[0];
+  assert.match(await message("peek @/.env"), /cannot read \.env files/);
+  assert.match(await message("peek @/link.txt"), /outside the project root/);
+  assert.match(await message("peek @/none.txt"), /File not found/);
+  assert.equal(calls, 0);
+  assert.deepEqual((await run("print peek @/a.txt", { root, tools })).output, ["a\n"]);
+});

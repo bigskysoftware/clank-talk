@@ -491,5 +491,7 @@ export function protectedHarnessPath(root, path) {
   if (typeof path !== "string" || path === "") {
     return false;
   }
-  return isProtectedPath(nodePath.relative(nodePath.resolve(root), nodePath.resolve(root, path)).split(nodePath.sep).join("/"));
+  // both sides in lower case, as in register.tsx: on a disk that ignores case, /USERS/... is the same root
+  const base = nodePath.resolve(root).toLowerCase();
+  return isProtectedPath(nodePath.relative(base, nodePath.resolve(root, path).toLowerCase()).split(nodePath.sep).join("/"));
 }

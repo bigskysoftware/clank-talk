@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.4] - 2026-11-18
+
+* [Added](https://github.com/bigskysoftware/clank-talk/commit/eeee775) `CLANK_TALK=on|off` and `CLANK_TALK_ALLOW` env vars, for apps that start agents, such as mr-klanky
+* [Added](https://github.com/bigskysoftware/clank-talk/commit/eeee775) `npx clank-talk taint add`: an app that carries text between agents passes the taint along
+* [Added](https://github.com/bigskysoftware/clank-talk/commit/97f71f9) help in three levels: `help`, `help <area>`, `help <command>`, with the closest topics for an unknown word
+* [Added](https://github.com/bigskysoftware/clank-talk/commit/c10200c) `because`, `lines <n> after <line>`, `list` as a value, and examples on parse errors
+* [Added](https://github.com/bigskysoftware/clank-talk/commit/b7f7f9b) host tools: description, params, untrusted, and effects (reads, changes with undo, sends)
+* [Updated](https://github.com/bigskysoftware/clank-talk/commit/b7b3509) a text-block `replace` must match one place; `replace every` replaces all
+* [Updated](https://github.com/bigskysoftware/clank-talk/commit/0f04b18) `.env` files follow the dotenv rules
+* [Updated](https://github.com/bigskysoftware/clank-talk/commit/5a31c72) pi exports `askFor` for other pi hosts; a clearer error when a host answers a form with text
+* Fixed a host tool with a `reads` effect could read a `.env` file, or a link out of the root
+* Fixed in pi and opencode, a root in another letter case got past the protected paths of allowed edit tools
+* [Fixed](https://github.com/bigskysoftware/clank-talk/commit/e197e56) allowed harness edit tools could change `talk/`, or protected paths in another letter case
+
 ## [0.1.3] - 2026-11-12
 
 * [Added](https://github.com/bigskysoftware/clank-talk/commit/1cb1cdb) a Claude Code plugin: `/clank-talk on|off` blocks the other tools, `/taint` reviews untrusted inputs, and ClankTalk's questions use Claude Code's own dialog. Install: `/plugin install clank-talk --marketplace bigskysoftware/clank-talk`
