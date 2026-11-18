@@ -3,7 +3,7 @@
 // V2 reads the default export's id and setup(); no @opencode/plugin import is needed (opencode docs, Plugins, Support V1)
 
 import { stopAllProcesses } from "../../clank-talk.js";
-import { describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, projectRoot, harnessToolAllowed, protectedHarnessPath } from "../../host.js";
+import { describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, projectRoot, harnessToolAllowed, protectedHarnessPath, protectedMessage } from "../../host.js";
 import { projectHarness, recordHarnessTool } from "../../runtime.js";
 import { sessionMode } from "./state.js";
 import { ClankTalkChannel, SEEN_WITHIN_MS } from "./channel.js";
@@ -118,10 +118,11 @@ export async function setup(ctx) {
       event.effect = "ask";
       return;
     }
-    // an allowed edit never changes .talk/ or a .talk file, as a script cannot
-    if (event.action === "edit" && (event.resources || []).some((resource) => protectedHarnessPath(root, resource)) && (await mode(event.sessionID)).on) {
+    // an allowed edit never changes .talk/, a .talk file or a hidden file, as a script cannot
+    const refused = event.action === "edit" ? (event.resources || []).find((resource) => protectedHarnessPath(root, resource, harness.allowedChanges)) : undefined;
+    if (refused !== undefined && (await mode(event.sessionID)).on) {
       event.effect = "deny";
-      event.message = "ClankTalk protects .talk/, talk/ and .talk files. Only the human changes them.";
+      event.message = protectedMessage(refused);
       return;
     }
     if (!allowed(event.action) && (await mode(event.sessionID)).on) {

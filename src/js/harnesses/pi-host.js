@@ -7,7 +7,7 @@ import { stopAllProcesses } from "../clank-talk.js";
 import { projectHarness, recordHarnessTool } from "../runtime.js";
 import { taintCommand } from "../taint-cli.js";
 import { SubagentError, schemaFor } from "../subagent.js";
-import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, readPolicyFile, projectRoot, harnessToolAllowed, protectedHarnessPath, harnessMode, statusLine, STAYS_ON, CLANK_TALK_USAGE, TAINT_USAGE } from "../host.js";
+import { SYNTAX, describeTool, formatResult, AGENT_ERROR, badAgent, newSession, runScript, readPolicyFile, projectRoot, harnessToolAllowed, protectedHarnessPath, protectedMessage, harnessMode, statusLine, STAYS_ON, CLANK_TALK_USAGE, TAINT_USAGE } from "../host.js";
 
 const TOOL_NAME = "clank_talk";
 
@@ -162,10 +162,10 @@ export function clankTalkExtension(pi, Type, options = {}) {
     if (mode().on && event.toolName !== TOOL_NAME && !harnessToolAllowed(event.toolName, harness.allowed)) {
       return { block: true, reason: "Only clank_talk is allowed here. Do the work in a ClankTalk script. To allow the tool, the human can add a line to AGENTS.talk: allow harness tools " + event.toolName };
     }
-    // an allowed write or edit never changes .talk/ or a .talk file, as a script cannot
+    // an allowed write or edit never changes .talk/, a .talk file or a hidden file, as a script cannot
     const input = event.input || {};
-    if (mode().on && /^(write|edit)$/.test(event.toolName) && session !== null && protectedHarnessPath(session.root, input.path)) {
-      return { block: true, reason: "ClankTalk protects .talk/, talk/ and .talk files: " + input.path + ". Only the human changes them." };
+    if (mode().on && /^(write|edit)$/.test(event.toolName) && session !== null && protectedHarnessPath(session.root, input.path, harness.allowedChanges)) {
+      return { block: true, reason: protectedMessage(input.path) };
     }
     return undefined;
   });

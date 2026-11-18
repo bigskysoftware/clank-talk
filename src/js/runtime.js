@@ -4454,7 +4454,7 @@ export async function projectHarness(root) {
   const exists = fsSync.existsSync(nodePath.join(resolved, AGENTS_TALK));
   const agents = await loadAgentsTalk(resolved, {});
   const launched = launchAllowed();
-  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: [...agents.harnessTools, ...launched], launchAllowed: launched, untrusted: agents.untrustedHarnessTools, errors: agents.errors.map((error) => error.message) };
+  return { agentsTalk: exists, required: agents.requireClankTalk, allowed: [...agents.harnessTools, ...launched], launchAllowed: launched, allowedChanges: agents.allowedChanges, untrusted: agents.untrustedHarnessTools, errors: agents.errors.map((error) => error.message) };
 }
 
 // CLANK_TALK_ALLOW: a comma list of tool names, * for any text, from the app that started the agent, such as mr-klanky
@@ -6188,7 +6188,7 @@ async function isProtected(file, state, node) {
 }
 
 // true if a part of the path starts with ".": .env, .git/config, .github/workflows/ci.yml
-function isHiddenPath(relative) {
+export function isHiddenPath(relative) {
   for (const part of relative.split("/")) {
     if (part.startsWith(".") && part !== "." && part !== "..") {
       return true;

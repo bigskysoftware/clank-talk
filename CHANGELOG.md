@@ -11,6 +11,7 @@
 * [Updated](https://github.com/bigskysoftware/clank-talk/commit/0f04b18) `.env` files follow the dotenv rules
 * [Updated](https://github.com/bigskysoftware/clank-talk/commit/5a31c72) pi exports `askFor` for other pi hosts; a clearer error when a host answers a form with text
 * Fixed a host tool with a `reads` effect could read a `.env` file, or a link out of the root
+* Fixed an allowed harness edit tool could change a hidden file, such as `.git/hooks` or `.claude/settings.json`; now `allow changes to` must name it, as for scripts
 * Fixed in pi and opencode, a root in another letter case got past the protected paths of allowed edit tools
 * [Fixed](https://github.com/bigskysoftware/clank-talk/commit/e197e56) allowed harness edit tools could change `talk/`, or protected paths in another letter case
 

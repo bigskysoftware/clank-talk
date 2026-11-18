@@ -57,10 +57,11 @@ export const register: Register = on => {
     }
     // an allowed tool runs, then goes in the ClankTalk audit; a web or untrusted tool's result taints the session
     if (toolAllowed(e.tool, harness.allowed)) {
-      // an allowed write or edit never changes .talk/ or a .talk file, as a script cannot
+      // an allowed write or edit never changes .talk/, a .talk file or a hidden file, as a script cannot
       const target = (e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path
-      if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(e.tool) && protectedPath(root, target)) {
-        return { deny: 'ClankTalk protects .talk/, talk/ and .talk files: ' + String(target) + '. Only the human changes them.' }
+      if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(e.tool) && protectedPath(root, target, harness.allowedChanges ?? [])) {
+        // the same text as protectedMessage in src/js/host.js
+        return { deny: 'ClankTalk protects .talk/, talk/, .talk files and hidden files: ' + String(target) + '. Only the human changes them. For a hidden path, the human can add a line to AGENTS.talk: allow changes to <path>' }
       }
       const ran = await next(e)
       await recordCall($, root, e.tool, e, ran, WEB_TOOLS.includes(e.tool) || toolAllowed(e.tool, harness.untrusted ?? []))
@@ -345,7 +346,7 @@ const CLANK_TALK_TOOL = /^mcp__.+__clank_talk$/
 // tools that only talk to the person or plan: always allowed
 const BUILT_IN = ['AskUserQuestion', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TodoWrite', 'ToolSearch', 'EnterPlanMode', 'ExitPlanMode']
 
-type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; launchAllowed?: string[]; untrusted?: string[]; errors: string[] }
+type Harness = { agentsTalk: boolean; required: boolean; allowed: string[]; launchAllowed?: string[]; allowedChanges?: string[]; untrusted?: string[]; errors: string[] }
 // tools that always bring web text: their results are untrusted inputs
 const WEB_TOOLS = ['WebFetch', 'WebSearch']
 
@@ -422,8 +423,9 @@ function grouped(names: string[]): string {
   return [...plain, ...mcp].join(', ')
 }
 
-// .talk/, talk/ and .talk files: an allowed tool must not change them; the same rule as isProtectedPath in src/js/runtime.js
-function protectedPath(root: string, path: unknown): boolean {
+// .talk/, talk/, .talk files and hidden files: an allowed edit tool must not change them;
+// the same rules as isProtectedPath and isHiddenPath in src/js/runtime.js, and protectedHarnessPath in src/js/host.js
+function protectedPath(root: string, path: unknown, allowedChanges: string[]): boolean {
   if (typeof path !== 'string' || path === '') {
     return false
   }
@@ -439,7 +441,12 @@ function protectedPath(root: string, path: unknown): boolean {
   const full = ('/' + parts.join('/')).toLowerCase()
   const base = root.replace(/\/+$/, '').toLowerCase()
   const relative = full.startsWith(base + '/') ? full.slice(base.length + 1) : full
-  return relative.endsWith('.talk') || relative === 'talk' || relative.startsWith('talk/') || relative.startsWith('.talk/')
+  if (relative.endsWith('.talk') || relative === 'talk' || relative.startsWith('talk/') || relative.startsWith('.talk/')) {
+    return true
+  }
+  // a hidden file or folder (.git/hooks, .claude/), as isHiddenPath, unless allow changes to names it
+  const allowed = allowedChanges.some(name => relative === name.toLowerCase() || relative.startsWith(name.toLowerCase() + '/'))
+  return relative.split('/').some(part => part.startsWith('.') && part !== '.' && part !== '..') && !allowed
 }
 
 // a name from allow harness tools: the same name, or a pattern where * is any text

@@ -864,7 +864,9 @@ allow harness tools Read, Grep
 allow untrusted harness tools WebFetch
 ```
 
-ClankTalk records each call of an allowed tool in its audit.  An allowed tool can never change `.talk/` or a `.talk` file.
+ClankTalk records each call of an allowed tool in its audit.  An allowed edit tool, such as `Edit` or `Write`, cannot change `.talk/`, a `.talk` file, or a hidden file such as `.git/hooks` or `.claude/settings.json`, just like a script.  To let it change a hidden path, add `allow changes to` for that path.
+
+ClankTalk cannot see where other tools write, so only allow a tool that you trust as much as a shell.
 
 ### Creating An Agents.talk File
 

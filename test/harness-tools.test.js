@@ -34,10 +34,10 @@ async function project(text) {
 }
 
 test("projectHarness reads require clank-talk and allow harness tools from AGENTS.talk", async () => {
-  assert.deepEqual(await projectHarness(await project(null)), { agentsTalk: false, required: false, allowed: [], launchAllowed: [], untrusted: [], errors: [] });
-  assert.deepEqual(await projectHarness(await project("")), { agentsTalk: true, required: false, allowed: [], launchAllowed: [], untrusted: [], errors: [] });
+  assert.deepEqual(await projectHarness(await project(null)), { agentsTalk: false, required: false, allowed: [], launchAllowed: [], allowedChanges: [], untrusted: [], errors: [] });
+  assert.deepEqual(await projectHarness(await project("")), { agentsTalk: true, required: false, allowed: [], launchAllowed: [], allowedChanges: [], untrusted: [], errors: [] });
   const root = await project("require clank-talk\nallow harness tools Read, Grep\nallow untrusted harness tools 'mcp__github__*'");
-  assert.deepEqual(await projectHarness(root), { agentsTalk: true, required: true, allowed: ["Read", "Grep", "mcp__github__*"], launchAllowed: [], untrusted: ["mcp__github__*"], errors: [] });
+  assert.deepEqual(await projectHarness(root), { agentsTalk: true, required: true, allowed: ["Read", "Grep", "mcp__github__*"], launchAllowed: [], allowedChanges: [], untrusted: ["mcp__github__*"], errors: [] });
   // a script still runs: the lines are for the harness
   assert.deepEqual((await run("print 1", { root })).errors, []);
 });
@@ -189,7 +189,14 @@ test("an allowed write or edit never changes .talk/ or a .talk file", async () =
   assert.equal(protectedHarnessPath("/Users/p", "/users/p/.talk/taint.json"), true);
   assert.equal(protectedHarnessPath("/Users/p", "/USERS/P/talk/tool.js"), true);
   assert.equal(protectedHarnessPath("/p", "src/app.js"), false);
-  assert.equal(protectedHarnessPath("/p", ".talkative/x"), false);
+  // hidden files and folders, as for scripts, unless allow changes to names them
+  assert.equal(protectedHarnessPath("/p", ".talkative/x"), true);
+  assert.equal(protectedHarnessPath("/p", ".git/hooks/pre-commit"), true);
+  assert.equal(protectedHarnessPath("/p", "/P/.Claude/settings.json"), true);
+  assert.equal(protectedHarnessPath("/p", "src/.env"), true);
+  assert.equal(protectedHarnessPath("/p", ".github/workflows/ci.yml", [".github"]), false);
+  assert.equal(protectedHarnessPath("/p", ".github/workflows/ci.yml", [".githubx"]), true);
+  assert.equal(protectedHarnessPath("/p", ".talk/x", [".talk"]), true);
   // talk/ holds the tools, and case does not matter, as for scripts
   assert.equal(protectedHarnessPath("/p", "talk/tools.js"), true);
   assert.equal(protectedHarnessPath("/p", "/p/Talk/x.js"), true);

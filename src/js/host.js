@@ -10,7 +10,7 @@ import os from "node:os";
 import { listTools, run } from "./clank-talk.js";
 import { syntaxSummary, toolSummary, exampleFor } from "./help.js";
 import { changedFiles } from "./diff.js";
-import { isProtectedPath, wildcardMatch, OUTPUT_TEXT_MAX, hostTool } from "./runtime.js";
+import { isProtectedPath, isHiddenPath, wildcardMatch, OUTPUT_TEXT_MAX, hostTool } from "./runtime.js";
 import { taintCommand } from "./taint-cli.js";
 
 // ----- the project root -----
@@ -432,6 +432,11 @@ export function harnessToolAllowed(name, patterns) {
 // ----- ClankTalk on or off in a harness; see src/md/features/harness-tools.md -----
 // the Claude Code plugin cannot import this file, so register.tsx has a copy of harnessMode
 
+// the refusal for an allowed edit tool on a protected path
+export function protectedMessage(path) {
+  return "ClankTalk protects .talk/, talk/, .talk files and hidden files: " + path + ". Only the human changes them. For a hidden path, the human can add a line to AGENTS.talk: allow changes to <path>";
+}
+
 export const STAYS_ON = "AGENTS.talk has require clank-talk, so ClankTalk stays on. To turn it off, remove that line.";
 export const CLANK_TALK_USAGE = "Usage: /clank-talk [on | off]";
 export const TAINT_USAGE = "Usage: /taint [clear]";
@@ -487,11 +492,18 @@ export async function statusLine(root, on) {
 
 // a path that an allowed harness tool must never change: .talk/ (the audit, the taint store, the session state),
 // talk/ (the tools) and .talk files; the same rule as for scripts; see src/md/features/harness-tools.md
-export function protectedHarnessPath(root, path) {
+// allowedChanges: the paths of "allow changes to", relative to the root
+export function protectedHarnessPath(root, path, allowedChanges = []) {
   if (typeof path !== "string" || path === "") {
     return false;
   }
   // both sides in lower case, as in register.tsx: on a disk that ignores case, /USERS/... is the same root
   const base = nodePath.resolve(root).toLowerCase();
-  return isProtectedPath(nodePath.relative(base, nodePath.resolve(root, path).toLowerCase()).split(nodePath.sep).join("/"));
+  const relative = nodePath.relative(base, nodePath.resolve(root, path).toLowerCase()).split(nodePath.sep).join("/");
+  if (isProtectedPath(relative)) {
+    return true;
+  }
+  // a hidden file or folder (.git/hooks, .claude/), as for scripts, unless "allow changes to" names it
+  const allowed = allowedChanges.some((name) => relative === name.toLowerCase() || relative.startsWith(name.toLowerCase() + "/"));
+  return isHiddenPath(relative) && !allowed;
 }
